@@ -1,26 +1,7 @@
-use std::io::Write;
-use std::time::Instant;
-
-use boinc_simulator::client::client::Client;
-use boinc_simulator::common::Start;
-use boinc_simulator::server::assimilator::Assimilator;
-use boinc_simulator::server::job_generator::JobGenerator;
-use boinc_simulator::server::scheduler::Scheduler;
-use boinc_simulator::server::server::Server;
-use boinc_simulator::server::transitioner::Transitioner;
-use boinc_simulator::server::validator::Validator;
 use boinc_simulator::simulator::simulator::Simulator;
 use clap::Parser;
 use env_logger::Builder;
-use rand::prelude::*;
-use rand_pcg::Pcg64;
-use sugars::{boxed, rc, refcell};
-
-use dslab_compute::multicore::Compute;
-use dslab_core::simulation::Simulation;
-use dslab_network::models::{ConstantBandwidthNetworkModel, SharedBandwidthNetworkModel};
-use dslab_network::{Network, NetworkModel};
-use dslab_storage::disk::DiskBuilder;
+use std::io::Write;
 
 /// Server-clients example
 #[derive(Parser, Debug)]
@@ -58,134 +39,25 @@ fn main() {
     let use_shared_network = args.use_shared_network;
     let seed = 123;
 
-    //let sim = Simulator::new();
+    let mut simulator = Simulator::new(
+        seed,
+        use_shared_network,
+        network_bandwidth as f64,
+        network_latency,
+    );
 
-    let mut sim = Simulation::new(seed);
-    let mut rand = Pcg64::seed_from_u64(seed);
-    // admin context for starting job generator, server and clients
-    let admin = sim.create_context("admin");
-
-    // create network and add hosts
-    let network_model: Box<dyn NetworkModel> = if use_shared_network {
-        boxed!(SharedBandwidthNetworkModel::new(
-            network_bandwidth as f64,
-            network_latency
-        ))
-    } else {
-        boxed!(ConstantBandwidthNetworkModel::new(
-            network_bandwidth as f64,
-            network_latency
-        ))
-    };
-    let network = rc!(refcell!(Network::new(
-        network_model,
-        sim.create_context("net")
-    )));
-    sim.add_handler("net", network.clone());
-    for i in 0..host_count {
-        network.borrow_mut().add_node(
-            &format!("host{}", i),
-            Box::new(SharedBandwidthNetworkModel::new(
-                local_bandwidth as f64,
-                local_latency,
-            )),
-        );
-    }
-    let hosts = network.borrow().get_nodes();
-
-    // create and start job generator on host0
-    let host = &hosts[0];
-    let job_generator_name = &format!("{}::job_generator", host);
-    let job_generator = rc!(refcell!(JobGenerator::new(
-        network.clone(),
-        sim.create_context(job_generator_name)
-    )));
-    let job_generator_id = sim.add_handler(job_generator_name, job_generator.clone());
-    network.borrow_mut().set_location(job_generator_id, host);
-    admin.emit_now(Start {}, job_generator_id);
-
-    // create and start server on host1
-    let host = &hosts[1];
-    let server_name = &format!("{}::server", host);
-    // Validator
-    let validator_name = &format!("{}::validator", server_name);
-    let validator = rc!(refcell!(Validator::new(sim.create_context(validator_name))));
-    // Assimilator
-    let assimilator_name = &format!("{}::assimilator", server_name);
-    let assimilator = rc!(refcell!(Assimilator::new(
-        sim.create_context(assimilator_name)
-    )));
-    // Transitioner
-    let transitioner_name = &format!("{}::transitioner", server_name);
-    let transitioner = rc!(refcell!(Transitioner::new(
-        sim.create_context(transitioner_name)
-    )));
-    // Scheduler
-    let scheduler_name = &format!("{}::scheduler", server_name);
-    let scheduler = rc!(refcell!(Scheduler::new(
-        network.clone(),
-        sim.create_context(scheduler_name)
-    )));
-    let scheduler_id = sim.add_handler(scheduler_name, scheduler.clone());
-    network.borrow_mut().set_location(scheduler_id, host);
-    let server = rc!(refcell!(Server::new(
-        network.clone(),
-        validator,
-        assimilator,
-        transitioner,
-        scheduler,
-        job_generator_id,
-        sim.create_context(server_name)
-    )));
-    let server_id = sim.add_handler(server_name, server.clone());
-    network.borrow_mut().set_location(server_id, host);
-    admin.emit_now(Start {}, server_id);
-
-    // create and start clients
-    for host in hosts.iter() {
-        // compute
-        let compute_name = format!("{}::compute", host);
-        let compute = rc!(refcell!(Compute::new(
-            rand.gen_range(1..=10) as f64,
-            rand.gen_range(1..=8),
-            rand.gen_range(1..=4) * 1024,
-            sim.create_context(&compute_name),
-        )));
-        sim.add_handler(compute_name, compute.clone());
-        // disk
-        let disk_name = format!("{}::disk", host);
-        let disk = rc!(refcell!(DiskBuilder::simple(
+    simulator.add_job_generator(local_bandwidth as f64, local_latency);
+    simulator.add_server(local_bandwidth as f64, local_latency);
+    for _ in 0..host_count {
+        simulator.add_host(
+            local_bandwidth as f64,
+            local_latency,
             disk_capacity,
             disk_read_bandwidth,
-            disk_write_bandwidth
-        )
-        .build(sim.create_context(&disk_name))));
-        sim.add_handler(disk_name, disk.clone());
-
-        let client_name = &format!("{}::client", host);
-        let client = Client::new(
-            compute,
-            disk,
-            network.clone(),
-            server_id,
-            sim.create_context(client_name),
+            disk_write_bandwidth,
         );
-        let client_id = sim.add_handler(client_name, rc!(refcell!(client)));
-        network.borrow_mut().set_location(client_id, host);
-        admin.emit_now(Start {}, client_id);
     }
 
     // run until completion
-    let t = Instant::now();
-    sim.step_until_no_events();
-    let duration = t.elapsed().as_secs_f64();
-    println!("Elapsed time: {:.2}s", duration);
-    println!("Scheduling time: {:.2}s", server.borrow().scheduling_time);
-    println!("Simulation speedup: {:.2}", sim.time() / duration);
-    println!(
-        "Processed {} events in {:.2?}s ({:.0} events/s)",
-        sim.event_count(),
-        duration,
-        sim.event_count() as f64 / duration
-    );
+    simulator.run();
 }
