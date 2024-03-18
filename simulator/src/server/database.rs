@@ -1,16 +1,17 @@
 use super::job::{ResultInfo, WorkunitInfo};
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap};
+use sugars::refcell;
 
 pub struct BoincDatabase {
-    pub workunit: HashMap<u64, Rc<RefCell<WorkunitInfo>>>,
-    pub result: HashMap<u64, Rc<RefCell<ResultInfo>>>,
+    pub workunit: RefCell<HashMap<u64, WorkunitInfo>>,
+    pub result: RefCell<HashMap<u64, ResultInfo>>,
 }
 
 impl BoincDatabase {
     pub fn new() -> Self {
         return Self {
-            workunit: HashMap::new(),
-            result: HashMap::new(),
+            workunit: refcell!(HashMap::new()),
+            result: refcell!(HashMap::new()),
         };
     }
 

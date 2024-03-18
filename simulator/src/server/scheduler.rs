@@ -4,13 +4,13 @@ use dslab_core::{log_debug, log_info, log_trace, Event, EventHandler};
 use dslab_network::Network;
 use priority_queue::PriorityQueue;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::time::Instant;
 
 use crate::server::job::ResultState;
 
-use super::job::{ResultInfo, WorkunitInfo};
+use super::database::BoincDatabase;
 use super::server::{ClientInfo, ClientScore};
 
 // TODO:
@@ -19,41 +19,46 @@ use super::server::{ClientInfo, ClientScore};
 pub struct Scheduler {
     id: Id,
     net: Rc<RefCell<Network>>,
+    db: Rc<BoincDatabase>,
     ctx: SimulationContext,
 }
 
 impl Scheduler {
-    pub fn new(net: Rc<RefCell<Network>>, ctx: SimulationContext) -> Self {
+    pub fn new(net: Rc<RefCell<Network>>, db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
         return Self {
             id: ctx.id(),
             net,
+            db,
             ctx,
         };
     }
 
     pub fn schedule(
         &self,
-        results_to_schedule: Vec<u64>,
-        workunits_db: &mut HashMap<u64, Rc<RefCell<WorkunitInfo>>>,
-        results_db: &mut HashMap<u64, Rc<RefCell<ResultInfo>>>,
         cpus_available: &mut u32,
         memory_available: &mut u64,
         clients: &mut BTreeMap<Id, ClientInfo>,
         clients_queue: &mut PriorityQueue<Id, ClientScore>,
         current_time: f64,
     ) {
+        let results_to_schedule =
+            BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
+                result.server_state == ResultState::Unsent
+            });
+
         log_trace!(self.ctx, "scheduling {} results", results_to_schedule.len());
         let t = Instant::now();
         let mut assigned_results_cnt = 0;
+
+        let mut db_workunit_mut = self.db.workunit.borrow_mut();
+        let mut db_result_mut = self.db.result.borrow_mut();
+
         for result_id in results_to_schedule {
             if clients_queue.is_empty() {
                 break;
             }
-            let mut result = results_db.get_mut(&result_id).unwrap().borrow_mut();
-            let mut workunit = workunits_db
-                .get_mut(&result.workunit_id)
-                .unwrap()
-                .borrow_mut();
+            let result = db_result_mut.get_mut(&result_id).unwrap();
+            let workunit = db_workunit_mut.get_mut(&result.workunit_id).unwrap();
             if workunit.req.min_cores > *cpus_available || workunit.req.memory > *memory_available {
                 continue;
             }

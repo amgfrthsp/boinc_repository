@@ -17,8 +17,8 @@ use crate::{
     client::client::Client,
     common::Start,
     server::{
-        assimilator::Assimilator, job_generator::JobGenerator, scheduler::Scheduler,
-        server::Server, transitioner::Transitioner, validator::Validator,
+        assimilator::Assimilator, database::BoincDatabase, job_generator::JobGenerator,
+        scheduler::Scheduler, server::Server, transitioner::Transitioner, validator::Validator,
     },
 };
 
@@ -148,26 +148,33 @@ impl Simulator {
         self.hosts.push(node_name.to_string());
         let server_name = &format!("{}::server", node_name);
 
+        // Creating database
+        let database = rc!(BoincDatabase::new());
+
         // Adding daemon components
         // Validator
         let validator_name = &format!("{}::validator", server_name);
         let validator = rc!(refcell!(Validator::new(
+            database.clone(),
             self.sim.borrow_mut().create_context(validator_name)
         )));
         // Assimilator
         let assimilator_name = &format!("{}::assimilator", server_name);
         let assimilator = rc!(refcell!(Assimilator::new(
+            database.clone(),
             self.sim.borrow_mut().create_context(assimilator_name)
         )));
         // Transitioner
         let transitioner_name = &format!("{}::transitioner", server_name);
         let transitioner = rc!(refcell!(Transitioner::new(
+            database.clone(),
             self.sim.borrow_mut().create_context(transitioner_name)
         )));
         // Scheduler
         let scheduler_name = &format!("{}::scheduler", server_name);
         let scheduler = rc!(refcell!(Scheduler::new(
             self.net.clone(),
+            database.clone(),
             self.sim.borrow_mut().create_context(scheduler_name)
         )));
         let scheduler_id = self
@@ -177,6 +184,7 @@ impl Simulator {
         self.net.borrow_mut().set_location(scheduler_id, node_name);
         let server = rc!(refcell!(Server::new(
             self.net.clone(),
+            database.clone(),
             validator,
             assimilator,
             transitioner,

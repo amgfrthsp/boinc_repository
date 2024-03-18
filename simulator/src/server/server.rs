@@ -14,6 +14,7 @@ use dslab_core::{cast, log_debug, log_info};
 use dslab_network::Network;
 
 use super::assimilator::Assimilator;
+use super::database::BoincDatabase;
 use super::job::*;
 use super::scheduler::Scheduler;
 use super::transitioner::Transitioner;
@@ -87,14 +88,14 @@ pub struct Server {
     clients: BTreeMap<Id, ClientInfo>,
     client_queue: PriorityQueue<Id, ClientScore>,
     // db
-    workunit: HashMap<u64, Rc<RefCell<WorkunitInfo>>>,
-    result: HashMap<u64, Rc<RefCell<ResultInfo>>>,
-    //
+    db: Rc<BoincDatabase>,
     //daemons
     validator: Rc<RefCell<Validator>>,
     assimilator: Rc<RefCell<Assimilator>>,
     transitioner: Rc<RefCell<Transitioner>>,
+    // scheduler
     scheduler: Rc<RefCell<Scheduler>>,
+    // data server
     //
     cpus_total: u32,
     cpus_available: u32,
@@ -108,6 +109,7 @@ pub struct Server {
 impl Server {
     pub fn new(
         net: Rc<RefCell<Network>>,
+        database: Rc<BoincDatabase>,
         validator: Rc<RefCell<Validator>>,
         assimilator: Rc<RefCell<Assimilator>>,
         transitioner: Rc<RefCell<Transitioner>>,
@@ -121,8 +123,7 @@ impl Server {
             job_generator_id,
             clients: BTreeMap::new(),
             client_queue: PriorityQueue::new(),
-            workunit: HashMap::new(),
-            result: HashMap::new(),
+            db: database,
             validator,
             assimilator,
             transitioner,
@@ -192,8 +193,8 @@ impl Server {
             assimilate_state: AssimilateState::Init,
         };
         log_debug!(self.ctx, "job request: {:?}", workunit.req);
-        self.workunit
-            .insert(workunit.id, Rc::new(RefCell::new(workunit)));
+
+        self.db.workunit.borrow_mut().insert(workunit.id, workunit);
 
         if !self.scheduling_planned {
             self.scheduling_planned = true;
@@ -209,12 +210,12 @@ impl Server {
 
     fn on_result_completed(&mut self, result_id: u64, client_id: Id) {
         log_debug!(self.ctx, "completed result: {:?}", result_id);
-        let mut result = self.result.get_mut(&result_id).unwrap().borrow_mut();
-        let mut workunit = self
-            .workunit
-            .get_mut(&result.workunit_id)
-            .unwrap()
-            .borrow_mut();
+
+        let mut db_workunit_mut = self.db.workunit.borrow_mut();
+        let mut db_result_mut = self.db.result.borrow_mut();
+
+        let result = db_result_mut.get_mut(&result_id).unwrap();
+        let workunit = db_workunit_mut.get_mut(&result.workunit_id).unwrap();
         if result.outcome.is_none() {
             result.server_state = ResultState::Over;
             result.outcome = Some(ResultOutcome::Success);
@@ -232,14 +233,7 @@ impl Server {
     // ******* daemons **********
 
     fn schedule_results(&mut self) {
-        let unsent_results = self.get_map_keys_by_predicate(&self.result, |result| {
-            result.borrow().server_state == ResultState::Unsent
-        });
-
         self.scheduler.borrow_mut().schedule(
-            unsent_results,
-            &mut self.workunit,
-            &mut self.result,
             &mut self.cpus_available,
             &mut self.memory_available,
             &mut self.clients,
@@ -255,37 +249,21 @@ impl Server {
     }
 
     fn envoke_transitioner(&mut self) {
-        self.transitioner.borrow().transit(
-            self.get_map_keys_by_predicate(&self.workunit, |wu| {
-                self.ctx.time() >= wu.borrow().transition_time
-            }),
-            &mut self.workunit,
-            &mut self.result,
-            self.ctx.time(),
-        );
+        self.transitioner.borrow().transit(self.ctx.time());
         if self.is_active() {
             self.ctx.emit_self(EnvokeTransitioner {}, 3.);
         }
     }
 
     fn validate_results(&mut self) {
-        self.validator.borrow().validate(
-            self.get_map_keys_by_predicate(&self.workunit, |wu| wu.borrow().need_validate == true),
-            &mut self.workunit,
-            &mut self.result,
-        );
+        self.validator.borrow().validate();
         if self.is_active() {
             self.ctx.emit_self(ValidateResults {}, 50.);
         }
     }
 
     fn assimilate_results(&mut self) {
-        self.assimilator.borrow().assimilate(
-            self.get_map_keys_by_predicate(&self.workunit, |wu| {
-                wu.borrow().assimilate_state == AssimilateState::Ready
-            }),
-            &mut self.workunit,
-        );
+        self.assimilator.borrow().assimilate();
         if self.is_active() {
             self.ctx.emit_self(AssimilateResults {}, 20.);
         }
@@ -295,22 +273,11 @@ impl Server {
 
     // ******* utilities & statistics *********
 
-    fn get_map_keys_by_predicate<K: Clone, V, F>(&self, hm: &HashMap<K, V>, predicate: F) -> Vec<K>
-    where
-        F: Fn(&V) -> bool,
-    {
-        hm.iter()
-            .filter(|(_, v)| predicate(*v))
-            .map(|(k, _)| (*k).clone())
-            .collect::<Vec<_>>()
-    }
-
     fn is_active(&self) -> bool {
-        !self
-            .get_map_keys_by_predicate(&self.workunit, |wu| {
-                wu.borrow().canonical_resultid.is_none()
-            })
-            .is_empty()
+        !BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
+            wu.canonical_resultid.is_none()
+        })
+        .is_empty()
     }
 
     fn report_status(&mut self) {
@@ -319,16 +286,16 @@ impl Server {
             "CPU: {:.2} / MEMORY: {:.2} / UNASSIGNED: {} / ASSIGNED: {} / COMPLETED: {}",
             (self.cpus_total - self.cpus_available) as f64 / self.cpus_total as f64,
             (self.memory_total - self.memory_available) as f64 / self.memory_total as f64,
-            self.get_map_keys_by_predicate(&self.result, |result| {
-                result.borrow().server_state == ResultState::Unsent
+            BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
+                result.server_state == ResultState::Unsent
             })
             .len(),
-            self.get_map_keys_by_predicate(&self.result, |result| {
-                result.borrow().server_state == ResultState::InProgress
+            BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
+                result.server_state == ResultState::InProgress
             })
             .len(),
-            self.get_map_keys_by_predicate(&self.result, |result| {
-                result.borrow().server_state == ResultState::Over
+            BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
+                result.server_state == ResultState::Over
             })
             .len()
         );

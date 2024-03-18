@@ -1,37 +1,41 @@
 use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
 use dslab_core::log_info;
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::server::job::{ResultOutcome, ResultState, ValidateState};
 
-use super::job::{ResultInfo, WorkunitInfo};
+use super::{database::BoincDatabase, job::ResultInfo};
 
 // TODO:
 
 pub struct Transitioner {
     id: Id,
+    db: Rc<BoincDatabase>,
     ctx: SimulationContext,
 }
 
 impl Transitioner {
-    pub fn new(ctx: SimulationContext) -> Self {
-        return Self { id: ctx.id(), ctx };
+    pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
+        return Self {
+            id: ctx.id(),
+            db,
+            ctx,
+        };
     }
 
-    pub fn transit(
-        &self,
-        workunits_to_transit: Vec<u64>,
-        workunits_db: &mut HashMap<u64, Rc<RefCell<WorkunitInfo>>>,
-        results_db: &mut HashMap<u64, Rc<RefCell<ResultInfo>>>,
-        current_time: f64,
-    ) {
+    pub fn transit(&self, current_time: f64) {
+        let workunits_to_transit =
+            BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
+                self.ctx.time() >= wu.transition_time
+            });
         log_info!(self.ctx, "starting transitioning");
+
+        let mut db_workunit_mut = self.db.workunit.borrow_mut();
+        let mut db_result_mut = self.db.result.borrow_mut();
         for wu_id in workunits_to_transit {
             // check for timed-out results
-            let mut workunit = workunits_db.get_mut(&wu_id).unwrap().borrow_mut();
+            let workunit = db_workunit_mut.get_mut(&wu_id).unwrap();
 
             let mut res_server_state_unsent_cnt = 0; // + inactive
             let mut res_server_state_inprogress_cnt = 0;
@@ -41,7 +45,7 @@ impl Transitioner {
             let mut next_transition_time = current_time + workunit.delay_bound;
 
             for result_id in &workunit.result_ids {
-                let mut result = results_db.get_mut(result_id).unwrap().borrow_mut();
+                let result = db_result_mut.get_mut(result_id).unwrap();
                 match result.server_state {
                     ResultState::Inactive => {
                         res_server_state_unsent_cnt += 1;
@@ -99,7 +103,7 @@ impl Transitioner {
             );
             for _ in 0..new_results_needed_cnt {
                 let result = ResultInfo {
-                    id: results_db.len() as u64,
+                    id: db_result_mut.len() as u64,
                     workunit_id: workunit.id,
                     report_deadline: 0.,
                     server_state: ResultState::Unsent,
@@ -107,7 +111,7 @@ impl Transitioner {
                     validate_state: None,
                 };
                 workunit.result_ids.push(result.id);
-                results_db.insert(result.id, Rc::new(RefCell::new(result)));
+                db_result_mut.insert(result.id, result);
             }
             workunit.transition_time = next_transition_time;
             if new_results_needed_cnt > 0 {

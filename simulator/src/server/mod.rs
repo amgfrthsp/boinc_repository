@@ -1,4 +1,5 @@
 pub mod assimilator;
+pub mod database;
 pub mod job;
 pub mod job_generator;
 pub mod scheduler;
