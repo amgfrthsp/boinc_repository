@@ -47,7 +47,13 @@ fn main() {
     );
 
     simulator.add_job_generator(local_bandwidth as f64, local_latency);
-    simulator.add_server(local_bandwidth as f64, local_latency);
+    simulator.add_server(
+        local_bandwidth as f64,
+        local_latency,
+        disk_capacity,
+        disk_read_bandwidth,
+        disk_write_bandwidth,
+    );
     for _ in 0..host_count {
         simulator.add_host(
             local_bandwidth as f64,

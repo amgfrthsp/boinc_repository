@@ -31,7 +31,7 @@ impl Validator {
             BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
                 wu.need_validate == true
             });
-        log_info!(self.ctx, "starting validation");
+        log_info!(self.ctx, "validation started");
         let mut validated_count = 0;
 
         let mut db_workunit_mut = self.db.workunit.borrow_mut();

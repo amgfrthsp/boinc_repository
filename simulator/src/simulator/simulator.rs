@@ -1,7 +1,7 @@
 use dslab_compute::multicore::Compute;
-use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
 use dslab_core::Simulation;
+use dslab_core::{component::Id, log_info};
 use dslab_network::{
     models::{ConstantBandwidthNetworkModel, SharedBandwidthNetworkModel},
     Network, NetworkModel,
@@ -17,8 +17,9 @@ use crate::{
     client::client::Client,
     common::Start,
     server::{
-        assimilator::Assimilator, database::BoincDatabase, job_generator::JobGenerator,
-        scheduler::Scheduler, server::Server, transitioner::Transitioner, validator::Validator,
+        assimilator::Assimilator, data_server::DataServer, database::BoincDatabase,
+        job_generator::JobGenerator, scheduler::Scheduler, server::Server,
+        transitioner::Transitioner, validator::Validator,
     },
 };
 
@@ -86,6 +87,7 @@ impl Simulator {
             println!("Server is not added");
             return;
         }
+        log_info!(self.ctx, "Simulation started");
         self.ctx.emit_now(Start {}, self.job_generator_id.unwrap());
         self.ctx.emit_now(Start {}, self.server_id.unwrap());
         for client_id in &self.client_ids {
@@ -95,6 +97,8 @@ impl Simulator {
         let t = Instant::now();
         self.sim.borrow_mut().step_until_no_events();
         let duration = t.elapsed().as_secs_f64();
+
+        log_info!(self.ctx, "Simulation finished");
         println!("Elapsed time: {:.2}s", duration);
         //println!("Scheduling time: {:.2}s", server.borrow().scheduling_time);
         println!(
@@ -135,7 +139,14 @@ impl Simulator {
         self.job_generator_id = Some(job_generator_id);
     }
 
-    pub fn add_server(&mut self, local_bandwidth: f64, local_latency: f64) {
+    pub fn add_server(
+        &mut self,
+        local_bandwidth: f64,
+        local_latency: f64,
+        file_storage_capacity: u64,
+        file_storage_read_bandwidth: f64,
+        file_storage_write_bandwidth: f64,
+    ) {
         let n = self.hosts.len();
         let node_name = &format!("host{}", n);
         self.net.borrow_mut().add_node(
@@ -158,18 +169,21 @@ impl Simulator {
             database.clone(),
             self.sim.borrow_mut().create_context(validator_name)
         )));
+
         // Assimilator
         let assimilator_name = &format!("{}::assimilator", server_name);
         let assimilator = rc!(refcell!(Assimilator::new(
             database.clone(),
             self.sim.borrow_mut().create_context(assimilator_name)
         )));
+
         // Transitioner
         let transitioner_name = &format!("{}::transitioner", server_name);
         let transitioner = rc!(refcell!(Transitioner::new(
             database.clone(),
             self.sim.borrow_mut().create_context(transitioner_name)
         )));
+
         // Scheduler
         let scheduler_name = &format!("{}::scheduler", server_name);
         let scheduler = rc!(refcell!(Scheduler::new(
@@ -182,6 +196,33 @@ impl Simulator {
             .borrow_mut()
             .add_handler(scheduler_name, scheduler.clone());
         self.net.borrow_mut().set_location(scheduler_id, node_name);
+
+        // Data server
+        let data_server_name = &format!("{}::data_server", server_name);
+        // file storage
+        let file_storage_name = format!("{}::file_storage", data_server_name);
+        let file_storage = rc!(refcell!(DiskBuilder::simple(
+            file_storage_capacity,
+            file_storage_read_bandwidth,
+            file_storage_write_bandwidth
+        )
+        .build(self.sim.borrow_mut().create_context(&file_storage_name))));
+        self.sim
+            .borrow_mut()
+            .add_handler(file_storage_name, file_storage.clone());
+        let data_server: Rc<RefCell<DataServer>> = rc!(refcell!(DataServer::new(
+            self.net.clone(),
+            file_storage,
+            self.sim.borrow_mut().create_context(data_server_name)
+        )));
+        let data_server_id = self
+            .sim
+            .borrow_mut()
+            .add_handler(data_server_name, data_server.clone());
+        self.net
+            .borrow_mut()
+            .set_location(data_server_id, node_name);
+
         let server = rc!(refcell!(Server::new(
             self.net.clone(),
             database.clone(),
@@ -189,6 +230,7 @@ impl Simulator {
             assimilator,
             transitioner,
             scheduler,
+            data_server,
             self.job_generator_id.unwrap(),
             self.sim.borrow_mut().create_context(server_name)
         )));

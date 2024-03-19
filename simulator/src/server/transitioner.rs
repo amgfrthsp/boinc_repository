@@ -29,7 +29,7 @@ impl Transitioner {
             BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
                 self.ctx.time() >= wu.transition_time
             });
-        log_info!(self.ctx, "starting transitioning");
+        log_info!(self.ctx, "transitioning started");
 
         let mut db_workunit_mut = self.db.workunit.borrow_mut();
         let mut db_result_mut = self.db.result.borrow_mut();
@@ -123,5 +123,6 @@ impl Transitioner {
                 );
             }
         }
+        log_info!(self.ctx, "transitioning finished");
     }
 }

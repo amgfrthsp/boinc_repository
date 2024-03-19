@@ -14,6 +14,7 @@ use dslab_core::{cast, log_debug, log_info};
 use dslab_network::Network;
 
 use super::assimilator::Assimilator;
+use super::data_server::DataServer;
 use super::database::BoincDatabase;
 use super::job::*;
 use super::scheduler::Scheduler;
@@ -21,6 +22,7 @@ use super::transitioner::Transitioner;
 use super::validator::Validator;
 use crate::client::client::{ClientRegister, TaskCompleted, TasksInquiry};
 use crate::common::Start;
+use crate::server::data_server::InputFileMetadata;
 
 #[derive(Clone, Serialize)]
 pub struct ServerRegister {}
@@ -96,6 +98,7 @@ pub struct Server {
     // scheduler
     scheduler: Rc<RefCell<Scheduler>>,
     // data server
+    data_server: Rc<RefCell<DataServer>>,
     //
     cpus_total: u32,
     cpus_available: u32,
@@ -114,6 +117,7 @@ impl Server {
         assimilator: Rc<RefCell<Assimilator>>,
         transitioner: Rc<RefCell<Transitioner>>,
         scheduler: Rc<RefCell<Scheduler>>,
+        data_server: Rc<RefCell<DataServer>>,
         job_generator_id: Id,
         ctx: SimulationContext,
     ) -> Self {
@@ -128,6 +132,7 @@ impl Server {
             assimilator,
             transitioner,
             scheduler,
+            data_server,
             cpus_total: 0,
             cpus_available: 0,
             memory_total: 0,
@@ -194,7 +199,17 @@ impl Server {
         };
         log_debug!(self.ctx, "job request: {:?}", workunit.req);
 
+        let input_file = InputFileMetadata {
+            id: workunit.id,
+            workunit_id: workunit.id,
+            nbytes: 100,
+        };
+
         self.db.workunit.borrow_mut().insert(workunit.id, workunit);
+
+        self.data_server
+            .borrow_mut()
+            .load_new_input_file(input_file, self.job_generator_id);
 
         if !self.scheduling_planned {
             self.scheduling_planned = true;
@@ -283,7 +298,7 @@ impl Server {
     fn report_status(&mut self) {
         log_info!(
             self.ctx,
-            "CPU: {:.2} / MEMORY: {:.2} / UNASSIGNED: {} / ASSIGNED: {} / COMPLETED: {}",
+            "CPU: {:.2} / MEMORY: {:.2} / UNSENT RESULTS: {} / IN PROGRESS RESULTS: {} / COMPLETED RESULTS: {}",
             (self.cpus_total - self.cpus_available) as f64 / self.cpus_total as f64,
             (self.memory_total - self.memory_available) as f64 / self.memory_total as f64,
             BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {

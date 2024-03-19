@@ -46,7 +46,7 @@ impl Scheduler {
                 result.server_state == ResultState::Unsent
             });
 
-        log_trace!(self.ctx, "scheduling {} results", results_to_schedule.len());
+        log_info!(self.ctx, "scheduling strted");
         let t = Instant::now();
         let mut assigned_results_cnt = 0;
 
@@ -104,7 +104,7 @@ impl Scheduler {
         let schedule_duration = t.elapsed();
         log_info!(
             self.ctx,
-            "schedule_results: assigned {} results in {:.2?}",
+            "scheduling finished: assigned {} results in {:.2?}",
             assigned_results_cnt,
             schedule_duration
         );

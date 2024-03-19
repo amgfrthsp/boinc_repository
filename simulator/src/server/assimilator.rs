@@ -31,7 +31,7 @@ impl Assimilator {
             BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
                 wu.assimilate_state == AssimilateState::Ready
             });
-        log_info!(self.ctx, "starting assimilation");
+        log_info!(self.ctx, "assimilation started");
         let mut assimilated_cnt = 0;
 
         let mut db_workunit_mut = self.db.workunit.borrow_mut();
