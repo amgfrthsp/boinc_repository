@@ -3,7 +3,7 @@ use log::Level::Info;
 use priority_queue::PriorityQueue;
 use serde::Serialize;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use dslab_core::component::Id;
@@ -86,7 +86,6 @@ impl ClientInfo {
 pub struct Server {
     id: Id,
     net: Rc<RefCell<Network>>,
-    job_generator_id: Id,
     clients: BTreeMap<Id, ClientInfo>,
     client_queue: PriorityQueue<Id, ClientScore>,
     // db
@@ -106,7 +105,7 @@ pub struct Server {
     memory_available: u64,
     pub scheduling_time: f64,
     scheduling_planned: bool,
-    ctx: SimulationContext,
+    pub ctx: SimulationContext,
 }
 
 impl Server {
@@ -118,13 +117,11 @@ impl Server {
         transitioner: Rc<RefCell<Transitioner>>,
         scheduler: Rc<RefCell<Scheduler>>,
         data_server: Rc<RefCell<DataServer>>,
-        job_generator_id: Id,
         ctx: SimulationContext,
     ) -> Self {
         Self {
             id: ctx.id(),
             net,
-            job_generator_id,
             clients: BTreeMap::new(),
             client_queue: PriorityQueue::new(),
             db: database,
@@ -154,7 +151,6 @@ impl Server {
         if log_enabled!(Info) {
             self.ctx.emit_self(ReportStatus {}, 100.);
         }
-        self.ctx.emit(ServerRegister {}, self.job_generator_id, 0.5);
     }
 
     fn on_client_register(
@@ -182,7 +178,7 @@ impl Server {
         self.clients.insert(client.id, client);
     }
 
-    fn on_job_request(&mut self, req: JobRequest) {
+    fn on_job_request(&mut self, req: JobRequest, from: Id) {
         let workunit = WorkunitInfo {
             id: req.id,
             req,
@@ -209,7 +205,7 @@ impl Server {
 
         self.data_server
             .borrow_mut()
-            .load_new_input_file(input_file, self.job_generator_id);
+            .load_new_input_file(input_file, from);
 
         if !self.scheduling_planned {
             self.scheduling_planned = true;
@@ -346,16 +342,19 @@ impl EventHandler for Server {
                 input_size,
                 output_size,
             } => {
-                self.on_job_request(JobRequest {
-                    id,
-                    flops,
-                    memory,
-                    min_cores,
-                    max_cores,
-                    cores_dependency,
-                    input_size,
-                    output_size,
-                });
+                self.on_job_request(
+                    JobRequest {
+                        id,
+                        flops,
+                        memory,
+                        min_cores,
+                        max_cores,
+                        cores_dependency,
+                        input_size,
+                        output_size,
+                    },
+                    event.src,
+                );
             }
             TaskCompleted { id } => {
                 self.on_result_completed(id, event.src);

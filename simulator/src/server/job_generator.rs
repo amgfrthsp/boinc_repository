@@ -17,6 +17,7 @@ use dslab_network::Network;
 use super::job::JobRequest;
 use super::server::ServerRegister;
 use crate::common::Start;
+use crate::simulator::simulator::SetServerIds;
 
 const BATCH_SIZE: u32 = 5;
 const JOBS_AMOUNT_TOTAL: u32 = 20;
@@ -54,11 +55,6 @@ impl JobGenerator {
         }
     }
 
-    fn on_server_register(&mut self, server_id: Id) {
-        log_debug!(self.ctx, "registered server: {:?}", server_id);
-        self.server_id = Some(server_id);
-    }
-
     fn generate_jobs(&mut self) {
         if self.server_id.is_none() {
             return;
@@ -89,14 +85,14 @@ impl JobGenerator {
 impl EventHandler for JobGenerator {
     fn on(&mut self, event: Event) {
         cast!(match event.data {
+            SetServerIds { server_id, .. } => {
+                self.server_id = Some(server_id);
+            }
             Start {} => {
                 self.on_started();
             }
             GenerateJobs {} => {
                 self.generate_jobs();
-            }
-            ServerRegister {} => {
-                self.on_server_register(event.src);
             }
         })
     }

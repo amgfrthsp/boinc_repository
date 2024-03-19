@@ -9,6 +9,8 @@ use dslab_network::{
 use dslab_storage::disk::DiskBuilder;
 use rand::prelude::*;
 use rand_pcg::{Lcg128Xsl64, Pcg64};
+use serde::Serialize;
+use std::borrow::Borrow;
 use std::rc::Rc;
 use std::{cell::RefCell, time::Instant};
 use sugars::{boxed, rc, refcell};
@@ -23,6 +25,12 @@ use crate::{
     },
 };
 
+#[derive(Clone, Serialize)]
+pub struct SetServerIds {
+    pub server_id: Id,
+    pub data_server_id: Id,
+}
+
 pub struct Simulator {
     id: Id,
     sim: Rc<RefCell<Simulation>>,
@@ -31,6 +39,7 @@ pub struct Simulator {
     hosts: Vec<String>,
     job_generator_id: Option<u32>,
     server_id: Option<u32>,
+    data_server_id: Option<u32>,
     client_ids: Vec<u32>,
     ctx: SimulationContext,
 }
@@ -73,6 +82,7 @@ impl Simulator {
             hosts: Vec::new(),
             job_generator_id: None,
             server_id: None,
+            data_server_id: None,
             client_ids: Vec::new(),
             ctx,
         };
@@ -103,13 +113,14 @@ impl Simulator {
         //println!("Scheduling time: {:.2}s", server.borrow().scheduling_time);
         println!(
             "Simulation speedup: {:.2}",
-            self.sim.borrow().time() / duration
+            self.sim.borrow_mut().time() / duration
         );
+        let event_count = self.sim.borrow_mut().event_count();
         println!(
             "Processed {} events in {:.2?}s ({:.0} events/s)",
-            self.sim.borrow().event_count(),
+            event_count,
             duration,
-            self.sim.borrow().event_count() as f64 / duration
+            event_count as f64 / duration
         );
     }
 
@@ -125,9 +136,10 @@ impl Simulator {
         );
         self.hosts.push(node_name.to_string());
         let job_generator_name = &format!("{}::job_generator", node_name);
+
         let job_generator = rc!(refcell!(JobGenerator::new(
             self.net.clone(),
-            self.sim.borrow_mut().create_context(job_generator_name)
+            self.sim.borrow_mut().create_context(job_generator_name),
         )));
         let job_generator_id = self
             .sim
@@ -137,6 +149,16 @@ impl Simulator {
             .borrow_mut()
             .set_location(job_generator_id, node_name);
         self.job_generator_id = Some(job_generator_id);
+
+        if self.server_id.is_some() {
+            self.ctx.emit_now(
+                SetServerIds {
+                    server_id: self.server_id.unwrap(),
+                    data_server_id: self.data_server_id.unwrap(),
+                },
+                job_generator_id,
+            );
+        }
     }
 
     pub fn add_server(
@@ -219,6 +241,7 @@ impl Simulator {
             .sim
             .borrow_mut()
             .add_handler(data_server_name, data_server.clone());
+        self.data_server_id = Some(data_server_id);
         self.net
             .borrow_mut()
             .set_location(data_server_id, node_name);
@@ -231,7 +254,6 @@ impl Simulator {
             transitioner,
             scheduler,
             data_server,
-            self.job_generator_id.unwrap(),
             self.sim.borrow_mut().create_context(server_name)
         )));
         let server_id = self
@@ -240,6 +262,26 @@ impl Simulator {
             .add_handler(server_name, server.clone());
         self.net.borrow_mut().set_location(server_id, node_name);
         self.server_id = Some(server_id);
+
+        for client_id in &self.client_ids {
+            self.ctx.emit_now(
+                SetServerIds {
+                    server_id,
+                    data_server_id,
+                },
+                *client_id,
+            );
+        }
+
+        if self.job_generator_id.is_some() {
+            self.ctx.emit_now(
+                SetServerIds {
+                    server_id,
+                    data_server_id,
+                },
+                self.job_generator_id.unwrap(),
+            );
+        }
     }
 
     pub fn add_host(
@@ -286,7 +328,6 @@ impl Simulator {
             compute,
             disk,
             self.net.clone(),
-            self.server_id.unwrap(),
             self.sim.borrow_mut().create_context(client_name),
         );
         let client_id = self
@@ -295,5 +336,15 @@ impl Simulator {
             .add_handler(client_name, rc!(refcell!(client)));
         self.net.borrow_mut().set_location(client_id, node_name);
         self.client_ids.push(client_id);
+
+        if self.server_id.is_some() {
+            self.ctx.emit_now(
+                SetServerIds {
+                    server_id: self.server_id.unwrap(),
+                    data_server_id: self.data_server_id.unwrap(),
+                },
+                client_id,
+            );
+        }
     }
 }

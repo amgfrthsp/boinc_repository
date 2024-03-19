@@ -1,5 +1,5 @@
 use dslab_core::context::SimulationContext;
-use dslab_core::{cast, log_info, Event, EventHandler};
+use dslab_core::{cast, Event, EventHandler};
 use dslab_core::{component::Id, log_debug};
 use dslab_network::{DataTransfer, DataTransferCompleted, Network};
 use dslab_storage::disk::Disk;

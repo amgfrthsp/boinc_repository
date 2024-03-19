@@ -17,6 +17,7 @@ use dslab_storage::storage::Storage;
 
 use super::task::{TaskInfo, TaskRequest, TaskState};
 use crate::common::Start;
+use crate::simulator::simulator::SetServerIds;
 
 #[derive(Clone, Serialize)]
 pub struct TasksInquiry {}
@@ -38,14 +39,15 @@ pub struct Client {
     compute: Rc<RefCell<Compute>>,
     disk: Rc<RefCell<Disk>>,
     net: Rc<RefCell<Network>>,
-    server_id: Id,
+    server_id: Option<Id>,
+    data_server_id: Option<Id>,
     tasks: HashMap<u64, TaskInfo>,
     computations: HashMap<u64, u64>,
     reads: HashMap<u64, u64>,
     writes: HashMap<u64, u64>,
     downloads: HashMap<usize, u64>,
     uploads: HashMap<usize, u64>,
-    ctx: SimulationContext,
+    pub ctx: SimulationContext,
 }
 
 impl Client {
@@ -53,7 +55,6 @@ impl Client {
         compute: Rc<RefCell<Compute>>,
         disk: Rc<RefCell<Disk>>,
         net: Rc<RefCell<Network>>,
-        server_id: Id,
         ctx: SimulationContext,
     ) -> Self {
         Self {
@@ -61,7 +62,8 @@ impl Client {
             compute,
             disk,
             net,
-            server_id,
+            server_id: None,
+            data_server_id: None,
             tasks: HashMap::new(),
             computations: HashMap::new(),
             reads: HashMap::new(),
@@ -80,7 +82,7 @@ impl Client {
                 cpus_total: self.compute.borrow().cores_total(),
                 memory_total: self.compute.borrow().memory_total(),
             },
-            self.server_id,
+            self.server_id.unwrap(),
             0.5,
         );
     }
@@ -92,7 +94,7 @@ impl Client {
         };
         log_debug!(self.ctx, "task request: {:?}", task.req);
         let transfer_id = self.net.borrow_mut().transfer_data(
-            self.server_id,
+            self.server_id.unwrap(),
             self.id,
             task.req.input_size as f64,
             self.id,
@@ -124,7 +126,7 @@ impl Client {
             self.net.borrow_mut().send_event(
                 TaskCompleted { id: task_id },
                 self.id,
-                self.server_id,
+                self.server_id.unwrap(),
             );
             self.ask_for_tasks();
         }
@@ -168,7 +170,7 @@ impl Client {
         task.state = TaskState::Uploading;
         let transfer_id = self.net.borrow_mut().transfer_data(
             self.id,
-            self.server_id,
+            self.server_id.unwrap(),
             task.req.output_size as f64,
             self.id,
         );
@@ -178,13 +180,20 @@ impl Client {
     fn ask_for_tasks(&mut self) {
         self.net
             .borrow_mut()
-            .send_event(TasksInquiry {}, self.id, self.server_id);
+            .send_event(TasksInquiry {}, self.id, self.server_id.unwrap());
     }
 }
 
 impl EventHandler for Client {
     fn on(&mut self, event: Event) {
         cast!(match event.data {
+            SetServerIds {
+                server_id,
+                data_server_id,
+            } => {
+                self.server_id = Some(server_id);
+                self.data_server_id = Some(data_server_id);
+            }
             Start {} => {
                 self.on_start();
             }
