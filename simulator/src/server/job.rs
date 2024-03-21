@@ -3,6 +3,18 @@ use serde::Serialize;
 use dslab_compute::multicore::CoresDependency;
 
 #[derive(Serialize, Debug, Clone)]
+pub struct InputFileMetadata {
+    pub id: u64,
+    pub size: u64,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct OutputFileMetadata {
+    pub id: u64,
+    pub size: u64,
+}
+
+#[derive(Serialize, Debug, Clone)]
 pub struct JobRequest {
     pub id: u64,
     pub flops: f64,
@@ -10,8 +22,8 @@ pub struct JobRequest {
     pub min_cores: u32,
     pub max_cores: u32,
     pub cores_dependency: CoresDependency,
-    pub input_size: u64,
-    pub output_size: u64,
+    pub input_file: InputFileMetadata,
+    pub output_file: OutputFileMetadata,
 }
 
 #[derive(Debug, Clone, PartialEq)]

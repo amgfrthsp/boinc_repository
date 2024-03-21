@@ -10,7 +10,6 @@ use dslab_storage::disk::DiskBuilder;
 use rand::prelude::*;
 use rand_pcg::{Lcg128Xsl64, Pcg64};
 use serde::Serialize;
-use std::borrow::Borrow;
 use std::rc::Rc;
 use std::{cell::RefCell, time::Instant};
 use sugars::{boxed, rc, refcell};

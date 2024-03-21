@@ -17,6 +17,7 @@ use dslab_storage::storage::Storage;
 
 use super::task::{TaskInfo, TaskRequest, TaskState};
 use crate::common::Start;
+use crate::server::data_server::OutputFileFromClient;
 use crate::simulator::simulator::SetServerIds;
 
 #[derive(Clone, Serialize)]
@@ -33,6 +34,21 @@ pub struct ClientRegister {
 pub struct TaskCompleted {
     pub(crate) id: u64,
 }
+
+// on task_request ->
+// (ds) download input_file (start data transfer) ->
+// download complete ->
+// start calculation ->
+// calculation finished ->
+// (ds) upload output_file (start data transfer, emit_now(ds, output_file metadata)) ->
+// output file uploaded ->
+//ask for work
+
+// thoughts:
+// 1. finished data transfer events should occur on the client side so that in case of
+// failure client is the one who initiates retries
+// 2. we should be able to differentiate between downloads and uploads to be able to do retries
+// 3. who initiates data transfers?
 
 pub struct Client {
     id: Id,
@@ -94,9 +110,9 @@ impl Client {
         };
         log_debug!(self.ctx, "task request: {:?}", task.req);
         let transfer_id = self.net.borrow_mut().transfer_data(
-            self.server_id.unwrap(),
+            self.data_server_id.unwrap(),
             self.id,
-            task.req.input_size as f64,
+            task.req.input_file.size as f64,
             self.id,
         );
         self.downloads.insert(transfer_id, task.req.id);
@@ -111,7 +127,10 @@ impl Client {
             let task = self.tasks.get_mut(&task_id).unwrap();
             log_debug!(self.ctx, "downloaded input data for task: {}", task_id);
             task.state = TaskState::Reading;
-            let read_id = self.disk.borrow_mut().read(task.req.input_size, self.id);
+            let read_id = self
+                .disk
+                .borrow_mut()
+                .read(task.req.input_file.size, self.id);
             self.reads.insert(read_id, task_id);
         // data transfer corresponds to output upload
         } else if self.uploads.contains_key(&transfer_id) {
@@ -121,8 +140,15 @@ impl Client {
             task.state = TaskState::Completed;
             self.disk
                 .borrow_mut()
-                .mark_free(task.req.output_size)
+                .mark_free(task.req.output_file.size)
                 .expect("Failed to free disk space");
+
+            self.ctx.emit_now(
+                OutputFileFromClient {
+                    output_file: task.req.output_file,
+                },
+                self.data_server_id.unwrap(),
+            );
             self.net.borrow_mut().send_event(
                 TaskCompleted { id: task_id },
                 self.id,
@@ -158,7 +184,10 @@ impl Client {
         log_debug!(self.ctx, "completed execution of task: {}", task_id);
         let task = self.tasks.get_mut(&task_id).unwrap();
         task.state = TaskState::Writing;
-        let write_id = self.disk.borrow_mut().write(task.req.output_size, self.id);
+        let write_id = self
+            .disk
+            .borrow_mut()
+            .write(task.req.output_file.size, self.id);
         self.writes.insert(write_id, task_id);
     }
 
@@ -171,7 +200,7 @@ impl Client {
         let transfer_id = self.net.borrow_mut().transfer_data(
             self.id,
             self.server_id.unwrap(),
-            task.req.output_size as f64,
+            task.req.output_file.size as f64,
             self.id,
         );
         self.uploads.insert(transfer_id, task_id);
@@ -204,8 +233,8 @@ impl EventHandler for Client {
                 min_cores,
                 max_cores,
                 cores_dependency,
-                input_size,
-                output_size,
+                input_file,
+                output_file,
             } => {
                 self.on_task_request(TaskRequest {
                     id,
@@ -214,8 +243,8 @@ impl EventHandler for Client {
                     min_cores,
                     max_cores,
                     cores_dependency,
-                    input_size,
-                    output_size,
+                    input_file,
+                    output_file,
                 });
             }
             DataTransferCompleted { dt } => {

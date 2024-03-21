@@ -22,7 +22,6 @@ use super::transitioner::Transitioner;
 use super::validator::Validator;
 use crate::client::client::{ClientRegister, TaskCompleted, TasksInquiry};
 use crate::common::Start;
-use crate::server::data_server::InputFileMetadata;
 
 #[derive(Clone, Serialize)]
 pub struct ServerRegister {}
@@ -179,12 +178,13 @@ impl Server {
     }
 
     fn on_job_request(&mut self, req: JobRequest, from: Id) {
+        log_debug!(self.ctx, "job request: {:?}", req.clone());
+
         let workunit = WorkunitInfo {
             id: req.id,
-            req,
+            req: req.clone(),
             result_ids: Vec::new(),
             transition_time: self.ctx.time(),
-            // TODO: Calculate delay based on workunit.req
             delay_bound: 250.,
             min_quorum: 2,
             target_nresults: 3,
@@ -193,19 +193,12 @@ impl Server {
             canonical_resultid: None,
             assimilate_state: AssimilateState::Init,
         };
-        log_debug!(self.ctx, "job request: {:?}", workunit.req);
-
-        let input_file = InputFileMetadata {
-            id: workunit.id,
-            workunit_id: workunit.id,
-            nbytes: 100,
-        };
 
         self.db.workunit.borrow_mut().insert(workunit.id, workunit);
 
         self.data_server
             .borrow_mut()
-            .load_new_input_file(input_file, from);
+            .load_input_file_for_workunit(req.input_file, from);
 
         if !self.scheduling_planned {
             self.scheduling_planned = true;
@@ -339,8 +332,8 @@ impl EventHandler for Server {
                 min_cores,
                 max_cores,
                 cores_dependency,
-                input_size,
-                output_size,
+                input_file,
+                output_file,
             } => {
                 self.on_job_request(
                     JobRequest {
@@ -350,8 +343,8 @@ impl EventHandler for Server {
                         min_cores,
                         max_cores,
                         cores_dependency,
-                        input_size,
-                        output_size,
+                        input_file,
+                        output_file,
                     },
                     event.src,
                 );

@@ -14,8 +14,7 @@ use dslab_core::handler::EventHandler;
 use dslab_core::{cast, log_debug};
 use dslab_network::Network;
 
-use super::job::JobRequest;
-use super::server::ServerRegister;
+use super::job::{InputFileMetadata, JobRequest, OutputFileMetadata};
 use crate::common::Start;
 use crate::simulator::simulator::SetServerIds;
 
@@ -61,15 +60,22 @@ impl JobGenerator {
         }
         let mut rand = Pcg64::seed_from_u64(42);
         for i in 0..BATCH_SIZE {
+            let job_id = (self.jobs_generated + i) as u64;
             let job = JobRequest {
-                id: (self.jobs_generated + i) as u64,
+                id: job_id,
                 flops: rand.gen_range(100..=1000) as f64,
                 memory: rand.gen_range(1..=8) * 128,
                 min_cores: 1,
                 max_cores: 1,
                 cores_dependency: CoresDependency::Linear,
-                input_size: rand.gen_range(100..=1000),
-                output_size: rand.gen_range(10..=100),
+                input_file: InputFileMetadata {
+                    id: job_id,
+                    size: rand.gen_range(100..=1000),
+                },
+                output_file: OutputFileMetadata {
+                    id: job_id,
+                    size: rand.gen_range(10..=100),
+                },
             };
             self.net
                 .borrow_mut()

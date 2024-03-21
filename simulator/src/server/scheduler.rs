@@ -83,6 +83,7 @@ impl Scheduler {
                     *memory_available -= workunit.req.memory;
                     checked_clients.push((client.id, client.score()));
                     let mut result_wu_req = workunit.req.clone();
+                    result_wu_req.output_file.id = result.id;
                     result_wu_req.id = result.id;
                     self.net
                         .borrow_mut()
