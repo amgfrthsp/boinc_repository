@@ -15,7 +15,7 @@ pub struct OutputFileMetadata {
 }
 
 #[derive(Serialize, Debug, Clone)]
-pub struct JobRequest {
+pub struct JobSpec {
     pub id: u64,
     pub flops: f64,
     pub memory: u64,
@@ -23,6 +23,11 @@ pub struct JobRequest {
     pub max_cores: u32,
     pub cores_dependency: CoresDependency,
     pub input_file: InputFileMetadata,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct ResultRequest {
+    pub spec: JobSpec,
     pub output_file: OutputFileMetadata,
 }
 
@@ -78,7 +83,7 @@ pub enum FileDeleteState {
 #[derive(Debug, Clone)]
 pub struct WorkunitInfo {
     pub(crate) id: u64,
-    pub(crate) req: JobRequest,
+    pub(crate) spec: JobSpec,
     pub(crate) result_ids: Vec<u64>,
     pub(crate) transition_time: f64,
     pub(crate) delay_bound: f64,

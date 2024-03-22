@@ -177,12 +177,12 @@ impl Server {
         self.clients.insert(client.id, client);
     }
 
-    fn on_job_request(&mut self, req: JobRequest, from: Id) {
-        log_debug!(self.ctx, "job request: {:?}", req.clone());
+    fn on_job_spec(&mut self, spec: JobSpec, from: Id) {
+        log_debug!(self.ctx, "job spec: {:?}", spec.clone());
 
         let workunit = WorkunitInfo {
-            id: req.id,
-            req: req.clone(),
+            id: spec.id,
+            spec: spec.clone(),
             result_ids: Vec::new(),
             transition_time: self.ctx.time(),
             delay_bound: 250.,
@@ -198,7 +198,7 @@ impl Server {
 
         self.data_server
             .borrow_mut()
-            .load_input_file_for_workunit(req.input_file, from);
+            .load_input_file_for_workunit(spec.input_file, from);
 
         if !self.scheduling_planned {
             self.scheduling_planned = true;
@@ -228,10 +228,10 @@ impl Server {
         }
 
         let client = self.clients.get_mut(&client_id).unwrap();
-        client.cpus_available += workunit.req.min_cores;
-        client.memory_available += workunit.req.memory;
-        self.cpus_available += workunit.req.min_cores;
-        self.memory_available += workunit.req.memory;
+        client.cpus_available += workunit.spec.min_cores;
+        client.memory_available += workunit.spec.memory;
+        self.cpus_available += workunit.spec.min_cores;
+        self.memory_available += workunit.spec.memory;
     }
 
     // ******* daemons **********
@@ -325,7 +325,7 @@ impl EventHandler for Server {
             } => {
                 self.on_client_register(event.src, cpus_total, memory_total, speed);
             }
-            JobRequest {
+            JobSpec {
                 id,
                 flops,
                 memory,
@@ -333,10 +333,9 @@ impl EventHandler for Server {
                 max_cores,
                 cores_dependency,
                 input_file,
-                output_file,
             } => {
-                self.on_job_request(
-                    JobRequest {
+                self.on_job_spec(
+                    JobSpec {
                         id,
                         flops,
                         memory,
@@ -344,7 +343,6 @@ impl EventHandler for Server {
                         max_cores,
                         cores_dependency,
                         input_file,
-                        output_file,
                     },
                     event.src,
                 );

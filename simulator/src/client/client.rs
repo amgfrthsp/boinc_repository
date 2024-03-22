@@ -105,18 +105,19 @@ impl Client {
 
     fn on_task_request(&mut self, req: TaskRequest) {
         let task = TaskInfo {
-            req,
+            spec: req.spec,
+            output_file: req.output_file,
             state: TaskState::Downloading,
         };
-        log_debug!(self.ctx, "task request: {:?}", task.req);
+        log_debug!(self.ctx, "task spec: {:?}", task.spec);
         let transfer_id = self.net.borrow_mut().transfer_data(
             self.data_server_id.unwrap(),
             self.id,
-            task.req.input_file.size as f64,
+            task.spec.input_file.size as f64,
             self.id,
         );
-        self.downloads.insert(transfer_id, task.req.id);
-        self.tasks.insert(task.req.id, task);
+        self.downloads.insert(transfer_id, task.spec.id);
+        self.tasks.insert(task.spec.id, task);
     }
 
     fn on_data_transfer_completed(&mut self, dt: DataTransfer) {
@@ -130,7 +131,7 @@ impl Client {
             let read_id = self
                 .disk
                 .borrow_mut()
-                .read(task.req.input_file.size, self.id);
+                .read(task.spec.input_file.size, self.id);
             self.reads.insert(read_id, task_id);
         // data transfer corresponds to output upload
         } else if self.uploads.contains_key(&transfer_id) {
@@ -140,12 +141,12 @@ impl Client {
             task.state = TaskState::Completed;
             self.disk
                 .borrow_mut()
-                .mark_free(task.req.output_file.size)
+                .mark_free(task.output_file.size)
                 .expect("Failed to free disk space");
 
             self.ctx.emit_now(
                 OutputFileFromClient {
-                    output_file: task.req.output_file,
+                    output_file: task.output_file,
                 },
                 self.data_server_id.unwrap(),
             );
@@ -164,11 +165,11 @@ impl Client {
         let task = self.tasks.get_mut(&task_id).unwrap();
         task.state = TaskState::Running;
         let comp_id = self.compute.borrow_mut().run(
-            task.req.flops,
-            task.req.memory,
-            task.req.min_cores,
-            task.req.max_cores,
-            task.req.cores_dependency,
+            task.spec.flops,
+            task.spec.memory,
+            task.spec.min_cores,
+            task.spec.max_cores,
+            task.spec.cores_dependency,
             self.id,
         );
         self.computations.insert(comp_id, task_id);
@@ -184,10 +185,7 @@ impl Client {
         log_debug!(self.ctx, "completed execution of task: {}", task_id);
         let task = self.tasks.get_mut(&task_id).unwrap();
         task.state = TaskState::Writing;
-        let write_id = self
-            .disk
-            .borrow_mut()
-            .write(task.req.output_file.size, self.id);
+        let write_id = self.disk.borrow_mut().write(task.output_file.size, self.id);
         self.writes.insert(write_id, task_id);
     }
 
@@ -200,7 +198,7 @@ impl Client {
         let transfer_id = self.net.borrow_mut().transfer_data(
             self.id,
             self.server_id.unwrap(),
-            task.req.output_file.size as f64,
+            task.output_file.size as f64,
             self.id,
         );
         self.uploads.insert(transfer_id, task_id);
@@ -226,26 +224,8 @@ impl EventHandler for Client {
             Start {} => {
                 self.on_start();
             }
-            TaskRequest {
-                id,
-                flops,
-                memory,
-                min_cores,
-                max_cores,
-                cores_dependency,
-                input_file,
-                output_file,
-            } => {
-                self.on_task_request(TaskRequest {
-                    id,
-                    flops,
-                    memory,
-                    min_cores,
-                    max_cores,
-                    cores_dependency,
-                    input_file,
-                    output_file,
-                });
+            TaskRequest { spec, output_file } => {
+                self.on_task_request(TaskRequest { spec, output_file });
             }
             DataTransferCompleted { dt } => {
                 self.on_data_transfer_completed(dt);

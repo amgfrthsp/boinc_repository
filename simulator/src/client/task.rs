@@ -1,6 +1,7 @@
-use crate::server::job::JobRequest;
+use crate::server::job::{JobSpec, OutputFileMetadata, ResultRequest};
 
-pub type TaskRequest = JobRequest;
+pub type TaskSpec = JobSpec;
+pub type TaskRequest = ResultRequest;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -19,6 +20,7 @@ pub enum TaskState {
 
 #[derive(Debug, Clone)]
 pub struct TaskInfo {
-    pub(crate) req: JobRequest,
+    pub(crate) spec: TaskSpec,
+    pub(crate) output_file: OutputFileMetadata,
     pub(crate) state: TaskState,
 }
