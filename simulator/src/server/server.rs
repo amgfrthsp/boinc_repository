@@ -220,10 +220,10 @@ impl Server {
 
         let result = db_result_mut.get_mut(&result_id).unwrap();
         let workunit = db_workunit_mut.get_mut(&result.workunit_id).unwrap();
-        if result.outcome.is_none() {
+        if result.outcome == ResultOutcome::Undefined {
             result.server_state = ResultState::Over;
-            result.outcome = Some(ResultOutcome::Success);
-            result.validate_state = Some(ValidateState::Init);
+            result.outcome = ResultOutcome::Success;
+            result.validate_state = ValidateState::Init;
             workunit.transition_time = self.ctx.time();
         }
 

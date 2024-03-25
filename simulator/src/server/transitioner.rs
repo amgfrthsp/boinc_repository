@@ -3,7 +3,7 @@ use dslab_core::context::SimulationContext;
 use dslab_core::log_info;
 use std::rc::Rc;
 
-use crate::server::job::{ResultOutcome, ResultState, ValidateState};
+use crate::server::job::{FileDeleteState, ResultOutcome, ResultState, ValidateState};
 
 use super::{database::BoincDatabase, job::ResultInfo};
 
@@ -56,7 +56,7 @@ impl Transitioner {
                     ResultState::InProgress => {
                         if current_time >= result.report_deadline {
                             result.server_state = ResultState::Over;
-                            result.outcome = Some(ResultOutcome::NoReply);
+                            result.outcome = ResultOutcome::NoReply;
                         } else {
                             res_server_state_inprogress_cnt += 1;
                             next_transition_time =
@@ -64,14 +64,14 @@ impl Transitioner {
                         }
                     }
                     ResultState::Over => match result.outcome {
-                        Some(ResultOutcome::Success) => {
+                        ResultOutcome::Success => {
                             match result.validate_state {
-                                Some(ValidateState::Init) => {
+                                ValidateState::Init => {
                                     need_validate = true;
                                 }
                                 _ => {}
                             }
-                            if !matches!(result.validate_state, Some(ValidateState::Invalid)) {
+                            if !matches!(result.validate_state, ValidateState::Invalid) {
                                 res_outcome_success_cnt += 1;
                             }
                         }
@@ -107,8 +107,9 @@ impl Transitioner {
                     workunit_id: workunit.id,
                     report_deadline: 0.,
                     server_state: ResultState::Unsent,
-                    outcome: None,
-                    validate_state: None,
+                    outcome: ResultOutcome::Undefined,
+                    validate_state: ValidateState::Undefined,
+                    file_delete_state: FileDeleteState::Init,
                 };
                 workunit.result_ids.push(result.id);
                 db_result_mut.insert(result.id, result);

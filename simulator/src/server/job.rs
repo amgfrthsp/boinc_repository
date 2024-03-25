@@ -43,6 +43,7 @@ pub enum ResultState {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub enum ResultOutcome {
+    Undefined,
     Success,
     CouldntSend,
     ClientError,
@@ -55,6 +56,7 @@ pub enum ResultOutcome {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub enum ValidateState {
+    Undefined,
     Init,
     Valid,
     Invalid,
@@ -72,7 +74,7 @@ pub enum AssimilateState {
     Done,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 #[allow(dead_code)]
 pub enum FileDeleteState {
     Init,
@@ -101,6 +103,7 @@ pub struct ResultInfo {
     pub(crate) workunit_id: u64,
     pub(crate) report_deadline: f64,
     pub(crate) server_state: ResultState,
-    pub(crate) outcome: Option<ResultOutcome>,
-    pub(crate) validate_state: Option<ValidateState>,
+    pub(crate) outcome: ResultOutcome,
+    pub(crate) validate_state: ValidateState,
+    pub(crate) file_delete_state: FileDeleteState,
 }
