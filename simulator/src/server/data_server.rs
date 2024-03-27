@@ -17,8 +17,8 @@ pub struct DataServer {
     id: Id,
     net: Rc<RefCell<Network>>,
     file_storage: Rc<RefCell<Disk>>,
-    input_files: HashMap<u64, InputFileMetadata>,
-    output_files: HashMap<u64, OutputFileMetadata>,
+    input_files: HashMap<u64, InputFileMetadata>, // workunit_id -> input files
+    output_files: HashMap<u64, OutputFileMetadata>, // result_id -> output files
     downloads: HashMap<usize, u64>,
     ctx: SimulationContext,
 }
@@ -47,7 +47,7 @@ impl DataServer {
                 .transfer_data(from, self.id, input_file.size as f64, self.id);
 
         self.downloads.insert(transfer_id, input_file.id);
-        self.input_files.insert(input_file.id, input_file);
+        self.input_files.insert(input_file.workunit_id, input_file);
     }
 
     fn on_data_transfer_completed(&mut self, dt: DataTransfer) {
@@ -67,7 +67,19 @@ impl DataServer {
             output_file.id,
             client_id
         );
-        self.output_files.insert(output_file.id, output_file);
+        self.output_files.insert(output_file.result_id, output_file);
+    }
+
+    pub fn delete_input_files(&mut self, workunit_id: u64) -> u32 {
+        self.input_files.remove(&workunit_id);
+        // add disk free
+        return 0;
+    }
+
+    pub fn delete_output_files(&mut self, result_id: u64) -> u32 {
+        self.output_files.remove(&result_id);
+        // add disk free
+        return 0;
     }
 }
 

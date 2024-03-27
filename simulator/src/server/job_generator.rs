@@ -70,6 +70,7 @@ impl JobGenerator {
                 cores_dependency: CoresDependency::Linear,
                 input_file: InputFileMetadata {
                     id: job_id,
+                    workunit_id: job_id, // when workunit is created on server, its id equals to job_id
                     size: rand.gen_range(100..=1000),
                 },
             };

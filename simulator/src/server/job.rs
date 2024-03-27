@@ -5,12 +5,14 @@ use dslab_compute::multicore::CoresDependency;
 #[derive(Serialize, Debug, Clone)]
 pub struct InputFileMetadata {
     pub id: u64,
+    pub workunit_id: u64,
     pub size: u64,
 }
 
 #[derive(Serialize, Debug, Clone)]
 pub struct OutputFileMetadata {
     pub id: u64,
+    pub result_id: u64,
     pub size: u64,
 }
 

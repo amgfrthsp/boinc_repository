@@ -105,6 +105,7 @@ impl Scheduler {
                         spec,
                         output_file: OutputFileMetadata {
                             id: result.id,
+                            result_id: result.id,
                             size: rand.gen_range(10..=100),
                         },
                     };

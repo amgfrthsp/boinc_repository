@@ -177,7 +177,7 @@ impl Server {
         self.clients.insert(client.id, client);
     }
 
-    fn on_job_spec(&mut self, spec: JobSpec, from: Id) {
+    fn on_job_spec(&mut self, mut spec: JobSpec, from: Id) {
         log_debug!(self.ctx, "job spec: {:?}", spec.clone());
 
         let workunit = WorkunitInfo {
@@ -193,6 +193,8 @@ impl Server {
             canonical_resultid: None,
             assimilate_state: AssimilateState::Init,
         };
+
+        spec.input_file.workunit_id = workunit.id;
 
         self.db.workunit.borrow_mut().insert(workunit.id, workunit);
 
