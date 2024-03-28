@@ -73,12 +73,18 @@ impl DataServer {
     pub fn delete_input_files(&mut self, workunit_id: u64) -> u32 {
         self.input_files.remove(&workunit_id);
         // add disk free
+
+        log_debug!(self.ctx, "deleted input files for workunit {}", workunit_id,);
+
         return 0;
     }
 
     pub fn delete_output_files(&mut self, result_id: u64) -> u32 {
         self.output_files.remove(&result_id);
         // add disk free
+
+        log_debug!(self.ctx, "deleted output files for result {}", result_id,);
+
         return 0;
     }
 }

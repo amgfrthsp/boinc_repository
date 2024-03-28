@@ -10,10 +10,12 @@ use dslab_storage::disk::DiskBuilder;
 use rand::prelude::*;
 use rand_pcg::{Lcg128Xsl64, Pcg64};
 use serde::Serialize;
+use std::fs::File;
 use std::rc::Rc;
 use std::{cell::RefCell, time::Instant};
 use sugars::{boxed, rc, refcell};
 
+use crate::server::file_deleter::FileDeleter;
 use crate::{
     client::client::Client,
     common::Start,
@@ -245,12 +247,21 @@ impl Simulator {
             .borrow_mut()
             .set_location(data_server_id, node_name);
 
+        // File deleter
+        let file_deleter_name = &format!("{}::file_deleter", server_name);
+        let file_deleter: Rc<RefCell<FileDeleter>> = rc!(refcell!(FileDeleter::new(
+            database.clone(),
+            data_server.clone(),
+            self.sim.borrow_mut().create_context(file_deleter_name)
+        )));
+
         let server = rc!(refcell!(Server::new(
             self.net.clone(),
             database.clone(),
             validator,
             assimilator,
             transitioner,
+            file_deleter,
             scheduler,
             data_server,
             self.sim.borrow_mut().create_context(server_name)

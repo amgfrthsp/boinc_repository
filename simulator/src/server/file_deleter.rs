@@ -2,8 +2,12 @@ use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
 use dslab_core::log_info;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
+
+use crate::server::job::FileDeleteState;
+
+use super::data_server::DataServer;
+use super::database::BoincDatabase;
 
 // TODO:
 // 1. Calculate delay based on output files size
@@ -12,14 +16,20 @@ use std::rc::Rc;
 pub struct FileDeleter {
     id: Id,
     db: Rc<BoincDatabase>,
+    data_server: Rc<RefCell<DataServer>>,
     ctx: SimulationContext,
 }
 
 impl FileDeleter {
-    pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
+    pub fn new(
+        db: Rc<BoincDatabase>,
+        data_server: Rc<RefCell<DataServer>>,
+        ctx: SimulationContext,
+    ) -> Self {
         return Self {
             id: ctx.id(),
             db,
+            data_server,
             ctx,
         };
     }
@@ -42,10 +52,10 @@ impl FileDeleter {
         for wu_id in workunits_to_process {
             let workunit = db_workunit_mut.get_mut(&wu_id).unwrap();
 
-            // let retval = data_server.delete_input_files(wu_id);
-            // if retval == 0 {
-            //     workunit.file_delete_state = FileDeleteState::Done;
-            // }
+            let retval = self.data_server.borrow_mut().delete_input_files(wu_id);
+            if retval == 0 {
+                workunit.file_delete_state = FileDeleteState::Done;
+            }
         }
 
         log_info!(self.ctx, "input file deletion finished");
@@ -64,10 +74,10 @@ impl FileDeleter {
         for result_id in results_to_process {
             let result = db_result_mut.get_mut(&result_id).unwrap();
 
-            // let retval = data_server.delete_output_files(result_id);
-            // if retval == 0 {
-            //     result.file_delete_state = FileDeleteState::Done;
-            // }
+            let retval = self.data_server.borrow_mut().delete_output_files(result_id);
+            if retval == 0 {
+                result.file_delete_state = FileDeleteState::Done;
+            }
         }
 
         log_info!(self.ctx, "output file deletion finished");

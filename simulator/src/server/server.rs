@@ -16,6 +16,7 @@ use dslab_network::Network;
 use super::assimilator::Assimilator;
 use super::data_server::DataServer;
 use super::database::BoincDatabase;
+use super::file_deleter::FileDeleter;
 use super::job::*;
 use super::scheduler::Scheduler;
 use super::transitioner::Transitioner;
@@ -48,6 +49,9 @@ pub struct ValidateResults {}
 
 #[derive(Clone, Serialize)]
 pub struct PurgeDB {}
+
+#[derive(Clone, Serialize)]
+pub struct DeleteFiles {}
 
 #[derive(Debug, PartialEq)]
 #[allow(dead_code)]
@@ -93,6 +97,7 @@ pub struct Server {
     validator: Rc<RefCell<Validator>>,
     assimilator: Rc<RefCell<Assimilator>>,
     transitioner: Rc<RefCell<Transitioner>>,
+    file_deleter: Rc<RefCell<FileDeleter>>,
     // scheduler
     scheduler: Rc<RefCell<Scheduler>>,
     // data server
@@ -114,6 +119,7 @@ impl Server {
         validator: Rc<RefCell<Validator>>,
         assimilator: Rc<RefCell<Assimilator>>,
         transitioner: Rc<RefCell<Transitioner>>,
+        file_deleter: Rc<RefCell<FileDeleter>>,
         scheduler: Rc<RefCell<Scheduler>>,
         data_server: Rc<RefCell<DataServer>>,
         ctx: SimulationContext,
@@ -127,6 +133,7 @@ impl Server {
             validator,
             assimilator,
             transitioner,
+            file_deleter,
             scheduler,
             data_server,
             cpus_total: 0,
@@ -147,6 +154,7 @@ impl Server {
         self.ctx.emit_self(ValidateResults {}, 50.);
         self.ctx.emit_self(AssimilateResults {}, 20.);
         self.ctx.emit_self(PurgeDB {}, 60.);
+        self.ctx.emit_self(DeleteFiles {}, 60.);
         if log_enabled!(Info) {
             self.ctx.emit_self(ReportStatus {}, 100.);
         }
@@ -275,6 +283,13 @@ impl Server {
         }
     }
 
+    fn delete_files(&mut self) {
+        self.file_deleter.borrow().delete_files();
+        if self.is_active() {
+            self.ctx.emit_self(DeleteFiles {}, 60.);
+        }
+    }
+
     fn purge_db(&mut self) {}
 
     // ******* utilities & statistics *********
@@ -361,14 +376,17 @@ impl EventHandler for Server {
             ValidateResults {} => {
                 self.validate_results();
             }
-            PurgeDB {} => {
-                self.purge_db();
-            }
             AssimilateResults {} => {
                 self.assimilate_results();
             }
             EnvokeTransitioner {} => {
                 self.envoke_transitioner();
+            }
+            PurgeDB {} => {
+                self.purge_db();
+            }
+            DeleteFiles {} => {
+                self.delete_files();
             }
         })
     }
