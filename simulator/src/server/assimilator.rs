@@ -1,6 +1,6 @@
 use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
-use dslab_core::log_info;
+use dslab_core::{log_debug, log_info};
 use std::rc::Rc;
 
 use crate::server::job::AssimilateState;
@@ -38,6 +38,13 @@ impl Assimilator {
 
         for wu_id in workunits_to_assimilate {
             let workunit = db_workunit_mut.get_mut(&wu_id).unwrap();
+            log_debug!(
+                self.ctx,
+                "workunit {} assimilate_state {:?} -> {:?}",
+                workunit.id,
+                workunit.assimilate_state,
+                AssimilateState::Done
+            );
             workunit.assimilate_state = AssimilateState::Done;
             assimilated_cnt += 1;
         }

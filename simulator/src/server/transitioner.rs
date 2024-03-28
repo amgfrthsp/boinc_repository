@@ -1,6 +1,7 @@
-use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
 use dslab_core::log_info;
+use dslab_core::{component::Id, log_debug};
+use std::borrow::Borrow;
 use std::rc::Rc;
 
 use crate::server::job::{
@@ -15,6 +16,7 @@ use super::{
 pub struct Transitioner {
     id: Id,
     db: Rc<BoincDatabase>,
+    next_result_id: u64,
     ctx: SimulationContext,
 }
 
@@ -23,11 +25,12 @@ impl Transitioner {
         return Self {
             id: ctx.id(),
             db,
+            next_result_id: 0,
             ctx,
         };
     }
 
-    pub fn transit(&self, current_time: f64) {
+    pub fn transit(&mut self, current_time: f64) {
         let workunits_to_transit =
             BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
                 self.ctx.time() >= wu.transition_time
@@ -57,6 +60,10 @@ impl Transitioner {
             self.update_file_deletion_state(workunit);
 
             workunit.transition_time = next_transition_time;
+
+            self.print_statistics_for_workunit(workunit);
+
+            self.next_result_id += new_results_needed_cnt;
         }
         log_info!(self.ctx, "transitioning finished");
     }
@@ -88,8 +95,18 @@ impl Transitioner {
                 }
                 ResultState::InProgress => {
                     if current_time >= result.report_deadline {
+                        log_debug!(
+                            self.ctx,
+                            "result {} server state {:?}, outcome {:?} -> ({:?}, {:?})",
+                            result.id,
+                            result.server_state,
+                            result.outcome,
+                            ResultState::Over,
+                            ResultOutcome::NoReply,
+                        );
                         result.server_state = ResultState::Over;
                         result.outcome = ResultOutcome::NoReply;
+                        result.validate_state = ValidateState::Invalid;
                     } else {
                         res_server_state_inprogress_cnt += 1;
                         *next_transition_time =
@@ -113,15 +130,6 @@ impl Transitioner {
             }
         }
 
-        log_info!(
-            self.ctx,
-            "workunit {}: UNSENT {} / IN PROGRESS {} / SUCCESS {}",
-            workunit.id,
-            res_server_state_unsent_cnt,
-            res_server_state_inprogress_cnt,
-            res_outcome_success_cnt
-        );
-
         // trigger validation if needed
         if need_validate && res_outcome_success_cnt >= workunit.min_quorum {
             workunit.need_validate = true;
@@ -142,14 +150,14 @@ impl Transitioner {
 
         let mut db_result_mut = self.db.result.borrow_mut();
 
-        for _ in 0..cnt {
+        for i in 0..cnt {
             let result = ResultInfo {
-                id: db_result_mut.len() as u64,
+                id: self.next_result_id + i,
                 workunit_id: workunit.id,
                 report_deadline: 0.,
                 server_state: ResultState::Unsent,
                 outcome: ResultOutcome::Undefined,
-                validate_state: ValidateState::Undefined,
+                validate_state: ValidateState::Init,
                 file_delete_state: FileDeleteState::Init,
             };
             workunit.result_ids.push(result.id);
@@ -191,9 +199,11 @@ impl Transitioner {
             } else {
                 if result.outcome == ResultOutcome::Success {
                     if result.validate_state == ValidateState::Init {
-                        delete_output_files = false;
                         delete_canonical_result_files = false;
                     }
+                }
+                if result.validate_state != ValidateState::Valid {
+                    delete_output_files = false;
                 }
             }
 
@@ -201,6 +211,14 @@ impl Transitioner {
                 && delete_output_files
                 && result.file_delete_state == FileDeleteState::Init
             {
+                log_debug!(
+                    self.ctx,
+                    "result {} file delete state {:?} -> {:?}; wu assimilate_state {:?}",
+                    result.id,
+                    result.file_delete_state,
+                    FileDeleteState::Ready,
+                    workunit.assimilate_state,
+                );
                 result.file_delete_state = FileDeleteState::Ready;
             }
         }
@@ -214,6 +232,14 @@ impl Transitioner {
                 .unwrap();
 
             if canonical_result.file_delete_state == FileDeleteState::Init {
+                log_debug!(
+                    self.ctx,
+                    "canonical result {} file delete state {:?} -> {:?}; wu assimilate_state {:?}",
+                    canonical_result.id,
+                    canonical_result.file_delete_state,
+                    FileDeleteState::Ready,
+                    workunit.assimilate_state,
+                );
                 canonical_result.file_delete_state = FileDeleteState::Ready;
             }
         }
@@ -222,7 +248,57 @@ impl Transitioner {
             && workunit.assimilate_state == AssimilateState::Done
             && workunit.file_delete_state == FileDeleteState::Init
         {
+            log_debug!(
+                self.ctx,
+                "workunit {} file delete state {:?} -> {:?}",
+                workunit.id,
+                workunit.file_delete_state,
+                FileDeleteState::Ready,
+            );
             workunit.file_delete_state = FileDeleteState::Ready;
+        }
+    }
+
+    fn print_statistics_for_workunit(&self, workunit: &WorkunitInfo) {
+        let db_result_mut = self.db.result.borrow_mut();
+        log_debug!(
+            self.ctx,
+            "\nworkunit {}: \n
+            need_validate: {}; canonical_result_id: {:?}\n
+            file_delete_state: {:?}; assimilate_state: {:?}\n",
+            workunit.id,
+            workunit.need_validate,
+            workunit.canonical_resultid,
+            workunit.file_delete_state,
+            workunit.assimilate_state
+        );
+        for result_id in &workunit.result_ids {
+            if !db_result_mut.contains_key(&result_id) {
+                log_debug!(
+                    self.ctx,
+                    "workunit {} result {}: deleted from database",
+                    workunit.id,
+                    result_id
+                );
+            } else {
+                let result = db_result_mut.borrow().get(result_id).unwrap();
+                log_debug!(
+                    self.ctx,
+                    "workunit {} result {}: server state {:?}; outcome {:?}",
+                    workunit.id,
+                    result_id,
+                    result.server_state,
+                    result.outcome,
+                );
+                log_debug!(
+                    self.ctx,
+                    "workunit {} result {}: validate_state {:?}; file_delete_state {:?}",
+                    workunit.id,
+                    result_id,
+                    result.validate_state,
+                    result.file_delete_state,
+                );
+            }
         }
     }
 }

@@ -1,6 +1,6 @@
-use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
 use dslab_core::log_info;
+use dslab_core::{component::Id, log_debug};
 use std::rc::Rc;
 
 use crate::server::job::{
@@ -65,10 +65,26 @@ impl Validator {
                         continue;
                     }
                     if canonical_result_delete_state == FileDeleteState::Done {
+                        log_debug!(
+                            self.ctx,
+                            "result {} (outcome {:?}, validate_state {:?}) -> ({:?}, {:?})",
+                            result.id,
+                            result.outcome,
+                            result.validate_state,
+                            ResultOutcome::ValidateError,
+                            ValidateState::Invalid,
+                        );
                         result.outcome = ResultOutcome::ValidateError;
                         result.validate_state = ValidateState::Invalid;
                     } else {
                         // todo: add random & grant credit
+                        log_debug!(
+                            self.ctx,
+                            "result {} validate_state {:?} -> {:?}",
+                            result.id,
+                            result.validate_state,
+                            ValidateState::Valid,
+                        );
                         result.validate_state = ValidateState::Valid;
                     }
                 }
@@ -90,17 +106,39 @@ impl Validator {
                     // todo: check_set function implement according to boinc
                     for result_id in viable_results {
                         let result = db_result_mut.get_mut(&result_id).unwrap();
+                        log_debug!(
+                            self.ctx,
+                            "result {} validate_state {:?} -> {:?}",
+                            result.id,
+                            result.validate_state,
+                            ValidateState::Valid,
+                        );
                         result.validate_state = ValidateState::Valid;
                         canonical_result_id = Some(result_id);
                     }
 
                     if canonical_result_id.is_some() {
+                        log_debug!(
+                            self.ctx,
+                            "found canonical result {} for workunit {}",
+                            canonical_result_id.unwrap(),
+                            workunit.id,
+                        );
                         // grant credit
                         workunit.canonical_resultid = canonical_result_id;
                         workunit.assimilate_state = AssimilateState::Ready;
                         for result_id in &workunit.result_ids {
                             let result = db_result_mut.get_mut(&result_id).unwrap();
                             if result.server_state == ResultState::Unsent {
+                                log_debug!(
+                                    self.ctx,
+                                    "result {} (server_state {:?}, outcome {:?}) -> ({:?}, {:?})",
+                                    result.id,
+                                    result.server_state,
+                                    result.outcome,
+                                    ResultState::Over,
+                                    ResultOutcome::DidntNeed,
+                                );
                                 result.server_state = ResultState::Over;
                                 result.outcome = ResultOutcome::DidntNeed;
                             }

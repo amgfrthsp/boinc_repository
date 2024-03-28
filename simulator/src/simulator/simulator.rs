@@ -10,11 +10,11 @@ use dslab_storage::disk::DiskBuilder;
 use rand::prelude::*;
 use rand_pcg::{Lcg128Xsl64, Pcg64};
 use serde::Serialize;
-use std::fs::File;
 use std::rc::Rc;
 use std::{cell::RefCell, time::Instant};
 use sugars::{boxed, rc, refcell};
 
+use crate::server::db_purger::DBPurger;
 use crate::server::file_deleter::FileDeleter;
 use crate::{
     client::client::Client,
@@ -139,6 +139,7 @@ impl Simulator {
         let job_generator_name = &format!("{}::job_generator", node_name);
 
         let job_generator = rc!(refcell!(JobGenerator::new(
+            self.rand.clone(),
             self.net.clone(),
             self.sim.borrow_mut().create_context(job_generator_name),
         )));
@@ -207,9 +208,17 @@ impl Simulator {
             self.sim.borrow_mut().create_context(transitioner_name)
         )));
 
+        // Database purger
+        let db_purger_name = &format!("{}::db_purger", server_name);
+        let db_purger: Rc<RefCell<DBPurger>> = rc!(refcell!(DBPurger::new(
+            database.clone(),
+            self.sim.borrow_mut().create_context(db_purger_name)
+        )));
+
         // Scheduler
         let scheduler_name = &format!("{}::scheduler", server_name);
         let scheduler = rc!(refcell!(Scheduler::new(
+            self.rand.clone(),
             self.net.clone(),
             database.clone(),
             self.sim.borrow_mut().create_context(scheduler_name)
@@ -262,6 +271,7 @@ impl Simulator {
             assimilator,
             transitioner,
             file_deleter,
+            db_purger,
             scheduler,
             data_server,
             self.sim.borrow_mut().create_context(server_name)

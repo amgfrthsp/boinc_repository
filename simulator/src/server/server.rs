@@ -16,6 +16,7 @@ use dslab_network::Network;
 use super::assimilator::Assimilator;
 use super::data_server::DataServer;
 use super::database::BoincDatabase;
+use super::db_purger::DBPurger;
 use super::file_deleter::FileDeleter;
 use super::job::*;
 use super::scheduler::Scheduler;
@@ -98,6 +99,7 @@ pub struct Server {
     assimilator: Rc<RefCell<Assimilator>>,
     transitioner: Rc<RefCell<Transitioner>>,
     file_deleter: Rc<RefCell<FileDeleter>>,
+    db_purger: Rc<RefCell<DBPurger>>,
     // scheduler
     scheduler: Rc<RefCell<Scheduler>>,
     // data server
@@ -120,6 +122,7 @@ impl Server {
         assimilator: Rc<RefCell<Assimilator>>,
         transitioner: Rc<RefCell<Transitioner>>,
         file_deleter: Rc<RefCell<FileDeleter>>,
+        db_purger: Rc<RefCell<DBPurger>>,
         scheduler: Rc<RefCell<Scheduler>>,
         data_server: Rc<RefCell<DataServer>>,
         ctx: SimulationContext,
@@ -134,6 +137,7 @@ impl Server {
             assimilator,
             transitioner,
             file_deleter,
+            db_purger,
             scheduler,
             data_server,
             cpus_total: 0,
@@ -176,7 +180,7 @@ impl Server {
             memory_total,
             memory_available: memory_total,
         };
-        log_debug!(self.ctx, "registered client: {:?}", client);
+        log_debug!(self.ctx, "registered client {:?}", client);
         self.cpus_total += client.cpus_total;
         self.cpus_available += client.cpus_available;
         self.memory_total += client.memory_total;
@@ -186,16 +190,16 @@ impl Server {
     }
 
     fn on_job_spec(&mut self, mut spec: JobSpec, from: Id) {
-        log_debug!(self.ctx, "job spec: {:?}", spec.clone());
+        log_debug!(self.ctx, "job spec {:?}", spec.clone());
 
         let workunit = WorkunitInfo {
             id: spec.id,
             spec: spec.clone(),
             result_ids: Vec::new(),
             transition_time: self.ctx.time(),
-            delay_bound: 250.,
+            delay_bound: 1000.,
             min_quorum: 2,
-            target_nresults: 3,
+            target_nresults: 2,
             need_validate: false,
             file_delete_state: FileDeleteState::Init,
             canonical_resultid: None,
@@ -223,7 +227,16 @@ impl Server {
     }
 
     fn on_result_completed(&mut self, result_id: u64, client_id: Id) {
-        log_debug!(self.ctx, "completed result: {:?}", result_id);
+        if !self.db.result.borrow().contains_key(&result_id) {
+            log_debug!(
+                self.ctx,
+                "received result {:?} too late, it is already deleted ",
+                result_id
+            );
+            return;
+        }
+
+        log_debug!(self.ctx, "completed result {:?}", result_id);
 
         let mut db_workunit_mut = self.db.workunit.borrow_mut();
         let mut db_result_mut = self.db.result.borrow_mut();
@@ -263,7 +276,7 @@ impl Server {
     }
 
     fn envoke_transitioner(&mut self) {
-        self.transitioner.borrow().transit(self.ctx.time());
+        self.transitioner.borrow_mut().transit(self.ctx.time());
         if self.is_active() {
             self.ctx.emit_self(EnvokeTransitioner {}, 3.);
         }
@@ -290,7 +303,12 @@ impl Server {
         }
     }
 
-    fn purge_db(&mut self) {}
+    fn purge_db(&mut self) {
+        self.db_purger.borrow().purge_database();
+        if self.is_active() {
+            self.ctx.emit_self(PurgeDB {}, 100.);
+        }
+    }
 
     // ******* utilities & statistics *********
 

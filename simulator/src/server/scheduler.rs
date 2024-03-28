@@ -1,10 +1,10 @@
 use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
-use dslab_core::{log_debug, log_info, log_trace, Event, EventHandler};
+use dslab_core::{log_debug, log_info, Event, EventHandler};
 use dslab_network::Network;
 use priority_queue::PriorityQueue;
 use rand::prelude::*;
-use rand_pcg::Pcg64;
+use rand_pcg::Lcg128Xsl64;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -20,15 +20,22 @@ use super::server::{ClientInfo, ClientScore};
 
 pub struct Scheduler {
     id: Id,
+    rand: Lcg128Xsl64,
     net: Rc<RefCell<Network>>,
     db: Rc<BoincDatabase>,
     ctx: SimulationContext,
 }
 
 impl Scheduler {
-    pub fn new(net: Rc<RefCell<Network>>, db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
+    pub fn new(
+        rand: Lcg128Xsl64,
+        net: Rc<RefCell<Network>>,
+        db: Rc<BoincDatabase>,
+        ctx: SimulationContext,
+    ) -> Self {
         return Self {
             id: ctx.id(),
+            rand,
             net,
             db,
             ctx,
@@ -36,15 +43,13 @@ impl Scheduler {
     }
 
     pub fn schedule(
-        &self,
+        &mut self,
         cpus_available: &mut u32,
         memory_available: &mut u64,
         clients: &mut BTreeMap<Id, ClientInfo>,
         clients_queue: &mut PriorityQueue<Id, ClientScore>,
         current_time: f64,
     ) {
-        let mut rand = Pcg64::seed_from_u64(42);
-
         let results_to_schedule =
             BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
                 result.server_state == ResultState::Unsent
@@ -106,7 +111,7 @@ impl Scheduler {
                         output_file: OutputFileMetadata {
                             id: result.id,
                             result_id: result.id,
-                            size: rand.gen_range(10..=100),
+                            size: self.rand.gen_range(10..=100),
                         },
                     };
                     self.net

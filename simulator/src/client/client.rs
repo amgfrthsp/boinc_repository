@@ -109,7 +109,7 @@ impl Client {
             output_file: req.output_file,
             state: TaskState::Downloading,
         };
-        log_debug!(self.ctx, "task spec: {:?}", task.spec);
+        log_debug!(self.ctx, "task spec {:?}", task.spec);
         let transfer_id = self.net.borrow_mut().transfer_data(
             self.data_server_id.unwrap(),
             self.id,
@@ -126,7 +126,7 @@ impl Client {
         if self.downloads.contains_key(&transfer_id) {
             let task_id = self.downloads.remove(&transfer_id).unwrap();
             let task = self.tasks.get_mut(&task_id).unwrap();
-            log_debug!(self.ctx, "downloaded input data for task: {}", task_id);
+            log_debug!(self.ctx, "downloaded input data for task {}", task_id);
             task.state = TaskState::Reading;
             let read_id = self
                 .disk
@@ -137,7 +137,7 @@ impl Client {
         } else if self.uploads.contains_key(&transfer_id) {
             let task_id = self.uploads.remove(&transfer_id).unwrap();
             let mut task = self.tasks.remove(&task_id).unwrap();
-            log_debug!(self.ctx, "uploaded output data for task: {}", task_id);
+            log_debug!(self.ctx, "uploaded output data for task {}", task_id);
             task.state = TaskState::Completed;
             self.disk
                 .borrow_mut()
@@ -161,7 +161,7 @@ impl Client {
 
     fn on_data_read_completed(&mut self, request_id: u64) {
         let task_id = self.reads.remove(&request_id).unwrap();
-        log_debug!(self.ctx, "read input data for task: {}", task_id);
+        log_debug!(self.ctx, "read input data for task {}", task_id);
         let task = self.tasks.get_mut(&task_id).unwrap();
         task.state = TaskState::Running;
         let comp_id = self.compute.borrow_mut().run(
@@ -177,12 +177,12 @@ impl Client {
 
     fn on_comp_started(&mut self, comp_id: u64) {
         let task_id = self.computations.get(&comp_id).unwrap();
-        log_debug!(self.ctx, "started execution of task: {}", task_id);
+        log_debug!(self.ctx, "started execution of task {}", task_id);
     }
 
     fn on_comp_finished(&mut self, comp_id: u64) {
         let task_id = self.computations.remove(&comp_id).unwrap();
-        log_debug!(self.ctx, "completed execution of task: {}", task_id);
+        log_debug!(self.ctx, "completed execution of task {}", task_id);
         let task = self.tasks.get_mut(&task_id).unwrap();
         task.state = TaskState::Writing;
         let write_id = self.disk.borrow_mut().write(task.output_file.size, self.id);
@@ -192,7 +192,7 @@ impl Client {
     // Uploading results of completed tasks to server
     fn on_data_write_completed(&mut self, request_id: u64) {
         let task_id = self.writes.remove(&request_id).unwrap();
-        log_debug!(self.ctx, "wrote output data for task: {}", task_id);
+        log_debug!(self.ctx, "wrote output data for task {}", task_id);
         let task = self.tasks.get_mut(&task_id).unwrap();
         task.state = TaskState::Uploading;
         let transfer_id = self.net.borrow_mut().transfer_data(

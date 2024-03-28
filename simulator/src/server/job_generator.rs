@@ -2,7 +2,7 @@ use dslab_compute::multicore::CoresDependency;
 use log::log_enabled;
 use log::Level::Info;
 use rand::prelude::*;
-use rand_pcg::Pcg64;
+use rand_pcg::Lcg128Xsl64;
 use serde::Serialize;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -14,12 +14,12 @@ use dslab_core::handler::EventHandler;
 use dslab_core::{cast, log_debug};
 use dslab_network::Network;
 
-use super::job::{InputFileMetadata, JobSpec, OutputFileMetadata};
+use super::job::{InputFileMetadata, JobSpec};
 use crate::common::Start;
 use crate::simulator::simulator::SetServerIds;
 
-const BATCH_SIZE: u32 = 5;
-const JOBS_AMOUNT_TOTAL: u32 = 20;
+const BATCH_SIZE: u32 = 3;
+const JOBS_AMOUNT_TOTAL: u32 = 5;
 
 #[derive(Clone, Serialize)]
 pub struct ReportStatus {}
@@ -29,6 +29,7 @@ pub struct GenerateJobs {}
 
 pub struct JobGenerator {
     id: Id,
+    rand: Lcg128Xsl64,
     net: Rc<RefCell<Network>>,
     server_id: Option<Id>,
     jobs_generated: u32,
@@ -36,9 +37,10 @@ pub struct JobGenerator {
 }
 
 impl JobGenerator {
-    pub fn new(net: Rc<RefCell<Network>>, ctx: SimulationContext) -> Self {
+    pub fn new(rand: Lcg128Xsl64, net: Rc<RefCell<Network>>, ctx: SimulationContext) -> Self {
         Self {
             id: ctx.id(),
+            rand,
             net,
             server_id: None,
             jobs_generated: 0,
@@ -58,20 +60,19 @@ impl JobGenerator {
         if self.server_id.is_none() {
             return;
         }
-        let mut rand = Pcg64::seed_from_u64(42);
         for i in 0..BATCH_SIZE {
             let job_id = (self.jobs_generated + i) as u64;
             let job = JobSpec {
                 id: job_id,
-                flops: rand.gen_range(100..=1000) as f64,
-                memory: rand.gen_range(1..=8) * 128,
+                flops: self.rand.gen_range(100..=1000) as f64,
+                memory: self.rand.gen_range(1..=8) * 128,
                 min_cores: 1,
                 max_cores: 1,
                 cores_dependency: CoresDependency::Linear,
                 input_file: InputFileMetadata {
                     id: job_id,
                     workunit_id: job_id, // when workunit is created on server, its id equals to job_id
-                    size: rand.gen_range(100..=1000),
+                    size: self.rand.gen_range(100..=1000),
                 },
             };
             self.net
