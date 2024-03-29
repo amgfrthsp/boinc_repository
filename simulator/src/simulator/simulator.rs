@@ -15,6 +15,7 @@ use std::{cell::RefCell, time::Instant};
 use sugars::{boxed, rc, refcell};
 
 use crate::server::db_purger::DBPurger;
+use crate::server::feeder::{Feeder, SharedMemoryItem, SharedMemoryItemState};
 use crate::server::file_deleter::FileDeleter;
 use crate::{
     client::client::Client,
@@ -215,6 +216,23 @@ impl Simulator {
             self.sim.borrow_mut().create_context(db_purger_name)
         )));
 
+        // Feeder
+        let empty_slot = SharedMemoryItem {
+            state: SharedMemoryItemState::Empty,
+            result_id: 0,
+            workunit_id: 0,
+        };
+        let shared_memory_size = 10;
+        let shared_memory: Rc<RefCell<Vec<SharedMemoryItem>>> =
+            rc!(refcell!(vec![empty_slot; shared_memory_size]));
+
+        let feeder_name = &format!("{}::feeder", server_name);
+        let feeder: Rc<RefCell<Feeder>> = rc!(refcell!(Feeder::new(
+            shared_memory.clone(),
+            database.clone(),
+            self.sim.borrow_mut().create_context(feeder_name)
+        )));
+
         // Scheduler
         let scheduler_name = &format!("{}::scheduler", server_name);
         let scheduler = rc!(refcell!(Scheduler::new(
@@ -270,6 +288,7 @@ impl Simulator {
             validator,
             assimilator,
             transitioner,
+            feeder,
             file_deleter,
             db_purger,
             scheduler,

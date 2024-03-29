@@ -17,6 +17,7 @@ use super::assimilator::Assimilator;
 use super::data_server::DataServer;
 use super::database::BoincDatabase;
 use super::db_purger::DBPurger;
+use super::feeder::Feeder;
 use super::file_deleter::FileDeleter;
 use super::job::*;
 use super::scheduler::Scheduler;
@@ -36,6 +37,9 @@ pub struct ScheduleJobs {}
 
 #[derive(Clone, Serialize)]
 pub struct EnvokeTransitioner {}
+
+#[derive(Clone, Serialize)]
+pub struct EnvokeFeeder {}
 
 #[derive(Clone, Serialize)]
 pub struct AssimilateResults {}
@@ -98,6 +102,7 @@ pub struct Server {
     validator: Rc<RefCell<Validator>>,
     assimilator: Rc<RefCell<Assimilator>>,
     transitioner: Rc<RefCell<Transitioner>>,
+    feeder: Rc<RefCell<Feeder>>,
     file_deleter: Rc<RefCell<FileDeleter>>,
     db_purger: Rc<RefCell<DBPurger>>,
     // scheduler
@@ -121,6 +126,7 @@ impl Server {
         validator: Rc<RefCell<Validator>>,
         assimilator: Rc<RefCell<Assimilator>>,
         transitioner: Rc<RefCell<Transitioner>>,
+        feeder: Rc<RefCell<Feeder>>,
         file_deleter: Rc<RefCell<FileDeleter>>,
         db_purger: Rc<RefCell<DBPurger>>,
         scheduler: Rc<RefCell<Scheduler>>,
@@ -136,6 +142,7 @@ impl Server {
             validator,
             assimilator,
             transitioner,
+            feeder,
             file_deleter,
             db_purger,
             scheduler,
@@ -157,6 +164,7 @@ impl Server {
         self.ctx.emit_self(EnvokeTransitioner {}, 3.);
         self.ctx.emit_self(ValidateResults {}, 50.);
         self.ctx.emit_self(AssimilateResults {}, 20.);
+        self.ctx.emit_self(EnvokeFeeder {}, 60.);
         self.ctx.emit_self(PurgeDB {}, 60.);
         self.ctx.emit_self(DeleteFiles {}, 60.);
         if log_enabled!(Info) {
@@ -259,6 +267,13 @@ impl Server {
 
     // ******* daemons **********
 
+    fn envoke_feeder(&mut self) {
+        self.feeder.borrow_mut().scan_work_array();
+        if self.is_active() {
+            self.ctx.emit_self(EnvokeFeeder {}, 60.);
+        }
+    }
+
     fn schedule_results(&mut self) {
         self.scheduler.borrow_mut().schedule(
             &mut self.cpus_available,
@@ -278,7 +293,7 @@ impl Server {
     fn envoke_transitioner(&mut self) {
         self.transitioner.borrow_mut().transit(self.ctx.time());
         if self.is_active() {
-            self.ctx.emit_self(EnvokeTransitioner {}, 3.);
+            self.ctx.emit_self(EnvokeTransitioner {}, 10.);
         }
     }
 
@@ -399,6 +414,9 @@ impl EventHandler for Server {
             }
             EnvokeTransitioner {} => {
                 self.envoke_transitioner();
+            }
+            EnvokeFeeder {} => {
+                self.envoke_feeder();
             }
             PurgeDB {} => {
                 self.purge_db();

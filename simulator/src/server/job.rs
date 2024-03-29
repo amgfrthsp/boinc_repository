@@ -108,4 +108,5 @@ pub struct ResultInfo {
     pub(crate) outcome: ResultOutcome,
     pub(crate) validate_state: ValidateState,
     pub(crate) file_delete_state: FileDeleteState,
+    pub(crate) in_shared_mem: bool,
 }

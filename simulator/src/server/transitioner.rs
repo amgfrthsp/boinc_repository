@@ -159,6 +159,7 @@ impl Transitioner {
                 outcome: ResultOutcome::Undefined,
                 validate_state: ValidateState::Init,
                 file_delete_state: FileDeleteState::Init,
+                in_shared_mem: false,
             };
             workunit.result_ids.push(result.id);
             db_result_mut.insert(result.id, result);
@@ -263,12 +264,15 @@ impl Transitioner {
         let db_result_mut = self.db.result.borrow_mut();
         log_debug!(
             self.ctx,
-            "\nworkunit {}: \n
-            need_validate: {}; canonical_result_id: {:?}\n
-            file_delete_state: {:?}; assimilate_state: {:?}\n",
+            "workunit {}: need_validate: {}; canonical_result_id: {:?}",
             workunit.id,
             workunit.need_validate,
-            workunit.canonical_resultid,
+            workunit.canonical_resultid
+        );
+        log_debug!(
+            self.ctx,
+            "workunit {}: file_delete_state: {:?}; assimilate_state: {:?}",
+            workunit.id,
             workunit.file_delete_state,
             workunit.assimilate_state
         );
