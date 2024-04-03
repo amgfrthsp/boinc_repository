@@ -17,7 +17,7 @@ pub struct Assimilator {
 
 impl Assimilator {
     pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
-        return Self { db, ctx };
+        Self { db, ctx }
     }
 
     pub fn assimilate(&self) {

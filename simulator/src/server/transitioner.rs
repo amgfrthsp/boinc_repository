@@ -22,11 +22,11 @@ pub struct Transitioner {
 
 impl Transitioner {
     pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
-        return Self {
+        Self {
             db,
             next_result_id: 0,
             ctx,
-        };
+        }
     }
 
     pub fn transit(&mut self, current_time: f64) {
@@ -112,20 +112,16 @@ impl Transitioner {
                             f64::min(*next_transition_time, result.report_deadline);
                     }
                 }
-                ResultState::Over => match result.outcome {
-                    ResultOutcome::Success => {
-                        match result.validate_state {
-                            ValidateState::Init => {
-                                need_validate = true;
-                            }
-                            _ => {}
+                ResultState::Over => {
+                    if result.outcome == ResultOutcome::Success {
+                        if result.validate_state == ValidateState::Init {
+                            need_validate = true;
                         }
                         if result.validate_state != ValidateState::Invalid {
                             res_outcome_success_cnt += 1;
                         }
                     }
-                    _ => {}
-                },
+                }
             }
         }
 
@@ -276,7 +272,7 @@ impl Transitioner {
             workunit.assimilate_state
         );
         for result_id in &workunit.result_ids {
-            if !db_result_mut.contains_key(&result_id) {
+            if !db_result_mut.contains_key(result_id) {
                 log_debug!(
                     self.ctx,
                     "workunit {} result {}: deleted from database",

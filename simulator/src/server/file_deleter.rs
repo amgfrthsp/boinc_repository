@@ -24,11 +24,11 @@ impl FileDeleter {
         data_server: Rc<RefCell<DataServer>>,
         ctx: SimulationContext,
     ) -> Self {
-        return Self {
+        Self {
             db,
             data_server,
             ctx,
-        };
+        }
     }
 
     pub fn delete_files(&self) {

@@ -37,14 +37,14 @@ impl DataServer {
         ctx.register_key_getter_for::<DataWriteFailed>(|e| e.request_id);
         ctx.register_key_getter_for::<DownloadInputFileCompleted>(|e| e.workunit_id);
 
-        return Self {
+        Self {
             server_id: 0,
             net,
             disk,
             input_files: RefCell::new(HashMap::new()),
             output_files: HashMap::new(),
             ctx,
-        };
+        }
     }
 
     pub fn set_server_id(&mut self, server_id: Id) {
@@ -63,12 +63,8 @@ impl DataServer {
             self.process_disk_write(input_file)
         );
 
-        self.ctx.emit_now(
-            DownloadInputFileCompleted {
-                workunit_id: workunit_id,
-            },
-            self.server_id,
-        );
+        self.ctx
+            .emit_now(DownloadInputFileCompleted { workunit_id }, self.server_id);
     }
 
     async fn process_network_download(&self, input_file: InputFileMetadata, from: Id) {

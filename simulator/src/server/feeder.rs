@@ -32,18 +32,18 @@ impl Feeder {
         db: Rc<BoincDatabase>,
         ctx: SimulationContext,
     ) -> Self {
-        return Self {
+        Self {
             shared_memory,
             db,
             ctx,
-        };
+        }
     }
 
     pub fn scan_work_array(&self) {
         log_info!(self.ctx, "feeder scanning started");
         let mut vacant_results =
             BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
-                result.in_shared_mem == false
+                !result.in_shared_mem
             });
 
         let mut db_result_mut = self.db.result.borrow_mut();

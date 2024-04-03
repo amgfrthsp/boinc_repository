@@ -46,7 +46,7 @@ pub struct AssimilateResults {}
 
 #[derive(Clone, Serialize)]
 pub struct AssimilationDone {
-    pub(crate) workunit_id: WorkunitId,
+    pub workunit_id: WorkunitId,
 }
 
 #[derive(Clone, Serialize)]
@@ -71,10 +71,8 @@ pub struct ClientInfo {
     #[allow(dead_code)]
     state: ClientState,
     speed: f64,
-    #[allow(dead_code)]
     cpus_total: u32,
     pub cpus_available: u32,
-    #[allow(dead_code)]
     memory_total: u64,
     pub memory_available: u64,
 }

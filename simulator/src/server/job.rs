@@ -92,29 +92,29 @@ pub type WorkunitId = u64;
 
 #[derive(Debug, Clone)]
 pub struct WorkunitInfo {
-    pub(crate) id: WorkunitId,
-    pub(crate) spec: JobSpec,
-    pub(crate) result_ids: Vec<ResultId>,
-    pub(crate) transition_time: f64,
-    pub(crate) delay_bound: f64,
-    pub(crate) min_quorum: u64,
-    pub(crate) target_nresults: u64,
-    pub(crate) need_validate: bool,
-    pub(crate) file_delete_state: FileDeleteState,
-    pub(crate) canonical_resultid: Option<ResultId>,
-    pub(crate) assimilate_state: AssimilateState,
+    pub id: WorkunitId,
+    pub spec: JobSpec,
+    pub result_ids: Vec<ResultId>,
+    pub transition_time: f64,
+    pub delay_bound: f64,
+    pub min_quorum: u64,
+    pub target_nresults: u64,
+    pub need_validate: bool,
+    pub file_delete_state: FileDeleteState,
+    pub canonical_resultid: Option<ResultId>,
+    pub assimilate_state: AssimilateState,
 }
 
 pub type ResultId = u64;
 
 #[derive(Debug, Clone)]
 pub struct ResultInfo {
-    pub(crate) id: ResultId,
-    pub(crate) workunit_id: WorkunitId,
-    pub(crate) report_deadline: f64,
-    pub(crate) server_state: ResultState,
-    pub(crate) outcome: ResultOutcome,
-    pub(crate) validate_state: ValidateState,
-    pub(crate) file_delete_state: FileDeleteState,
-    pub(crate) in_shared_mem: bool,
+    pub id: ResultId,
+    pub workunit_id: WorkunitId,
+    pub report_deadline: f64,
+    pub server_state: ResultState,
+    pub outcome: ResultOutcome,
+    pub validate_state: ValidateState,
+    pub file_delete_state: FileDeleteState,
+    pub in_shared_mem: bool,
 }

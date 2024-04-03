@@ -16,7 +16,7 @@ pub struct DBPurger {
 
 impl DBPurger {
     pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
-        return Self { db, ctx };
+        Self { db, ctx }
     }
 
     pub fn purge_database(&self) {
@@ -37,7 +37,7 @@ impl DBPurger {
                 if !db_result_mut.contains_key(result_id) {
                     continue;
                 }
-                let result = db_result_mut.get_mut(&result_id).unwrap();
+                let result = db_result_mut.get(result_id).unwrap();
                 if result.file_delete_state != FileDeleteState::Done {
                     all_results_deleted = false;
                 } else {

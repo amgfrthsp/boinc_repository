@@ -57,12 +57,12 @@ impl Simulator {
 
         let network_model: Box<dyn NetworkModel> = if use_shared_network {
             boxed!(SharedBandwidthNetworkModel::new(
-                network_bandwidth as f64,
+                network_bandwidth,
                 network_latency
             ))
         } else {
             boxed!(ConstantBandwidthNetworkModel::new(
-                network_bandwidth as f64,
+                network_bandwidth,
                 network_latency
             ))
         };
@@ -75,7 +75,7 @@ impl Simulator {
         // context for starting job generator, server and clients
         let ctx = sim.create_context("ctx");
 
-        return Self {
+        Self {
             sim: rc!(refcell!(sim)),
             net: network,
             rand,
@@ -85,7 +85,7 @@ impl Simulator {
             data_server_id: None,
             client_ids: Vec::new(),
             ctx,
-        };
+        }
     }
 
     pub fn run(&mut self) {
@@ -175,7 +175,7 @@ impl Simulator {
         self.net.borrow_mut().add_node(
             node_name,
             Box::new(SharedBandwidthNetworkModel::new(
-                local_bandwidth as f64,
+                local_bandwidth,
                 local_latency,
             )),
         );
@@ -328,7 +328,7 @@ impl Simulator {
         self.net.borrow_mut().add_node(
             node_name,
             Box::new(SharedBandwidthNetworkModel::new(
-                local_bandwidth as f64,
+                local_bandwidth,
                 local_latency,
             )),
         );

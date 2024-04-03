@@ -20,7 +20,7 @@ pub enum TaskState {
 
 #[derive(Debug, Clone)]
 pub struct TaskInfo {
-    pub(crate) spec: TaskSpec,
-    pub(crate) output_file: OutputFileMetadata,
-    pub(crate) state: TaskState,
+    pub spec: TaskSpec,
+    pub output_file: OutputFileMetadata,
+    pub state: TaskState,
 }

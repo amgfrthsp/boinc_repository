@@ -25,14 +25,14 @@ pub struct TasksInquiry {}
 
 #[derive(Clone, Serialize)]
 pub struct ClientRegister {
-    pub(crate) speed: f64,
-    pub(crate) cpus_total: u32,
-    pub(crate) memory_total: u64,
+    pub speed: f64,
+    pub cpus_total: u32,
+    pub memory_total: u64,
 }
 
 #[derive(Clone, Serialize)]
 pub struct TaskCompleted {
-    pub(crate) id: u64,
+    pub id: u64,
 }
 
 // on task_request ->

@@ -9,10 +9,10 @@ pub struct BoincDatabase {
 
 impl BoincDatabase {
     pub fn new() -> Self {
-        return Self {
+        Self {
             workunit: refcell!(HashMap::new()),
             result: refcell!(HashMap::new()),
-        };
+        }
     }
 
     pub fn get_map_keys_by_predicate<K: Clone, V, F>(hm: &HashMap<K, V>, predicate: F) -> Vec<K>

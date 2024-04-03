@@ -27,13 +27,13 @@ pub struct Validator {
 
 impl Validator {
     pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
-        return Self { db, ctx };
+        Self { db, ctx }
     }
 
     pub fn validate(&self) {
         let workunits_to_validate =
             BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
-                wu.need_validate == true
+                wu.need_validate
             });
         log_info!(self.ctx, "validation started");
 
@@ -51,7 +51,7 @@ impl Validator {
                     .unwrap()
                     .file_delete_state;
                 for result_id in &workunit.result_ids {
-                    let result = db_result_mut.get_mut(&result_id).unwrap();
+                    let result = db_result_mut.get_mut(result_id).unwrap();
                     if !(result.server_state == ResultState::Over
                         && result.outcome == ResultOutcome::Success
                         && (result.validate_state == ValidateState::Init
@@ -86,7 +86,7 @@ impl Validator {
             } else {
                 let mut viable_results = vec![];
                 for result_id in &workunit.result_ids {
-                    let result = db_result_mut.get_mut(&result_id).unwrap();
+                    let result = db_result_mut.get_mut(result_id).unwrap();
                     if !(result.server_state == ResultState::Over
                         && result.outcome == ResultOutcome::Success
                         && result.validate_state != ValidateState::Invalid)
@@ -123,7 +123,7 @@ impl Validator {
                         workunit.canonical_resultid = canonical_result_id;
                         workunit.assimilate_state = AssimilateState::Ready;
                         for result_id in &workunit.result_ids {
-                            let result = db_result_mut.get_mut(&result_id).unwrap();
+                            let result = db_result_mut.get_mut(result_id).unwrap();
                             if result.server_state == ResultState::Unsent {
                                 log_debug!(
                                     self.ctx,

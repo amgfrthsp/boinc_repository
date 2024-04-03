@@ -33,13 +33,13 @@ impl Scheduler {
         db: Rc<BoincDatabase>,
         ctx: SimulationContext,
     ) -> Self {
-        return Self {
+        Self {
             id: ctx.id(),
             rand,
             net,
             db,
             ctx,
-        };
+        }
     }
 
     pub fn schedule(
