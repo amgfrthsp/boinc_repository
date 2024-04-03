@@ -97,12 +97,12 @@ pub struct Server {
     // db
     db: Rc<BoincDatabase>,
     //daemons
-    validator: Rc<RefCell<Validator>>,
-    assimilator: Rc<RefCell<Assimilator>>,
-    transitioner: Rc<RefCell<Transitioner>>,
-    feeder: Rc<RefCell<Feeder>>,
-    file_deleter: Rc<RefCell<FileDeleter>>,
-    db_purger: Rc<RefCell<DBPurger>>,
+    validator: Validator,
+    assimilator: Assimilator,
+    transitioner: Transitioner,
+    feeder: Feeder,
+    file_deleter: FileDeleter,
+    db_purger: DBPurger,
     // scheduler
     scheduler: Rc<RefCell<Scheduler>>,
     // data server
@@ -120,12 +120,12 @@ pub struct Server {
 impl Server {
     pub fn new(
         database: Rc<BoincDatabase>,
-        validator: Rc<RefCell<Validator>>,
-        assimilator: Rc<RefCell<Assimilator>>,
-        transitioner: Rc<RefCell<Transitioner>>,
-        feeder: Rc<RefCell<Feeder>>,
-        file_deleter: Rc<RefCell<FileDeleter>>,
-        db_purger: Rc<RefCell<DBPurger>>,
+        validator: Validator,
+        assimilator: Assimilator,
+        transitioner: Transitioner,
+        feeder: Feeder,
+        file_deleter: FileDeleter,
+        db_purger: DBPurger,
         scheduler: Rc<RefCell<Scheduler>>,
         data_server: Rc<RefCell<DataServer>>,
         ctx: SimulationContext,
@@ -281,7 +281,7 @@ impl Server {
     // ******* daemons **********
 
     fn envoke_feeder(&mut self) {
-        self.feeder.borrow_mut().scan_work_array();
+        self.feeder.scan_work_array();
         if self.is_active() {
             self.ctx.emit_self(EnvokeFeeder {}, 60.);
         }
@@ -304,35 +304,35 @@ impl Server {
     }
 
     fn envoke_transitioner(&mut self) {
-        self.transitioner.borrow_mut().transit(self.ctx.time());
+        self.transitioner.transit(self.ctx.time());
         if self.is_active() {
             self.ctx.emit_self(EnvokeTransitioner {}, 10.);
         }
     }
 
     fn validate_results(&mut self) {
-        self.validator.borrow().validate();
+        self.validator.validate();
         if self.is_active() {
             self.ctx.emit_self(ValidateResults {}, 50.);
         }
     }
 
     fn assimilate_results(&mut self) {
-        self.assimilator.borrow().assimilate();
+        self.assimilator.assimilate();
         if self.is_active() {
             self.ctx.emit_self(AssimilateResults {}, 20.);
         }
     }
 
     fn delete_files(&mut self) {
-        self.file_deleter.borrow().delete_files();
+        self.file_deleter.delete_files();
         if self.is_active() {
             self.ctx.emit_self(DeleteFiles {}, 60.);
         }
     }
 
     fn purge_db(&mut self) {
-        self.db_purger.borrow().purge_database();
+        self.db_purger.purge_database();
         if self.is_active() {
             self.ctx.emit_self(PurgeDB {}, 100.);
         }

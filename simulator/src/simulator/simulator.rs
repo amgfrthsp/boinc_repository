@@ -188,31 +188,31 @@ impl Simulator {
         // Adding daemon components
         // Validator
         let validator_name = &format!("{}::validator", server_name);
-        let validator = rc!(refcell!(Validator::new(
+        let validator = Validator::new(
             database.clone(),
-            self.sim.borrow_mut().create_context(validator_name)
-        )));
+            self.sim.borrow_mut().create_context(validator_name),
+        );
 
         // Assimilator
         let assimilator_name = &format!("{}::assimilator", server_name);
-        let assimilator = rc!(refcell!(Assimilator::new(
+        let assimilator = Assimilator::new(
             database.clone(),
-            self.sim.borrow_mut().create_context(assimilator_name)
-        )));
+            self.sim.borrow_mut().create_context(assimilator_name),
+        );
 
         // Transitioner
         let transitioner_name = &format!("{}::transitioner", server_name);
-        let transitioner = rc!(refcell!(Transitioner::new(
+        let transitioner = Transitioner::new(
             database.clone(),
-            self.sim.borrow_mut().create_context(transitioner_name)
-        )));
+            self.sim.borrow_mut().create_context(transitioner_name),
+        );
 
         // Database purger
         let db_purger_name = &format!("{}::db_purger", server_name);
-        let db_purger: Rc<RefCell<DBPurger>> = rc!(refcell!(DBPurger::new(
+        let db_purger = DBPurger::new(
             database.clone(),
-            self.sim.borrow_mut().create_context(db_purger_name)
-        )));
+            self.sim.borrow_mut().create_context(db_purger_name),
+        );
 
         // Feeder
         let empty_slot = SharedMemoryItem {
@@ -225,11 +225,11 @@ impl Simulator {
             rc!(refcell!(vec![empty_slot; shared_memory_size]));
 
         let feeder_name = &format!("{}::feeder", server_name);
-        let feeder: Rc<RefCell<Feeder>> = rc!(refcell!(Feeder::new(
+        let feeder: Feeder = Feeder::new(
             shared_memory.clone(),
             database.clone(),
-            self.sim.borrow_mut().create_context(feeder_name)
-        )));
+            self.sim.borrow_mut().create_context(feeder_name),
+        );
 
         // Scheduler
         let scheduler_name = &format!("{}::scheduler", server_name);
@@ -272,11 +272,11 @@ impl Simulator {
 
         // File deleter
         let file_deleter_name = &format!("{}::file_deleter", server_name);
-        let file_deleter: Rc<RefCell<FileDeleter>> = rc!(refcell!(FileDeleter::new(
+        let file_deleter = FileDeleter::new(
             database.clone(),
             data_server.clone(),
-            self.sim.borrow_mut().create_context(file_deleter_name)
-        )));
+            self.sim.borrow_mut().create_context(file_deleter_name),
+        );
 
         let server = rc!(refcell!(Server::new(
             database.clone(),
@@ -290,10 +290,7 @@ impl Simulator {
             data_server,
             self.sim.borrow_mut().create_context(server_name)
         )));
-        let server_id = self
-            .sim
-            .borrow_mut()
-            .add_handler(server_name, server.clone());
+        let server_id = self.sim.borrow_mut().add_handler(server_name, server);
         self.net.borrow_mut().set_location(server_id, node_name);
         self.server_id = Some(server_id);
 
