@@ -24,7 +24,7 @@ use super::transitioner::Transitioner;
 use super::validator::Validator;
 use crate::client::client::{ClientRegister, TaskCompleted, TasksInquiry};
 use crate::common::Start;
-use crate::server::data_server::DownloadInputFileCompleted;
+use crate::server::data_server::InputFileDownloadCompleted;
 
 #[derive(Clone, Serialize)]
 pub struct ServerRegister {}
@@ -218,10 +218,10 @@ impl Server {
 
         self.data_server
             .borrow_mut()
-            .download_file(spec.input_file, from);
+            .download_file(DataServerFile::Input(spec.input_file), from);
 
         self.ctx
-            .recv_event_by_key::<DownloadInputFileCompleted>(workunit.id)
+            .recv_event_by_key::<InputFileDownloadCompleted>(workunit.id)
             .await;
 
         log_debug!(

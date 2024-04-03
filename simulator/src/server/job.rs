@@ -2,20 +2,31 @@ use serde::Serialize;
 
 use dslab_compute::multicore::CoresDependency;
 
-pub type FileId = u64;
-
 #[derive(Serialize, Debug, Clone)]
 pub struct InputFileMetadata {
-    pub id: FileId,
     pub workunit_id: WorkunitId,
     pub size: u64,
 }
 
 #[derive(Serialize, Debug, Clone)]
 pub struct OutputFileMetadata {
-    pub id: FileId,
     pub result_id: ResultId,
     pub size: u64,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub enum DataServerFile {
+    Input(InputFileMetadata),
+    Output(OutputFileMetadata),
+}
+
+impl DataServerFile {
+    pub fn size(&self) -> u64 {
+        match self {
+            DataServerFile::Input(InputFileMetadata { size, .. }) => *size,
+            DataServerFile::Output(OutputFileMetadata { size, .. }) => *size,
+        }
+    }
 }
 
 pub type JobSpecId = u64;

@@ -3,13 +3,15 @@ use dslab_core::{cast, Event, EventHandler};
 use dslab_core::{component::Id, log_debug};
 use dslab_network::{DataTransferCompleted, Network};
 use dslab_storage::disk::Disk;
-use dslab_storage::events::{DataWriteCompleted, DataWriteFailed};
+use dslab_storage::events::{
+    DataReadCompleted, DataReadFailed, DataWriteCompleted, DataWriteFailed,
+};
 use dslab_storage::storage::Storage;
 use futures::{select, FutureExt};
 use serde::Serialize;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use super::job::{FileId, InputFileMetadata, OutputFileMetadata, ResultId, WorkunitId};
+use super::job::{DataServerFile, InputFileMetadata, OutputFileMetadata, ResultId, WorkunitId};
 
 #[derive(Clone, Serialize)]
 pub struct OutputFileFromClient {
@@ -17,16 +19,21 @@ pub struct OutputFileFromClient {
 }
 
 #[derive(Clone, Serialize)]
-pub struct DownloadInputFileCompleted {
+pub struct InputFileDownloadCompleted {
     pub workunit_id: WorkunitId,
+}
+
+#[derive(Clone, Serialize)]
+pub struct OutputFileDownloadCompleted {
+    pub result_id: ResultId,
 }
 
 pub struct DataServer {
     server_id: Id,
     net: Rc<RefCell<Network>>,
     disk: Rc<RefCell<Disk>>,
-    input_files: RefCell<HashMap<FileId, InputFileMetadata>>, // workunit_id -> input files
-    output_files: HashMap<FileId, OutputFileMetadata>,        // result_id -> output files
+    input_files: RefCell<HashMap<WorkunitId, InputFileMetadata>>, // workunit_id -> input files
+    output_files: HashMap<ResultId, OutputFileMetadata>,          // result_id -> output files
     ctx: SimulationContext,
 }
 
@@ -35,7 +42,10 @@ impl DataServer {
         ctx.register_key_getter_for::<DataTransferCompleted>(|e| e.dt.id as u64);
         ctx.register_key_getter_for::<DataWriteCompleted>(|e| e.request_id);
         ctx.register_key_getter_for::<DataWriteFailed>(|e| e.request_id);
-        ctx.register_key_getter_for::<DownloadInputFileCompleted>(|e| e.workunit_id);
+        ctx.register_key_getter_for::<DataReadCompleted>(|e| e.request_id);
+        ctx.register_key_getter_for::<DataReadFailed>(|e| e.request_id);
+        ctx.register_key_getter_for::<InputFileDownloadCompleted>(|e| e.workunit_id);
+        ctx.register_key_getter_for::<OutputFileDownloadCompleted>(|e| e.result_id);
 
         Self {
             server_id: 0,
@@ -51,55 +61,105 @@ impl DataServer {
         self.server_id = server_id;
     }
 
-    pub fn download_file(&self, input_file: InputFileMetadata, from: Id) {
-        self.ctx.spawn(self.process_download_file(input_file, from));
+    pub fn download_file(&self, file: DataServerFile, from: Id) {
+        self.ctx.spawn(self.process_download_file(file, from));
     }
 
-    async fn process_download_file(&self, input_file: InputFileMetadata, from: Id) {
-        let workunit_id = input_file.workunit_id;
-
+    async fn process_download_file(&self, file: DataServerFile, from: Id) {
         futures::join!(
-            self.process_network_download(input_file.clone(), from),
-            self.process_disk_write(input_file)
+            self.process_network_download(file.clone(), from),
+            self.process_disk_write(file.clone())
         );
 
-        self.ctx
-            .emit_now(DownloadInputFileCompleted { workunit_id }, self.server_id);
+        // if retry.contains(file_id) {retry in x} else:
+
+        match file {
+            DataServerFile::Input(input_file) => {
+                let workunit_id = input_file.workunit_id;
+
+                self.input_files
+                    .borrow_mut()
+                    .insert(workunit_id, input_file);
+
+                self.ctx
+                    .emit_now(InputFileDownloadCompleted { workunit_id }, self.server_id);
+
+                log_debug!(
+                    self.ctx,
+                    "received a new input file for workunit {}",
+                    workunit_id,
+                );
+            }
+            DataServerFile::Output(_output_file) => {}
+        }
     }
 
-    async fn process_network_download(&self, input_file: InputFileMetadata, from: Id) {
+    pub fn upload_file(&self, file: DataServerFile, to: Id) {
+        self.ctx.spawn(self.process_upload_file(file, to));
+    }
+
+    async fn process_upload_file(&self, file: DataServerFile, to: Id) {
+        futures::join!(
+            self.process_network_upload(file.clone(), to),
+            self.process_disk_read(file.clone())
+        );
+
+        // if retry.contains(file_id) {retry in x} else:
+
+        match file {
+            DataServerFile::Input(_input_file) => {}
+            DataServerFile::Output(_output_file) => {}
+        }
+    }
+
+    async fn process_network_download(&self, file: DataServerFile, from: Id) {
         let transfer_id = self.net.borrow_mut().transfer_data(
             from,
             self.ctx.id(),
-            input_file.size as f64,
+            file.size() as f64,
             self.ctx.id(),
         );
 
         self.ctx
             .recv_event_by_key::<DataTransferCompleted>(transfer_id as u64)
             .await;
-
-        log_debug!(
-            self.ctx,
-            "received a new input file for workunit {}",
-            transfer_id,
-        );
     }
 
-    async fn process_disk_write(&self, input_file: InputFileMetadata) {
-        let workunit_id = input_file.workunit_id;
-        // disk write
-        let disk_write_id = self.disk.borrow_mut().write(input_file.size, self.ctx.id());
+    async fn process_network_upload(&self, file: DataServerFile, to: Id) {
+        let transfer_id = self.net.borrow_mut().transfer_data(
+            self.ctx.id(),
+            to,
+            file.size() as f64,
+            self.ctx.id(),
+        );
+
+        self.ctx
+            .recv_event_by_key::<DataTransferCompleted>(transfer_id as u64)
+            .await;
+    }
+
+    async fn process_disk_write(&self, file: DataServerFile) {
+        let disk_write_id = self.disk.borrow_mut().write(file.size(), self.ctx.id());
 
         select! {
             _ = self.ctx.recv_event_by_key::<DataWriteCompleted>(disk_write_id).fuse() => {
-                log_debug!(self.ctx, "write completed!!! for workunit {}", workunit_id);
-                self.input_files
-                    .borrow_mut()
-                    .insert(workunit_id, input_file);
+                log_debug!(self.ctx, "write completed!!!");
             }
             _ = self.ctx.recv_event_by_key::<DataWriteFailed>(disk_write_id).fuse() => {
-                log_debug!(self.ctx, "write FAILED!!! for workunit {}", workunit_id);
+                log_debug!(self.ctx, "write FAILED!!!");
+            }
+        };
+    }
+
+    async fn process_disk_read(&self, file: DataServerFile) {
+        let disk_read_id = self.disk.borrow_mut().read(file.size(), self.ctx.id());
+
+        select! {
+            _ = self.ctx.recv_event_by_key::<DataReadCompleted>(disk_read_id).fuse() => {
+                log_debug!(self.ctx, "read completed!!!");
+            }
+            _ = self.ctx.recv_event_by_key::<DataReadFailed>(disk_read_id).fuse() => {
+                log_debug!(self.ctx, "read FAILED!!!");
             }
         };
     }
@@ -108,7 +168,7 @@ impl DataServer {
         log_debug!(
             self.ctx,
             "received new output file with id {} from client {}",
-            output_file.id,
+            output_file.result_id,
             client_id
         );
         self.output_files.insert(output_file.result_id, output_file);

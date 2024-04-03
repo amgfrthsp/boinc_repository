@@ -109,7 +109,6 @@ impl Scheduler {
                     let request = ResultRequest {
                         spec,
                         output_file: OutputFileMetadata {
-                            id: result.id,
                             result_id: result.id,
                             size: self.rand.gen_range(10..=100),
                         },
