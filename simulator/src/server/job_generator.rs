@@ -14,7 +14,7 @@ use dslab_core::handler::EventHandler;
 use dslab_core::{cast, log_debug};
 use dslab_network::Network;
 
-use super::job::{InputFileMetadata, JobSpec};
+use super::job::{InputFileMetadata, JobSpec, JobSpecId};
 use crate::common::Start;
 use crate::simulator::simulator::SetServerIds;
 
@@ -28,7 +28,6 @@ pub struct ReportStatus {}
 pub struct GenerateJobs {}
 
 pub struct JobGenerator {
-    id: Id,
     rand: Lcg128Xsl64,
     net: Rc<RefCell<Network>>,
     server_id: Option<Id>,
@@ -39,7 +38,6 @@ pub struct JobGenerator {
 impl JobGenerator {
     pub fn new(rand: Lcg128Xsl64, net: Rc<RefCell<Network>>, ctx: SimulationContext) -> Self {
         Self {
-            id: ctx.id(),
             rand,
             net,
             server_id: None,
@@ -61,7 +59,7 @@ impl JobGenerator {
             return;
         }
         for i in 0..BATCH_SIZE {
-            let job_id = (self.jobs_generated + i) as u64;
+            let job_id = (self.jobs_generated + i) as JobSpecId;
             let job = JobSpec {
                 id: job_id,
                 flops: self.rand.gen_range(100..=1000) as f64,
@@ -77,7 +75,7 @@ impl JobGenerator {
             };
             self.net
                 .borrow_mut()
-                .send_event(job, self.id, self.server_id.unwrap());
+                .send_event(job, self.ctx.id(), self.server_id.unwrap());
         }
         self.jobs_generated += BATCH_SIZE;
         if self.jobs_generated < JOBS_AMOUNT_TOTAL {

@@ -11,7 +11,6 @@ use dslab_core::context::SimulationContext;
 use dslab_core::event::Event;
 use dslab_core::handler::EventHandler;
 use dslab_core::{cast, log_debug, log_info};
-use dslab_network::Network;
 
 use super::assimilator::Assimilator;
 use super::data_server::DataServer;
@@ -25,6 +24,7 @@ use super::transitioner::Transitioner;
 use super::validator::Validator;
 use crate::client::client::{ClientRegister, TaskCompleted, TasksInquiry};
 use crate::common::Start;
+use crate::server::data_server::DownloadInputFileCompleted;
 
 #[derive(Clone, Serialize)]
 pub struct ServerRegister {}
@@ -46,7 +46,7 @@ pub struct AssimilateResults {}
 
 #[derive(Clone, Serialize)]
 pub struct AssimilationDone {
-    pub(crate) workunit_id: u64,
+    pub(crate) workunit_id: WorkunitId,
 }
 
 #[derive(Clone, Serialize)]
@@ -92,8 +92,6 @@ impl ClientInfo {
 }
 
 pub struct Server {
-    id: Id,
-    net: Rc<RefCell<Network>>,
     clients: BTreeMap<Id, ClientInfo>,
     client_queue: PriorityQueue<Id, ClientScore>,
     // db
@@ -115,13 +113,12 @@ pub struct Server {
     memory_total: u64,
     memory_available: u64,
     pub scheduling_time: f64,
-    scheduling_planned: bool,
+    scheduling_planned: RefCell<bool>,
     pub ctx: SimulationContext,
 }
 
 impl Server {
     pub fn new(
-        net: Rc<RefCell<Network>>,
         database: Rc<BoincDatabase>,
         validator: Rc<RefCell<Validator>>,
         assimilator: Rc<RefCell<Assimilator>>,
@@ -133,9 +130,8 @@ impl Server {
         data_server: Rc<RefCell<DataServer>>,
         ctx: SimulationContext,
     ) -> Self {
+        data_server.borrow_mut().set_server_id(ctx.id());
         Self {
-            id: ctx.id(),
-            net,
             clients: BTreeMap::new(),
             client_queue: PriorityQueue::new(),
             db: database,
@@ -152,14 +148,14 @@ impl Server {
             memory_total: 0,
             memory_available: 0,
             scheduling_time: 0.,
-            scheduling_planned: false,
+            scheduling_planned: RefCell::new(false),
             ctx,
         }
     }
 
     fn on_started(&mut self) {
         log_debug!(self.ctx, "started");
-        self.scheduling_planned = true;
+        *self.scheduling_planned.borrow_mut() = true;
         self.ctx.emit_self(ScheduleJobs {}, 1.);
         self.ctx.emit_self(EnvokeTransitioner {}, 3.);
         self.ctx.emit_self(ValidateResults {}, 50.);
@@ -197,7 +193,7 @@ impl Server {
         self.clients.insert(client.id, client);
     }
 
-    fn on_job_spec(&mut self, mut spec: JobSpec, from: Id) {
+    async fn on_job_spec(&self, mut spec: JobSpec, from: Id) {
         log_debug!(self.ctx, "job spec {:?}", spec.clone());
 
         let workunit = WorkunitInfo {
@@ -216,14 +212,31 @@ impl Server {
 
         spec.input_file.workunit_id = workunit.id;
 
-        self.db.workunit.borrow_mut().insert(workunit.id, workunit);
+        log_debug!(
+            self.ctx,
+            "input file download started for workunit {}",
+            workunit.id
+        );
 
         self.data_server
             .borrow_mut()
-            .load_input_file_for_workunit(spec.input_file, from);
+            .download_file(spec.input_file, from);
 
-        if !self.scheduling_planned {
-            self.scheduling_planned = true;
+        self.ctx
+            .recv_event_by_key::<DownloadInputFileCompleted>(workunit.id)
+            .await;
+
+        log_debug!(
+            self.ctx,
+            "input file download finished for workunit {}",
+            workunit.id
+        );
+
+        self.db.workunit.borrow_mut().insert(workunit.id, workunit);
+
+        let planned = *self.scheduling_planned.borrow();
+        if !planned {
+            *self.scheduling_planned.borrow_mut() = true;
             self.ctx.emit_self(ScheduleJobs {}, 10.);
         }
     }
@@ -234,7 +247,7 @@ impl Server {
         self.client_queue.push(client_id, client.score());
     }
 
-    fn on_result_completed(&mut self, result_id: u64, client_id: Id) {
+    fn on_result_completed(&mut self, result_id: ResultId, client_id: Id) {
         if !self.db.result.borrow().contains_key(&result_id) {
             log_debug!(
                 self.ctx,
@@ -283,9 +296,9 @@ impl Server {
             self.ctx.time(),
         );
 
-        self.scheduling_planned = false;
+        *self.scheduling_planned.borrow_mut() = false;
         if self.is_active() {
-            self.scheduling_planned = true;
+            *self.scheduling_planned.borrow_mut() = true;
             self.ctx.emit_self(ScheduleJobs {}, 10.);
         }
     }
@@ -384,7 +397,7 @@ impl EventHandler for Server {
                 cores_dependency,
                 input_file,
             } => {
-                self.on_job_spec(
+                self.ctx.spawn(self.on_job_spec(
                     JobSpec {
                         id,
                         flops,
@@ -395,7 +408,7 @@ impl EventHandler for Server {
                         input_file,
                     },
                     event.src,
-                );
+                ));
             }
             TaskCompleted { id } => {
                 self.on_result_completed(id, event.src);

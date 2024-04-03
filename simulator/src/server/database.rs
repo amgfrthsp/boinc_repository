@@ -1,10 +1,10 @@
-use super::job::{ResultInfo, WorkunitInfo};
+use super::job::{ResultId, ResultInfo, WorkunitId, WorkunitInfo};
 use std::{cell::RefCell, collections::HashMap};
 use sugars::refcell;
 
 pub struct BoincDatabase {
-    pub workunit: RefCell<HashMap<u64, WorkunitInfo>>,
-    pub result: RefCell<HashMap<u64, ResultInfo>>,
+    pub workunit: RefCell<HashMap<WorkunitId, WorkunitInfo>>,
+    pub result: RefCell<HashMap<ResultId, ResultInfo>>,
 }
 
 impl BoincDatabase {

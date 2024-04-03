@@ -1,6 +1,6 @@
 use dslab_core::context::SimulationContext;
+use dslab_core::log_debug;
 use dslab_core::log_info;
-use dslab_core::{component::Id, log_debug};
 use std::borrow::Borrow;
 use std::rc::Rc;
 
@@ -8,22 +8,21 @@ use crate::server::job::{
     AssimilateState, FileDeleteState, ResultOutcome, ResultState, ValidateState,
 };
 
+use super::job::ResultId;
 use super::{
     database::BoincDatabase,
     job::{ResultInfo, WorkunitInfo},
 };
 
 pub struct Transitioner {
-    id: Id,
     db: Rc<BoincDatabase>,
-    next_result_id: u64,
+    next_result_id: ResultId,
     ctx: SimulationContext,
 }
 
 impl Transitioner {
     pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
         return Self {
-            id: ctx.id(),
             db,
             next_result_id: 0,
             ctx,

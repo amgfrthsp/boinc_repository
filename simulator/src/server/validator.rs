@@ -1,6 +1,6 @@
 use dslab_core::context::SimulationContext;
+use dslab_core::log_debug;
 use dslab_core::log_info;
-use dslab_core::{component::Id, log_debug};
 use std::rc::Rc;
 
 use crate::server::job::{
@@ -21,18 +21,13 @@ pub enum TransitionTime {
 }
 
 pub struct Validator {
-    id: Id,
     db: Rc<BoincDatabase>,
     ctx: SimulationContext,
 }
 
 impl Validator {
     pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
-        return Self {
-            id: ctx.id(),
-            db,
-            ctx,
-        };
+        return Self { db, ctx };
     }
 
     pub fn validate(&self) {

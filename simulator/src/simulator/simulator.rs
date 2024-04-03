@@ -34,7 +34,6 @@ pub struct SetServerIds {
 }
 
 pub struct Simulator {
-    id: Id,
     sim: Rc<RefCell<Simulation>>,
     net: Rc<RefCell<Network>>,
     rand: Lcg128Xsl64,
@@ -77,7 +76,6 @@ impl Simulator {
         let ctx = sim.create_context("ctx");
 
         return Self {
-            id: ctx.id(),
             sim: rc!(refcell!(sim)),
             net: network,
             rand,
@@ -168,9 +166,9 @@ impl Simulator {
         &mut self,
         local_bandwidth: f64,
         local_latency: f64,
-        file_storage_capacity: u64,
-        file_storage_read_bandwidth: f64,
-        file_storage_write_bandwidth: f64,
+        disk_capacity: u64,
+        disk_read_bandwidth: f64,
+        disk_write_bandwidth: f64,
     ) {
         let n = self.hosts.len();
         let node_name = &format!("host{}", n);
@@ -250,19 +248,17 @@ impl Simulator {
         // Data server
         let data_server_name = &format!("{}::data_server", server_name);
         // file storage
-        let file_storage_name = format!("{}::file_storage", data_server_name);
-        let file_storage = rc!(refcell!(DiskBuilder::simple(
-            file_storage_capacity,
-            file_storage_read_bandwidth,
-            file_storage_write_bandwidth
+        let disk_name = format!("{}::disk", data_server_name);
+        let disk = rc!(refcell!(DiskBuilder::simple(
+            disk_capacity,
+            disk_read_bandwidth,
+            disk_write_bandwidth
         )
-        .build(self.sim.borrow_mut().create_context(&file_storage_name))));
-        self.sim
-            .borrow_mut()
-            .add_handler(file_storage_name, file_storage.clone());
+        .build(self.sim.borrow_mut().create_context(&disk_name))));
+        self.sim.borrow_mut().add_handler(disk_name, disk.clone());
         let data_server: Rc<RefCell<DataServer>> = rc!(refcell!(DataServer::new(
             self.net.clone(),
-            file_storage,
+            disk,
             self.sim.borrow_mut().create_context(data_server_name)
         )));
         let data_server_id = self
@@ -283,7 +279,6 @@ impl Simulator {
         )));
 
         let server = rc!(refcell!(Server::new(
-            self.net.clone(),
             database.clone(),
             validator,
             assimilator,

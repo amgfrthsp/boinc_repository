@@ -1,4 +1,3 @@
-use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
 use dslab_core::{log_debug, log_info};
 use std::rc::Rc;
@@ -12,18 +11,13 @@ use super::database::BoincDatabase;
 // 2. Split events to simulate a delay
 
 pub struct Assimilator {
-    id: Id,
     db: Rc<BoincDatabase>,
     ctx: SimulationContext,
 }
 
 impl Assimilator {
     pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
-        return Self {
-            id: ctx.id(),
-            db,
-            ctx,
-        };
+        return Self { db, ctx };
     }
 
     pub fn assimilate(&self) {

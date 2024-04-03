@@ -1,11 +1,11 @@
-use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
-use dslab_core::{log_debug, log_info};
+use dslab_core::log_info;
 use serde::Serialize;
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::database::BoincDatabase;
+use super::job::{ResultId, WorkunitId};
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub enum SharedMemoryItemState {
@@ -16,12 +16,11 @@ pub enum SharedMemoryItemState {
 #[derive(Serialize, Debug, Clone)]
 pub struct SharedMemoryItem {
     pub state: SharedMemoryItemState,
-    pub result_id: u64,
-    pub workunit_id: u64,
+    pub result_id: ResultId,
+    pub workunit_id: WorkunitId,
 }
 
 pub struct Feeder {
-    id: Id,
     shared_memory: Rc<RefCell<Vec<SharedMemoryItem>>>,
     db: Rc<BoincDatabase>,
     ctx: SimulationContext,
@@ -34,7 +33,6 @@ impl Feeder {
         ctx: SimulationContext,
     ) -> Self {
         return Self {
-            id: ctx.id(),
             shared_memory,
             db,
             ctx,

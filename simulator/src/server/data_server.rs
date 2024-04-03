@@ -1,63 +1,111 @@
 use dslab_core::context::SimulationContext;
 use dslab_core::{cast, Event, EventHandler};
 use dslab_core::{component::Id, log_debug};
-use dslab_network::{DataTransfer, DataTransferCompleted, Network};
+use dslab_network::{DataTransferCompleted, Network};
 use dslab_storage::disk::Disk;
+use dslab_storage::events::{DataWriteCompleted, DataWriteFailed};
+use dslab_storage::storage::Storage;
+use futures::{select, FutureExt};
 use serde::Serialize;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use super::job::{InputFileMetadata, OutputFileMetadata};
+use super::job::{FileId, InputFileMetadata, OutputFileMetadata, ResultId, WorkunitId};
 
 #[derive(Clone, Serialize)]
 pub struct OutputFileFromClient {
     pub output_file: OutputFileMetadata,
 }
 
+#[derive(Clone, Serialize)]
+pub struct DownloadInputFileCompleted {
+    pub workunit_id: WorkunitId,
+}
+
 pub struct DataServer {
-    id: Id,
+    server_id: Id,
     net: Rc<RefCell<Network>>,
-    file_storage: Rc<RefCell<Disk>>,
-    input_files: HashMap<u64, InputFileMetadata>, // workunit_id -> input files
-    output_files: HashMap<u64, OutputFileMetadata>, // result_id -> output files
-    downloads: HashMap<usize, u64>,
+    disk: Rc<RefCell<Disk>>,
+    input_files: RefCell<HashMap<FileId, InputFileMetadata>>, // workunit_id -> input files
+    output_files: HashMap<FileId, OutputFileMetadata>,        // result_id -> output files
     ctx: SimulationContext,
 }
 
 impl DataServer {
-    pub fn new(
-        net: Rc<RefCell<Network>>,
-        file_storage: Rc<RefCell<Disk>>,
-        ctx: SimulationContext,
-    ) -> Self {
+    pub fn new(net: Rc<RefCell<Network>>, disk: Rc<RefCell<Disk>>, ctx: SimulationContext) -> Self {
+        ctx.register_key_getter_for::<DataTransferCompleted>(|e| e.dt.id as u64);
+        ctx.register_key_getter_for::<DataWriteCompleted>(|e| e.request_id);
+        ctx.register_key_getter_for::<DataWriteFailed>(|e| e.request_id);
+        ctx.register_key_getter_for::<DownloadInputFileCompleted>(|e| e.workunit_id);
+
         return Self {
-            id: ctx.id(),
+            server_id: 0,
             net,
-            file_storage,
-            input_files: HashMap::new(),
+            disk,
+            input_files: RefCell::new(HashMap::new()),
             output_files: HashMap::new(),
-            downloads: HashMap::new(),
             ctx,
         };
     }
 
-    pub fn load_input_file_for_workunit(&mut self, input_file: InputFileMetadata, from: u32) {
-        let transfer_id =
-            self.net
-                .borrow_mut()
-                .transfer_data(from, self.id, input_file.size as f64, self.id);
-
-        self.downloads.insert(transfer_id, input_file.id);
-        self.input_files.insert(input_file.workunit_id, input_file);
+    pub fn set_server_id(&mut self, server_id: Id) {
+        self.server_id = server_id;
     }
 
-    fn on_data_transfer_completed(&mut self, dt: DataTransfer) {
-        // data transfer corresponds to input download from job_generator
-        let file_id = self.downloads.remove(&dt.id).unwrap();
+    pub fn download_file(&self, input_file: InputFileMetadata, from: Id) {
+        self.ctx.spawn(self.process_download_file(input_file, from));
+    }
+
+    async fn process_download_file(&self, input_file: InputFileMetadata, from: Id) {
+        let workunit_id = input_file.workunit_id;
+
+        futures::join!(
+            self.process_network_download(input_file.clone(), from),
+            self.process_disk_write(input_file)
+        );
+
+        self.ctx.emit_now(
+            DownloadInputFileCompleted {
+                workunit_id: workunit_id,
+            },
+            self.server_id,
+        );
+    }
+
+    async fn process_network_download(&self, input_file: InputFileMetadata, from: Id) {
+        let transfer_id = self.net.borrow_mut().transfer_data(
+            from,
+            self.ctx.id(),
+            input_file.size as f64,
+            self.ctx.id(),
+        );
+
+        self.ctx
+            .recv_event_by_key::<DataTransferCompleted>(transfer_id as u64)
+            .await;
+
         log_debug!(
             self.ctx,
             "received a new input file for workunit {}",
-            file_id
+            transfer_id,
         );
+    }
+
+    async fn process_disk_write(&self, input_file: InputFileMetadata) {
+        let workunit_id = input_file.workunit_id;
+        // disk write
+        let disk_write_id = self.disk.borrow_mut().write(input_file.size, self.ctx.id());
+
+        select! {
+            _ = self.ctx.recv_event_by_key::<DataWriteCompleted>(disk_write_id).fuse() => {
+                log_debug!(self.ctx, "write completed!!! for workunit {}", workunit_id);
+                self.input_files
+                    .borrow_mut()
+                    .insert(workunit_id, input_file);
+            }
+            _ = self.ctx.recv_event_by_key::<DataWriteFailed>(disk_write_id).fuse() => {
+                log_debug!(self.ctx, "write FAILED!!! for workunit {}", workunit_id);
+            }
+        };
     }
 
     pub fn on_new_output_file(&mut self, output_file: OutputFileMetadata, client_id: Id) {
@@ -70,8 +118,8 @@ impl DataServer {
         self.output_files.insert(output_file.result_id, output_file);
     }
 
-    pub fn delete_input_files(&mut self, workunit_id: u64) -> u32 {
-        self.input_files.remove(&workunit_id);
+    pub fn delete_input_files(&mut self, workunit_id: WorkunitId) -> u32 {
+        self.input_files.borrow_mut().remove(&workunit_id);
         // add disk free
 
         log_debug!(self.ctx, "deleted input files for workunit {}", workunit_id,);
@@ -79,7 +127,7 @@ impl DataServer {
         return 0;
     }
 
-    pub fn delete_output_files(&mut self, result_id: u64) -> u32 {
+    pub fn delete_output_files(&mut self, result_id: ResultId) -> u32 {
         self.output_files.remove(&result_id);
         // add disk free
 
@@ -92,9 +140,6 @@ impl DataServer {
 impl EventHandler for DataServer {
     fn on(&mut self, event: Event) {
         cast!(match event.data {
-            DataTransferCompleted { dt } => {
-                self.on_data_transfer_completed(dt);
-            }
             OutputFileFromClient { output_file } => {
                 self.on_new_output_file(output_file, event.src);
             }
