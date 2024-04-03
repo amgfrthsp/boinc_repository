@@ -21,6 +21,13 @@ pub enum DataServerFile {
 }
 
 impl DataServerFile {
+    pub fn id(&self) -> u64 {
+        match self {
+            DataServerFile::Input(InputFileMetadata { workunit_id, .. }) => *workunit_id,
+            DataServerFile::Output(OutputFileMetadata { result_id, .. }) => *result_id,
+        }
+    }
+
     pub fn size(&self) -> u64 {
         match self {
             DataServerFile::Input(InputFileMetadata { size, .. }) => *size,

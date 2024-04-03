@@ -14,6 +14,11 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use super::job::{DataServerFile, InputFileMetadata, OutputFileMetadata, ResultId, WorkunitId};
 
 #[derive(Clone, Serialize)]
+pub struct InputFilesInquiry {
+    pub workunit_id: WorkunitId,
+}
+
+#[derive(Clone, Serialize)]
 pub struct OutputFileFromClient {
     pub output_file: OutputFileMetadata,
 }
@@ -28,12 +33,17 @@ pub struct OutputFileDownloadCompleted {
     pub result_id: ResultId,
 }
 
+#[derive(Clone, Serialize)]
+pub struct InputFileUploadCompleted {
+    pub workunit_id: WorkunitId,
+}
+
 pub struct DataServer {
     server_id: Id,
     net: Rc<RefCell<Network>>,
     disk: Rc<RefCell<Disk>>,
     input_files: RefCell<HashMap<WorkunitId, InputFileMetadata>>, // workunit_id -> input files
-    output_files: HashMap<ResultId, OutputFileMetadata>,          // result_id -> output files
+    output_files: RefCell<HashMap<ResultId, OutputFileMetadata>>, // result_id -> output files
     ctx: SimulationContext,
 }
 
@@ -46,13 +56,14 @@ impl DataServer {
         ctx.register_key_getter_for::<DataReadFailed>(|e| e.request_id);
         ctx.register_key_getter_for::<InputFileDownloadCompleted>(|e| e.workunit_id);
         ctx.register_key_getter_for::<OutputFileDownloadCompleted>(|e| e.result_id);
+        ctx.register_key_getter_for::<InputFileUploadCompleted>(|e| e.workunit_id);
 
         Self {
             server_id: 0,
             net,
             disk,
             input_files: RefCell::new(HashMap::new()),
-            output_files: HashMap::new(),
+            output_files: RefCell::new(HashMap::new()),
             ctx,
         }
     }
@@ -66,10 +77,14 @@ impl DataServer {
     }
 
     async fn process_download_file(&self, file: DataServerFile, from: Id) {
+        log_debug!(self.ctx, "file download started {:?}", file);
+
         futures::join!(
             self.process_network_download(file.clone(), from),
             self.process_disk_write(file.clone())
         );
+
+        log_debug!(self.ctx, "file download finished {:?}", file);
 
         // if retry.contains(file_id) {retry in x} else:
 
@@ -99,15 +114,39 @@ impl DataServer {
     }
 
     async fn process_upload_file(&self, file: DataServerFile, to: Id) {
+        if !self.input_files.borrow().contains_key(&file.id())
+            && !self.output_files.borrow().contains_key(&file.id())
+        {
+            // error: no such file
+        }
+
+        log_debug!(self.ctx, "file upload started {:?}", file);
+
         futures::join!(
             self.process_network_upload(file.clone(), to),
             self.process_disk_read(file.clone())
         );
 
+        log_debug!(self.ctx, "file upload finished {:?}", file);
+
         // if retry.contains(file_id) {retry in x} else:
 
         match file {
-            DataServerFile::Input(_input_file) => {}
+            DataServerFile::Input(input_file) => {
+                self.ctx.emit_now(
+                    InputFileUploadCompleted {
+                        workunit_id: input_file.workunit_id,
+                    },
+                    to,
+                );
+
+                log_debug!(
+                    self.ctx,
+                    "uploaded input file for workunit {} to client {}",
+                    input_file.workunit_id,
+                    to,
+                );
+            }
             DataServerFile::Output(_output_file) => {}
         }
     }
@@ -164,16 +203,6 @@ impl DataServer {
         };
     }
 
-    pub fn on_new_output_file(&mut self, output_file: OutputFileMetadata, client_id: Id) {
-        log_debug!(
-            self.ctx,
-            "received new output file with id {} from client {}",
-            output_file.result_id,
-            client_id
-        );
-        self.output_files.insert(output_file.result_id, output_file);
-    }
-
     pub fn delete_input_files(&mut self, workunit_id: WorkunitId) -> u32 {
         self.input_files.borrow_mut().remove(&workunit_id);
         // add disk free
@@ -184,7 +213,7 @@ impl DataServer {
     }
 
     pub fn delete_output_files(&mut self, result_id: ResultId) -> u32 {
-        self.output_files.remove(&result_id);
+        self.output_files.borrow_mut().remove(&result_id);
         // add disk free
 
         log_debug!(self.ctx, "deleted output files for result {}", result_id,);
@@ -196,9 +225,7 @@ impl DataServer {
 impl EventHandler for DataServer {
     fn on(&mut self, event: Event) {
         cast!(match event.data {
-            OutputFileFromClient { output_file } => {
-                self.on_new_output_file(output_file, event.src);
-            }
+            OutputFileFromClient { output_file } => {}
         })
     }
 }

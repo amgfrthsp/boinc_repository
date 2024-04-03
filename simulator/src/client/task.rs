@@ -1,11 +1,8 @@
-use crate::server::job::{JobSpec, OutputFileMetadata, ResultRequest};
-
-pub type TaskSpec = JobSpec;
-pub type TaskRequest = ResultRequest;
+use crate::server::job::{JobSpec, OutputFileMetadata};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-pub enum TaskState {
+pub enum ClientResultState {
     New,
     Assigned,
     Downloading,
@@ -19,8 +16,8 @@ pub enum TaskState {
 }
 
 #[derive(Debug, Clone)]
-pub struct TaskInfo {
-    pub spec: TaskSpec,
+pub struct ResultInfo {
+    pub spec: JobSpec,
     pub output_file: OutputFileMetadata,
-    pub state: TaskState,
+    pub state: ClientResultState,
 }

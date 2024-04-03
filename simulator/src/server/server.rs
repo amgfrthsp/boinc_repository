@@ -22,7 +22,7 @@ use super::job::*;
 use super::scheduler::Scheduler;
 use super::transitioner::Transitioner;
 use super::validator::Validator;
-use crate::client::client::{ClientRegister, TaskCompleted, TasksInquiry};
+use crate::client::client::{ClientRegister, ResultCompleted, ResultsInquiry};
 use crate::common::Start;
 use crate::server::data_server::InputFileDownloadCompleted;
 
@@ -239,7 +239,7 @@ impl Server {
         }
     }
 
-    fn on_jobs_inquiry(&mut self, client_id: Id) {
+    fn on_work_inquiry(&mut self, client_id: Id) {
         log_info!(self.ctx, "client {} asks for work", client_id);
         let client = self.clients.get(&client_id).unwrap();
         self.client_queue.push(client_id, client.score());
@@ -408,14 +408,14 @@ impl EventHandler for Server {
                     event.src,
                 ));
             }
-            TaskCompleted { id } => {
+            ResultCompleted { id } => {
                 self.on_result_completed(id, event.src);
             }
             ReportStatus {} => {
                 self.report_status();
             }
-            TasksInquiry {} => {
-                self.on_jobs_inquiry(event.src)
+            ResultsInquiry {} => {
+                self.on_work_inquiry(event.src)
             }
             ValidateResults {} => {
                 self.validate_results();
