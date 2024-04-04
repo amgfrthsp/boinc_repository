@@ -1,8 +1,8 @@
 use crate::server::job::{JobSpec, OutputFileMetadata};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
-pub enum ClientResultState {
+pub enum ResultState {
     Downloading,
     ReadyToExecute,
     Executing,
@@ -15,5 +15,5 @@ pub enum ClientResultState {
 pub struct ResultInfo {
     pub spec: JobSpec,
     pub output_file: OutputFileMetadata,
-    pub state: ClientResultState,
+    pub state: ResultState,
 }

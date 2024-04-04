@@ -1,5 +1,5 @@
 use dslab_core::context::SimulationContext;
-use dslab_core::{cast, Event, EventHandler};
+use dslab_core::{cast, Event, EventHandler, EventId};
 use dslab_core::{component::Id, log_debug};
 use dslab_network::{DataTransferCompleted, Network};
 use dslab_storage::disk::Disk;
@@ -16,6 +16,7 @@ use super::job::{DataServerFile, InputFileMetadata, OutputFileMetadata, ResultId
 #[derive(Clone, Serialize)]
 pub struct InputFilesInquiry {
     pub workunit_id: WorkunitId,
+    pub ref_id: EventId,
 }
 
 #[derive(Clone, Serialize)]
@@ -35,7 +36,7 @@ pub struct OutputFileDownloadCompleted {
 
 #[derive(Clone, Serialize)]
 pub struct InputFileUploadCompleted {
-    pub workunit_id: WorkunitId,
+    pub ref_id: EventId,
 }
 
 pub struct DataServer {
@@ -56,7 +57,7 @@ impl DataServer {
         ctx.register_key_getter_for::<DataReadFailed>(|e| e.request_id);
         ctx.register_key_getter_for::<InputFileDownloadCompleted>(|e| e.workunit_id);
         ctx.register_key_getter_for::<OutputFileDownloadCompleted>(|e| e.result_id);
-        ctx.register_key_getter_for::<InputFileUploadCompleted>(|e| e.workunit_id);
+        ctx.register_key_getter_for::<InputFileUploadCompleted>(|e| e.ref_id);
 
         Self {
             server_id: 0,
@@ -70,6 +71,12 @@ impl DataServer {
 
     pub fn set_server_id(&mut self, server_id: Id) {
         self.server_id = server_id;
+    }
+
+    pub fn on_input_files_inquiry(&self, workunit_id: WorkunitId, ref_id: EventId, client_id: Id) {
+        let input_files_ref = self.input_files.borrow();
+        let input_file = input_files_ref.get(&workunit_id).unwrap();
+        self.upload_file(DataServerFile::Input(input_file.clone()), client_id, ref_id);
     }
 
     pub fn download_file(&self, file: DataServerFile, from: Id) {
@@ -109,11 +116,11 @@ impl DataServer {
         }
     }
 
-    pub fn upload_file(&self, file: DataServerFile, to: Id) {
-        self.ctx.spawn(self.process_upload_file(file, to));
+    pub fn upload_file(&self, file: DataServerFile, to: Id, ref_id: EventId) {
+        self.ctx.spawn(self.process_upload_file(file, to, ref_id));
     }
 
-    async fn process_upload_file(&self, file: DataServerFile, to: Id) {
+    async fn process_upload_file(&self, file: DataServerFile, to: Id, ref_id: EventId) {
         if !self.input_files.borrow().contains_key(&file.id())
             && !self.output_files.borrow().contains_key(&file.id())
         {
@@ -133,12 +140,7 @@ impl DataServer {
 
         match file {
             DataServerFile::Input(input_file) => {
-                self.ctx.emit_now(
-                    InputFileUploadCompleted {
-                        workunit_id: input_file.workunit_id,
-                    },
-                    to,
-                );
+                self.ctx.emit_now(InputFileUploadCompleted { ref_id }, to);
 
                 log_debug!(
                     self.ctx,
@@ -225,7 +227,15 @@ impl DataServer {
 impl EventHandler for DataServer {
     fn on(&mut self, event: Event) {
         cast!(match event.data {
-            OutputFileFromClient { output_file } => {}
+            InputFilesInquiry {
+                workunit_id,
+                ref_id,
+            } => {
+                self.on_input_files_inquiry(workunit_id, ref_id, event.src);
+            }
+            OutputFileFromClient { output_file } => {
+                self.download_file(DataServerFile::Output(output_file), event.src);
+            }
         })
     }
 }

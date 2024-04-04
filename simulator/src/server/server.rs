@@ -408,8 +408,8 @@ impl EventHandler for Server {
                     event.src,
                 ));
             }
-            ResultCompleted { id } => {
-                self.on_result_completed(id, event.src);
+            ResultCompleted { result_id } => {
+                self.on_result_completed(result_id, event.src);
             }
             ReportStatus {} => {
                 self.report_status();

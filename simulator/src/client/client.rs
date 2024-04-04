@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use serde::Serialize;
@@ -9,19 +8,23 @@ use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
 use dslab_core::event::Event;
 use dslab_core::handler::EventHandler;
-use dslab_core::{cast, log_debug};
-use dslab_network::{DataTransfer, DataTransferCompleted, Network};
+use dslab_core::{cast, log_debug, EventId};
+use dslab_network::Network;
 use dslab_storage::disk::Disk;
-use dslab_storage::events::{DataReadCompleted, DataWriteCompleted, DataWriteFailed};
+use dslab_storage::events::{
+    DataReadCompleted, DataReadFailed, DataWriteCompleted, DataWriteFailed,
+};
 use dslab_storage::storage::Storage;
 use futures::{select, FutureExt};
 
-use super::task::{ClientResultState, ResultInfo};
+use super::scheduler::Scheduler;
+use super::storage::FileStorage;
+use super::task::{ResultInfo, ResultState};
 use crate::common::Start;
 use crate::server::data_server::{
-    InputFileUploadCompleted, InputFilesInquiry, OutputFileFromClient,
+    InputFileUploadCompleted, InputFilesInquiry, OutputFileDownloadCompleted, OutputFileFromClient,
 };
-use crate::server::job::{DataServerFile, InputFileMetadata, ResultId, ResultRequest, WorkunitId};
+use crate::server::job::{DataServerFile, JobSpec, ResultId, ResultRequest, WorkunitId};
 use crate::simulator::simulator::SetServerIds;
 
 #[derive(Clone, Serialize)]
@@ -36,8 +39,16 @@ pub struct ClientRegister {
 
 #[derive(Clone, Serialize)]
 pub struct ResultCompleted {
-    pub id: u64,
+    pub result_id: ResultId,
 }
+
+#[derive(Clone, Serialize)]
+pub struct ExecuteResult {
+    pub result_id: ResultId,
+}
+
+#[derive(Clone, Serialize)]
+pub struct ScheduleResults {}
 
 // on result_request ->
 // (ds) download input_file (start data transfer) ->
@@ -55,14 +66,14 @@ pub struct ResultCompleted {
 // 3. who initiates data transfers?
 
 pub struct Client {
-    id: Id,
     compute: Rc<RefCell<Compute>>,
     disk: Rc<RefCell<Disk>>,
     net: Rc<RefCell<Network>>,
     server_id: Option<Id>,
     data_server_id: Option<Id>,
-    input_files: RefCell<HashMap<WorkunitId, InputFileMetadata>>,
-    results: RefCell<HashMap<ResultId, ResultInfo>>,
+    scheduler: Scheduler,
+    scheduling_planned: RefCell<bool>,
+    file_storage: Rc<FileStorage>,
     pub ctx: SimulationContext,
 }
 
@@ -71,17 +82,23 @@ impl Client {
         compute: Rc<RefCell<Compute>>,
         disk: Rc<RefCell<Disk>>,
         net: Rc<RefCell<Network>>,
+        mut scheduler: Scheduler,
+        file_storage: Rc<FileStorage>,
         ctx: SimulationContext,
     ) -> Self {
+        ctx.register_key_getter_for::<CompStarted>(|e| e.id);
+        ctx.register_key_getter_for::<CompFinished>(|e| e.id);
+
+        scheduler.set_client_id(ctx.id());
         Self {
-            id: ctx.id(),
             compute,
             disk,
             net,
             server_id: None,
             data_server_id: None,
-            input_files: RefCell::new(HashMap::new()),
-            results: RefCell::new(HashMap::new()),
+            scheduler,
+            scheduling_planned: RefCell::new(false),
+            file_storage,
             ctx,
         }
     }
@@ -99,42 +116,117 @@ impl Client {
         );
     }
 
-    async fn on_result_request(&self, req: ResultRequest) {
+    fn on_result_request(&self, req: ResultRequest, event_id: EventId) {
+        self.ctx.spawn(self.process_result_request(req, event_id));
+    }
+
+    async fn process_result_request(&self, req: ResultRequest, event_id: EventId) {
         let mut result = ResultInfo {
             spec: req.spec,
             output_file: req.output_file,
-            state: ClientResultState::Downloading,
+            state: ResultState::Downloading,
         };
         log_debug!(self.ctx, "job spec {:?}", result.spec);
 
         let workunit_id = result.spec.input_file.workunit_id;
 
-        let input_files_already_downloaded = self.input_files.borrow().contains_key(&workunit_id);
+        let input_files_already_downloaded = self
+            .file_storage
+            .input_files
+            .borrow()
+            .contains_key(&workunit_id);
 
         if !input_files_already_downloaded {
             self.ctx.emit_now(
-                InputFilesInquiry { workunit_id },
+                InputFilesInquiry {
+                    workunit_id,
+                    ref_id: event_id,
+                },
                 self.data_server_id.unwrap(),
             );
 
             futures::join!(
-                self.process_data_server_input_file_upload(workunit_id),
+                self.process_data_server_input_file_download(workunit_id),
                 self.process_disk_write(DataServerFile::Input(result.spec.input_file.clone())),
             );
 
-            self.input_files
+            self.file_storage
+                .input_files
                 .borrow_mut()
                 .insert(workunit_id, result.spec.input_file.clone());
         }
 
-        result.state = ClientResultState::ReadyToExecute;
+        result.state = ResultState::ReadyToExecute;
 
-        self.results.borrow_mut().insert(result.spec.id, result);
+        self.file_storage
+            .results
+            .borrow_mut()
+            .insert(result.spec.id, result);
+
+        let planned = *self.scheduling_planned.borrow();
+        if !planned {
+            *self.scheduling_planned.borrow_mut() = true;
+            self.ctx.emit_self(ScheduleResults {}, 30.);
+        }
     }
 
-    async fn process_data_server_input_file_upload(&self, workunit_id: WorkunitId) {
+    pub fn schedule_results(&self) {
+        let need_scheduling = self.scheduler.schedule(
+            self.compute.borrow().cores_available(),
+            self.compute.borrow().memory_available(),
+        );
+        *self.scheduling_planned.borrow_mut() = false;
+        let planned = *self.scheduling_planned.borrow();
+        if !planned && need_scheduling {
+            *self.scheduling_planned.borrow_mut() = true;
+            self.ctx.emit_self(ScheduleResults {}, 30.);
+        }
+    }
+
+    pub fn on_execute_result(&self, result_id: ResultId) {
+        self.ctx.spawn(self.execute_result(result_id));
+    }
+
+    pub async fn execute_result(&self, result_id: ResultId) {
+        // disk read
+        let fs_results = self.file_storage.results.borrow();
+        let result = fs_results.get(&result_id).unwrap();
+        self.process_disk_read(DataServerFile::Input(result.spec.input_file.clone()))
+            .await;
+
+        // comp start
+        self.process_compute(result.spec.clone()).await;
+
+        // disk write
+        self.process_disk_write(DataServerFile::Output(result.output_file.clone()))
+            .await;
+
+        // send results
+        self.ctx.emit_now(
+            OutputFileFromClient {
+                output_file: result.output_file.clone(),
+            },
+            self.data_server_id.unwrap(),
+        );
+
+        self.process_data_server_output_file_upload(result_id).await;
+        self.net.borrow_mut().send_event(
+            ResultCompleted { result_id },
+            self.ctx.id(),
+            self.server_id.unwrap(),
+        );
+        self.ask_for_results();
+    }
+
+    async fn process_data_server_input_file_download(&self, workunit_id: WorkunitId) {
         self.ctx
             .recv_event_by_key::<InputFileUploadCompleted>(workunit_id)
+            .await;
+    }
+
+    async fn process_data_server_output_file_upload(&self, result_id: ResultId) {
+        self.ctx
+            .recv_event_by_key::<OutputFileDownloadCompleted>(result_id)
             .await;
     }
 
@@ -151,42 +243,39 @@ impl Client {
         };
     }
 
-    // fn on_comp_started(&mut self, comp_id: u64) {
-    //     let result_id = self.computations.get(&comp_id).unwrap();
-    //     log_debug!(self.ctx, "started execution of result {}", result_id);
-    // }
+    async fn process_disk_read(&self, file: DataServerFile) {
+        let disk_read_id = self.disk.borrow_mut().read(file.size(), self.ctx.id());
 
-    // fn on_comp_finished(&mut self, comp_id: u64) {
-    //     let result_id = self.computations.remove(&comp_id).unwrap();
-    //     log_debug!(self.ctx, "completed execution of result {}", result_id);
-    //     let result = self.results.get_mut(&result_id).unwrap();
-    //     result.state = ClientResultState::Writing;
-    //     let write_id = self
-    //         .disk
-    //         .borrow_mut()
-    //         .write(result.output_file.size, self.id);
-    //     self.writes.insert(write_id, result_id);
-    // }
+        select! {
+            _ = self.ctx.recv_event_by_key::<DataReadCompleted>(disk_read_id).fuse() => {
+                log_debug!(self.ctx, "read completed!!!");
+            }
+            _ = self.ctx.recv_event_by_key::<DataReadFailed>(disk_read_id).fuse() => {
+                log_debug!(self.ctx, "read FAILED!!!");
+            }
+        };
+    }
 
-    // // Uploading results of completed results to server
-    // fn on_data_write_completed(&mut self, request_id: u64) {
-    //     let result_id = self.writes.remove(&request_id).unwrap();
-    //     log_debug!(self.ctx, "wrote output data for result {}", result_id);
-    //     let result = self.results.get_mut(&result_id).unwrap();
-    //     result.state = ClientResultState::Uploading;
-    //     let transfer_id = self.net.borrow_mut().transfer_data(
-    //         self.id,
-    //         self.server_id.unwrap(),
-    //         result.output_file.size as f64,
-    //         self.id,
-    //     );
-    //     self.uploads.insert(transfer_id, result_id);
-    // }
+    async fn process_compute(&self, spec: JobSpec) {
+        let comp_id = self.compute.borrow_mut().run(
+            spec.flops,
+            spec.memory,
+            spec.min_cores,
+            spec.max_cores,
+            spec.cores_dependency,
+            self.ctx.id(),
+        );
+        self.ctx.recv_event_by_key::<CompStarted>(comp_id).await;
+        log_debug!(self.ctx, "started execution of task: {}", spec.id);
 
-    fn ask_for_results(&mut self) {
+        self.ctx.recv_event_by_key::<CompFinished>(comp_id).await;
+        log_debug!(self.ctx, "completed execution of task: {}", spec.id);
+    }
+
+    fn ask_for_results(&self) {
         self.net
             .borrow_mut()
-            .send_event(ResultsInquiry {}, self.id, self.server_id.unwrap());
+            .send_event(ResultsInquiry {}, self.ctx.id(), self.server_id.unwrap());
     }
 }
 
@@ -204,28 +293,13 @@ impl EventHandler for Client {
                 self.on_start();
             }
             ResultRequest { spec, output_file } => {
-                self.on_result_request(ResultRequest { spec, output_file });
+                self.on_result_request(ResultRequest { spec, output_file }, event.id);
             }
-            DataTransferCompleted { dt } => {
-                //self.on_data_transfer_completed(dt);
+            ExecuteResult { result_id } => {
+                self.on_execute_result(result_id);
             }
-            DataReadCompleted {
-                request_id,
-                size: _,
-            } => {
-                //self.on_data_read_completed(request_id);
-            }
-            CompStarted { id, cores: _ } => {
-                //self.on_comp_started(id);
-            }
-            CompFinished { id } => {
-                //self.on_comp_finished(id);
-            }
-            DataWriteCompleted {
-                request_id,
-                size: _,
-            } => {
-                //self.on_data_write_completed(request_id);
+            ScheduleResults {} => {
+                self.schedule_results();
             }
         })
     }

@@ -14,6 +14,8 @@ use std::rc::Rc;
 use std::{cell::RefCell, time::Instant};
 use sugars::{boxed, rc, refcell};
 
+use crate::client::scheduler::Scheduler as ClientScheduler;
+use crate::client::storage::FileStorage;
 use crate::server::db_purger::DBPurger;
 use crate::server::feeder::{Feeder, SharedMemoryItem, SharedMemoryItemState};
 use crate::server::file_deleter::FileDeleter;
@@ -22,7 +24,7 @@ use crate::{
     common::Start,
     server::{
         assimilator::Assimilator, data_server::DataServer, database::BoincDatabase,
-        job_generator::JobGenerator, scheduler::Scheduler, server::Server,
+        job_generator::JobGenerator, scheduler::Scheduler as ServerScheduler, server::Server,
         transitioner::Transitioner, validator::Validator,
     },
 };
@@ -233,7 +235,7 @@ impl Simulator {
 
         // Scheduler
         let scheduler_name = &format!("{}::scheduler", server_name);
-        let scheduler = rc!(refcell!(Scheduler::new(
+        let scheduler = rc!(refcell!(ServerScheduler::new(
             self.rand.clone(),
             self.net.clone(),
             database.clone(),
@@ -355,10 +357,23 @@ impl Simulator {
         self.sim.borrow_mut().add_handler(disk_name, disk.clone());
 
         let client_name = &format!("{}::client", node_name);
+
+        // File Storage
+        let file_storage: Rc<FileStorage> = rc!(FileStorage::new());
+
+        // Scheduler
+        let scheduler_name = &format!("{}::scheduler", client_name);
+        let scheduler = ClientScheduler::new(
+            file_storage.clone(),
+            self.sim.borrow_mut().create_context(scheduler_name),
+        );
+
         let client = Client::new(
             compute,
             disk,
             self.net.clone(),
+            scheduler,
+            file_storage.clone(),
             self.sim.borrow_mut().create_context(client_name),
         );
         let client_id = self
