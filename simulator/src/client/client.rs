@@ -12,15 +12,16 @@ use dslab_core::handler::EventHandler;
 use dslab_core::{cast, log_debug};
 use dslab_network::{DataTransfer, DataTransferCompleted, Network};
 use dslab_storage::disk::Disk;
-use dslab_storage::events::{DataReadCompleted, DataWriteCompleted};
+use dslab_storage::events::{DataReadCompleted, DataWriteCompleted, DataWriteFailed};
 use dslab_storage::storage::Storage;
+use futures::{select, FutureExt};
 
 use super::task::{ClientResultState, ResultInfo};
 use crate::common::Start;
 use crate::server::data_server::{
     InputFileUploadCompleted, InputFilesInquiry, OutputFileFromClient,
 };
-use crate::server::job::ResultRequest;
+use crate::server::job::{DataServerFile, InputFileMetadata, ResultId, ResultRequest, WorkunitId};
 use crate::simulator::simulator::SetServerIds;
 
 #[derive(Clone, Serialize)]
@@ -60,10 +61,8 @@ pub struct Client {
     net: Rc<RefCell<Network>>,
     server_id: Option<Id>,
     data_server_id: Option<Id>,
-    results: RefCell<HashMap<u64, ResultInfo>>,
-    computations: HashMap<u64, u64>,
-    reads: HashMap<u64, u64>,
-    writes: HashMap<u64, u64>,
+    input_files: RefCell<HashMap<WorkunitId, InputFileMetadata>>,
+    results: RefCell<HashMap<ResultId, ResultInfo>>,
     pub ctx: SimulationContext,
 }
 
@@ -81,10 +80,8 @@ impl Client {
             net,
             server_id: None,
             data_server_id: None,
+            input_files: RefCell::new(HashMap::new()),
             results: RefCell::new(HashMap::new()),
-            computations: HashMap::new(),
-            reads: HashMap::new(),
-            writes: HashMap::new(),
             ctx,
         }
     }
@@ -103,7 +100,7 @@ impl Client {
     }
 
     async fn on_result_request(&self, req: ResultRequest) {
-        let result = ResultInfo {
+        let mut result = ResultInfo {
             spec: req.spec,
             output_file: req.output_file,
             state: ClientResultState::Downloading,
@@ -112,16 +109,46 @@ impl Client {
 
         let workunit_id = result.spec.input_file.workunit_id;
 
-        self.ctx.emit_now(
-            InputFilesInquiry { workunit_id },
-            self.data_server_id.unwrap(),
-        );
+        let input_files_already_downloaded = self.input_files.borrow().contains_key(&workunit_id);
 
+        if !input_files_already_downloaded {
+            self.ctx.emit_now(
+                InputFilesInquiry { workunit_id },
+                self.data_server_id.unwrap(),
+            );
+
+            futures::join!(
+                self.process_data_server_input_file_upload(workunit_id),
+                self.process_disk_write(DataServerFile::Input(result.spec.input_file.clone())),
+            );
+
+            self.input_files
+                .borrow_mut()
+                .insert(workunit_id, result.spec.input_file.clone());
+        }
+
+        result.state = ClientResultState::ReadyToExecute;
+
+        self.results.borrow_mut().insert(result.spec.id, result);
+    }
+
+    async fn process_data_server_input_file_upload(&self, workunit_id: WorkunitId) {
         self.ctx
             .recv_event_by_key::<InputFileUploadCompleted>(workunit_id)
             .await;
+    }
 
-        self.results.borrow_mut().insert(result.spec.id, result);
+    async fn process_disk_write(&self, file: DataServerFile) {
+        let disk_write_id = self.disk.borrow_mut().write(file.size(), self.ctx.id());
+
+        select! {
+            _ = self.ctx.recv_event_by_key::<DataWriteCompleted>(disk_write_id).fuse() => {
+                log_debug!(self.ctx, "write completed!!!");
+            }
+            _ = self.ctx.recv_event_by_key::<DataWriteFailed>(disk_write_id).fuse() => {
+                log_debug!(self.ctx, "write FAILED!!!");
+            }
+        };
     }
 
     // fn on_comp_started(&mut self, comp_id: u64) {

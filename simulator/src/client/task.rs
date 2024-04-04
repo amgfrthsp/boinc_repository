@@ -3,16 +3,12 @@ use crate::server::job::{JobSpec, OutputFileMetadata};
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum ClientResultState {
-    New,
-    Assigned,
     Downloading,
-    Reading,
-    Running,
-    Writing,
-    Uploading,
-    Completed,
-    Failed,
-    Canceled,
+    ReadyToExecute,
+    Executing,
+    ReadyToUpload,
+    ReadyToNotify,
+    Over,
 }
 
 #[derive(Debug, Clone)]
