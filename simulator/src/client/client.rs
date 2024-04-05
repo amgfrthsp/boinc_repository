@@ -24,7 +24,7 @@ use crate::common::Start;
 use crate::server::data_server::{
     InputFileUploadCompleted, InputFilesInquiry, OutputFileDownloadCompleted, OutputFileFromClient,
 };
-use crate::server::job::{DataServerFile, JobSpec, ResultId, ResultRequest, WorkunitId};
+use crate::server::job::{DataServerFile, JobSpec, ResultId, ResultRequest};
 use crate::simulator::simulator::SetServerIds;
 
 #[derive(Clone, Serialize)]
@@ -146,7 +146,7 @@ impl Client {
             );
 
             futures::join!(
-                self.process_data_server_input_file_download(workunit_id),
+                self.process_data_server_input_file_download(event_id),
                 self.process_disk_write(DataServerFile::Input(result.spec.input_file.clone())),
             );
 
@@ -188,39 +188,84 @@ impl Client {
     }
 
     pub async fn execute_result(&self, result_id: ResultId) {
+        let result = self
+            .file_storage
+            .results
+            .borrow_mut()
+            .get_mut(&result_id)
+            .unwrap()
+            .clone();
+
+        log_debug!(self.ctx, "result {}: execution started", result_id);
+        self.change_result_state(result_id, ResultState::Executing);
+
         // disk read
-        let fs_results = self.file_storage.results.borrow();
-        let result = fs_results.get(&result_id).unwrap();
         self.process_disk_read(DataServerFile::Input(result.spec.input_file.clone()))
             .await;
 
+        log_debug!(
+            self.ctx,
+            "result {}: input files disk eading finished",
+            result_id
+        );
+
         // comp start
         self.process_compute(result.spec.clone()).await;
+
+        log_debug!(self.ctx, "result {}: computing finished", result_id);
 
         // disk write
         self.process_disk_write(DataServerFile::Output(result.output_file.clone()))
             .await;
 
-        // send results
+        log_debug!(
+            self.ctx,
+            "result {}: output files written on disk",
+            result_id
+        );
+
+        // upload results on data server
+        self.change_result_state(result_id, ResultState::ReadyToUpload);
         self.ctx.emit_now(
             OutputFileFromClient {
-                output_file: result.output_file.clone(),
+                output_file: result.output_file,
             },
             self.data_server_id.unwrap(),
         );
-
         self.process_data_server_output_file_upload(result_id).await;
+
+        log_debug!(
+            self.ctx,
+            "result {}: output files uploaded to data server",
+            result_id
+        );
+
+        self.change_result_state(result_id, ResultState::ReadyToNotify);
         self.net.borrow_mut().send_event(
             ResultCompleted { result_id },
             self.ctx.id(),
             self.server_id.unwrap(),
         );
+
+        log_debug!(
+            self.ctx,
+            "result {}: server is notified about completion",
+            result_id
+        );
+
+        self.change_result_state(result_id, ResultState::Over);
         self.ask_for_results();
     }
 
-    async fn process_data_server_input_file_download(&self, workunit_id: WorkunitId) {
+    pub fn change_result_state(&self, result_id: ResultId, state: ResultState) {
+        let mut fs_results = self.file_storage.results.borrow_mut();
+        let result = fs_results.get_mut(&result_id).unwrap();
+        result.state = state;
+    }
+
+    async fn process_data_server_input_file_download(&self, ref_id: EventId) {
         self.ctx
-            .recv_event_by_key::<InputFileUploadCompleted>(workunit_id)
+            .recv_event_by_key::<InputFileUploadCompleted>(ref_id)
             .await;
     }
 

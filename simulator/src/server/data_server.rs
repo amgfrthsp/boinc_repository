@@ -112,7 +112,22 @@ impl DataServer {
                     workunit_id,
                 );
             }
-            DataServerFile::Output(_output_file) => {}
+            DataServerFile::Output(output_file) => {
+                let result_id = output_file.result_id;
+
+                self.output_files
+                    .borrow_mut()
+                    .insert(result_id, output_file);
+
+                self.ctx
+                    .emit_now(OutputFileDownloadCompleted { result_id }, from);
+
+                log_debug!(
+                    self.ctx,
+                    "received a new output file for result {}",
+                    result_id,
+                );
+            }
         }
     }
 
