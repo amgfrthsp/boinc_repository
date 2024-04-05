@@ -33,7 +33,8 @@ fn main() {
     let local_bandwidth = 10000;
     let network_latency = 0.5;
     let network_bandwidth = 1000;
-    let disk_capacity = 1000;
+    let host_disk_capacity = 5000;
+    let data_server_disk_capacity = 25000;
     let disk_read_bandwidth = 2000.;
     let disk_write_bandwidth = 2000.;
     let use_shared_network = args.use_shared_network;
@@ -50,7 +51,7 @@ fn main() {
     simulator.add_server(
         local_bandwidth as f64,
         local_latency,
-        disk_capacity,
+        host_disk_capacity,
         disk_read_bandwidth,
         disk_write_bandwidth,
     );
@@ -58,7 +59,7 @@ fn main() {
         simulator.add_host(
             local_bandwidth as f64,
             local_latency,
-            disk_capacity,
+            data_server_disk_capacity,
             disk_read_bandwidth,
             disk_write_bandwidth,
         );

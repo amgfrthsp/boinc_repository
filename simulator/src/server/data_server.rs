@@ -221,17 +221,45 @@ impl DataServer {
     }
 
     pub fn delete_input_files(&mut self, workunit_id: WorkunitId) -> u32 {
-        self.input_files.borrow_mut().remove(&workunit_id);
-        // add disk free
+        log_debug!(
+            self.ctx,
+            "deleting input files for workunit {}",
+            workunit_id,
+        );
 
-        log_debug!(self.ctx, "deleted input files for workunit {}", workunit_id,);
+        let input_file = self.input_files.borrow_mut().remove(&workunit_id);
+        if input_file.is_none() {
+            log_debug!(self.ctx, "No such output file {}", workunit_id);
+            return 0;
+        }
+
+        self.disk
+            .borrow_mut()
+            .mark_free(input_file.unwrap().size)
+            .expect("Failed to free disk space");
+
+        // process error
+
+        log_debug!(self.ctx, "deleted input files for workunit {}", workunit_id);
 
         return 0;
     }
 
     pub fn delete_output_files(&mut self, result_id: ResultId) -> u32 {
-        self.output_files.borrow_mut().remove(&result_id);
-        // add disk free
+        log_debug!(self.ctx, "deleting output files for result {}", result_id);
+        let output_file = self.output_files.borrow_mut().remove(&result_id);
+        if output_file.is_none() {
+            // no such file
+            log_debug!(self.ctx, "No such output file {}", result_id);
+            return 0;
+        }
+
+        self.disk
+            .borrow_mut()
+            .mark_free(output_file.unwrap().size)
+            .expect("Failed to free disk space");
+
+        // process error
 
         log_debug!(self.ctx, "deleted output files for result {}", result_id,);
 
