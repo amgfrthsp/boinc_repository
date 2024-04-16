@@ -59,12 +59,6 @@ pub struct ScheduleResults {}
 // output file uploaded ->
 //ask for work
 
-// thoughts:
-// 1. finished data transfer events should occur on the client side so that in case of
-// failure client is the one who initiates retries
-// 2. we should be able to differentiate between downloads and uploads to be able to do retries
-// 3. who initiates data transfers?
-
 pub struct Client {
     compute: Rc<RefCell<Compute>>,
     disk: Rc<RefCell<Disk>>,
@@ -73,6 +67,7 @@ pub struct Client {
     data_server_id: Option<Id>,
     scheduler: Scheduler,
     scheduling_planned: RefCell<bool>,
+    running_results: RefCell<Vec<ResultId>>,
     file_storage: Rc<FileStorage>,
     pub ctx: SimulationContext,
 }
@@ -98,6 +93,7 @@ impl Client {
             data_server_id: None,
             scheduler,
             scheduling_planned: RefCell::new(false),
+            running_results: RefCell::new(Vec::new()),
             file_storage,
             ctx,
         }
@@ -125,6 +121,7 @@ impl Client {
             spec: req.spec,
             output_file: req.output_file,
             state: ResultState::Downloading,
+            comp_id: None,
         };
         log_debug!(self.ctx, "job spec {:?}", result.spec);
 
@@ -175,6 +172,7 @@ impl Client {
             self.compute.borrow().cores_available(),
             self.compute.borrow().memory_available(),
         );
+
         *self.scheduling_planned.borrow_mut() = false;
         let planned = *self.scheduling_planned.borrow();
         if !planned && need_scheduling {
@@ -183,11 +181,11 @@ impl Client {
         }
     }
 
-    pub fn on_execute_result(&self, result_id: ResultId) {
-        self.ctx.spawn(self.execute_result(result_id));
+    pub fn on_run_result(&self, result_id: ResultId) {
+        self.ctx.spawn(self.run_result(result_id));
     }
 
-    pub async fn execute_result(&self, result_id: ResultId) {
+    pub async fn run_result(&self, result_id: ResultId) {
         let result = self
             .file_storage
             .results
@@ -196,21 +194,20 @@ impl Client {
             .unwrap()
             .clone();
 
-        log_debug!(self.ctx, "result {}: execution started", result_id);
-        self.change_result_state(result_id, ResultState::Executing);
-
         // disk read
         self.process_disk_read(DataServerFile::Input(result.spec.input_file.clone()))
             .await;
 
         log_debug!(
             self.ctx,
-            "result {}: input files disk eading finished",
+            "result {}: input files disk reading finished",
             result_id
         );
 
-        // comp start
-        self.process_compute(result.spec.clone()).await;
+        log_debug!(self.ctx, "result {}: execution started", result_id);
+
+        // comp start & update state
+        self.process_compute(result_id, result.spec.clone()).await;
 
         log_debug!(self.ctx, "result {}: computing finished", result_id);
 
@@ -225,7 +222,7 @@ impl Client {
         );
 
         // upload results on data server
-        self.change_result_state(result_id, ResultState::ReadyToUpload);
+        self.change_result(result_id, Some(ResultState::ReadyToUpload), None);
         self.ctx.emit_now(
             OutputFileFromClient {
                 output_file: result.output_file,
@@ -240,7 +237,7 @@ impl Client {
             result_id
         );
 
-        self.change_result_state(result_id, ResultState::ReadyToNotify);
+        self.change_result(result_id, Some(ResultState::ReadyToNotify), None);
         self.net.borrow_mut().send_event(
             ResultCompleted { result_id },
             self.ctx.id(),
@@ -253,14 +250,25 @@ impl Client {
             result_id
         );
 
-        self.change_result_state(result_id, ResultState::Over);
+        self.change_result(result_id, Some(ResultState::Over), None);
         self.ask_for_results();
     }
 
-    pub fn change_result_state(&self, result_id: ResultId, state: ResultState) {
+    pub fn change_result(
+        &self,
+        result_id: ResultId,
+        state: Option<ResultState>,
+        comp_id: Option<EventId>,
+    ) {
         let mut fs_results = self.file_storage.results.borrow_mut();
         let result = fs_results.get_mut(&result_id).unwrap();
-        result.state = state;
+
+        if state.is_some() {
+            result.state = state.unwrap();
+        }
+        if comp_id.is_some() {
+            result.comp_id = comp_id;
+        }
     }
 
     async fn process_data_server_input_file_download(&self, ref_id: EventId) {
@@ -301,7 +309,7 @@ impl Client {
         };
     }
 
-    async fn process_compute(&self, spec: JobSpec) {
+    async fn process_compute(&self, result_id: ResultId, spec: JobSpec) {
         let comp_id = self.compute.borrow_mut().run(
             spec.flops,
             spec.memory,
@@ -310,6 +318,10 @@ impl Client {
             spec.cores_dependency,
             self.ctx.id(),
         );
+
+        self.change_result(result_id, Some(ResultState::Running), Some(comp_id));
+        self.running_results.borrow_mut().push(result_id);
+
         self.ctx.recv_event_by_key::<CompStarted>(comp_id).await;
         log_debug!(self.ctx, "started execution of task: {}", spec.id);
 
@@ -341,7 +353,7 @@ impl EventHandler for Client {
                 self.on_result_request(ResultRequest { spec, output_file }, event.id);
             }
             ExecuteResult { result_id } => {
-                self.on_execute_result(result_id);
+                self.on_run_result(result_id);
             }
             ScheduleResults {} => {
                 self.schedule_results();

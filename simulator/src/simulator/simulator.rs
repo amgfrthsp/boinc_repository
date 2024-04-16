@@ -7,8 +7,6 @@ use dslab_network::{
     Network, NetworkModel,
 };
 use dslab_storage::disk::DiskBuilder;
-use rand::prelude::*;
-use rand_pcg::{Lcg128Xsl64, Pcg64};
 use serde::Serialize;
 use std::rc::Rc;
 use std::{cell::RefCell, time::Instant};
@@ -38,7 +36,6 @@ pub struct SetServerIds {
 pub struct Simulator {
     sim: Rc<RefCell<Simulation>>,
     net: Rc<RefCell<Network>>,
-    rand: Lcg128Xsl64,
     hosts: Vec<String>,
     job_generator_id: Option<u32>,
     server_id: Option<u32>,
@@ -55,7 +52,6 @@ impl Simulator {
         network_latency: f64,
     ) -> Self {
         let mut sim = Simulation::new(seed);
-        let rand = Pcg64::seed_from_u64(seed);
 
         let network_model: Box<dyn NetworkModel> = if use_shared_network {
             boxed!(SharedBandwidthNetworkModel::new(
@@ -80,7 +76,6 @@ impl Simulator {
         Self {
             sim: rc!(refcell!(sim)),
             net: network,
-            rand,
             hosts: Vec::new(),
             job_generator_id: None,
             server_id: None,
@@ -140,7 +135,6 @@ impl Simulator {
         let job_generator_name = &format!("{}::job_generator", node_name);
 
         let job_generator = rc!(refcell!(JobGenerator::new(
-            self.rand.clone(),
             self.net.clone(),
             self.sim.borrow_mut().create_context(job_generator_name),
         )));
@@ -236,7 +230,6 @@ impl Simulator {
         // Scheduler
         let scheduler_name = &format!("{}::scheduler", server_name);
         let scheduler = rc!(refcell!(ServerScheduler::new(
-            self.rand.clone(),
             self.net.clone(),
             database.clone(),
             self.sim.borrow_mut().create_context(scheduler_name)
@@ -338,9 +331,9 @@ impl Simulator {
         // compute
         let compute_name = format!("{}::compute", node_name);
         let compute = rc!(refcell!(Compute::new(
-            self.rand.gen_range(1..=10) as f64,
-            self.rand.gen_range(1..=8),
-            self.rand.gen_range(1..=4) * 1024,
+            self.ctx.gen_range(1..=10) as f64,
+            self.ctx.gen_range(1..=8),
+            self.ctx.gen_range(1..=4) * 1024,
             self.sim.borrow_mut().create_context(&compute_name),
         )));
         self.sim
@@ -364,6 +357,7 @@ impl Simulator {
         // Scheduler
         let scheduler_name = &format!("{}::scheduler", client_name);
         let scheduler = ClientScheduler::new(
+            compute.clone(),
             file_storage.clone(),
             self.sim.borrow_mut().create_context(scheduler_name),
         );

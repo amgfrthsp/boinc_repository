@@ -1,8 +1,6 @@
 use dslab_compute::multicore::CoresDependency;
 use log::log_enabled;
 use log::Level::Info;
-use rand::prelude::*;
-use rand_pcg::Lcg128Xsl64;
 use serde::Serialize;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -28,7 +26,6 @@ pub struct ReportStatus {}
 pub struct GenerateJobs {}
 
 pub struct JobGenerator {
-    rand: Lcg128Xsl64,
     net: Rc<RefCell<Network>>,
     server_id: Option<Id>,
     jobs_generated: u32,
@@ -36,9 +33,8 @@ pub struct JobGenerator {
 }
 
 impl JobGenerator {
-    pub fn new(rand: Lcg128Xsl64, net: Rc<RefCell<Network>>, ctx: SimulationContext) -> Self {
+    pub fn new(net: Rc<RefCell<Network>>, ctx: SimulationContext) -> Self {
         Self {
-            rand,
             net,
             server_id: None,
             jobs_generated: 0,
@@ -62,14 +58,14 @@ impl JobGenerator {
             let job_id = (self.jobs_generated + i) as JobSpecId;
             let job = JobSpec {
                 id: job_id,
-                flops: self.rand.gen_range(100..=1000) as f64,
-                memory: self.rand.gen_range(1..=8) * 128,
+                flops: self.ctx.gen_range(100..=1000) as f64,
+                memory: self.ctx.gen_range(1..=8) * 128,
                 min_cores: 1,
                 max_cores: 1,
                 cores_dependency: CoresDependency::Linear,
                 input_file: InputFileMetadata {
                     workunit_id: job_id, // when workunit is created on server, its id equals to job_id
-                    size: self.rand.gen_range(100..=1000),
+                    size: self.ctx.gen_range(100..=1000),
                 },
             };
             self.net

@@ -3,8 +3,6 @@ use dslab_core::context::SimulationContext;
 use dslab_core::{log_debug, log_info, Event, EventHandler};
 use dslab_network::Network;
 use priority_queue::PriorityQueue;
-use rand::prelude::*;
-use rand_pcg::Lcg128Xsl64;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -20,22 +18,15 @@ use super::server::{ClientInfo, ClientScore};
 
 pub struct Scheduler {
     id: Id,
-    rand: Lcg128Xsl64,
     net: Rc<RefCell<Network>>,
     db: Rc<BoincDatabase>,
     ctx: SimulationContext,
 }
 
 impl Scheduler {
-    pub fn new(
-        rand: Lcg128Xsl64,
-        net: Rc<RefCell<Network>>,
-        db: Rc<BoincDatabase>,
-        ctx: SimulationContext,
-    ) -> Self {
+    pub fn new(net: Rc<RefCell<Network>>, db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
         Self {
             id: ctx.id(),
-            rand,
             net,
             db,
             ctx,
@@ -110,7 +101,7 @@ impl Scheduler {
                         spec,
                         output_file: OutputFileMetadata {
                             result_id: result.id,
-                            size: self.rand.gen_range(10..=100),
+                            size: self.ctx.gen_range(10..=100),
                         },
                     };
                     self.net

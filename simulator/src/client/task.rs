@@ -1,3 +1,5 @@
+use dslab_core::EventId;
+
 use crate::server::job::{JobSpec, OutputFileMetadata};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -5,7 +7,8 @@ use crate::server::job::{JobSpec, OutputFileMetadata};
 pub enum ResultState {
     Downloading,
     ReadyToExecute,
-    Executing,
+    Running,
+    Preempted,
     ReadyToUpload,
     ReadyToNotify,
     Over,
@@ -16,4 +19,5 @@ pub struct ResultInfo {
     pub spec: JobSpec,
     pub output_file: OutputFileMetadata,
     pub state: ResultState,
+    pub comp_id: Option<EventId>,
 }
