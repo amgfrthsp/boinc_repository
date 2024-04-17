@@ -291,7 +291,6 @@ impl Server {
             &mut self.memory_available,
             &mut self.clients,
             &mut self.client_queue,
-            self.ctx.time(),
         );
 
         *self.scheduling_planned.borrow_mut() = false;

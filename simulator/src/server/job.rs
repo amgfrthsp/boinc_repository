@@ -52,6 +52,7 @@ pub struct JobSpec {
 #[derive(Serialize, Debug, Clone)]
 pub struct ResultRequest {
     pub spec: JobSpec,
+    pub report_deadline: f64,
     pub output_file: OutputFileMetadata,
 }
 

@@ -8,7 +8,7 @@ pub enum ResultState {
     Downloading,
     ReadyToExecute,
     Running,
-    Preempted,
+    Preempted { comp_id: EventId },
     ReadyToUpload,
     ReadyToNotify,
     Over,
@@ -17,6 +17,7 @@ pub enum ResultState {
 #[derive(Debug, Clone)]
 pub struct ResultInfo {
     pub spec: JobSpec,
+    pub report_deadline: f64,
     pub output_file: OutputFileMetadata,
     pub state: ResultState,
     pub comp_id: Option<EventId>,

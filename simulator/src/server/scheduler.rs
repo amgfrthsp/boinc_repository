@@ -39,7 +39,6 @@ impl Scheduler {
         memory_available: &mut u64,
         clients: &mut BTreeMap<Id, ClientInfo>,
         clients_queue: &mut PriorityQueue<Id, ClientScore>,
-        current_time: f64,
     ) {
         let results_to_schedule =
             BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
@@ -80,7 +79,7 @@ impl Scheduler {
 
                     // update state
                     result.server_state = ResultState::InProgress;
-                    result.report_deadline = current_time + workunit.delay_bound;
+                    result.report_deadline = self.ctx.time() + workunit.delay_bound;
                     workunit.transition_time =
                         f64::min(workunit.transition_time, result.report_deadline);
 
@@ -99,6 +98,7 @@ impl Scheduler {
                     spec.id = result.id;
                     let request = ResultRequest {
                         spec,
+                        report_deadline: result.report_deadline,
                         output_file: OutputFileMetadata {
                             result_id: result.id,
                             size: self.ctx.gen_range(10..=100),

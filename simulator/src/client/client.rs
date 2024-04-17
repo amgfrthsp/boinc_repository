@@ -48,6 +48,12 @@ pub struct ExecuteResult {
 }
 
 #[derive(Clone, Serialize)]
+pub struct ContinueResult {
+    pub result_id: ResultId,
+    pub comp_id: EventId,
+}
+
+#[derive(Clone, Serialize)]
 pub struct ScheduleResults {}
 
 // on result_request ->
@@ -66,8 +72,6 @@ pub struct Client {
     server_id: Option<Id>,
     data_server_id: Option<Id>,
     scheduler: Scheduler,
-    scheduling_planned: RefCell<bool>,
-    running_results: RefCell<Vec<ResultId>>,
     file_storage: Rc<FileStorage>,
     pub ctx: SimulationContext,
 }
@@ -92,8 +96,6 @@ impl Client {
             server_id: None,
             data_server_id: None,
             scheduler,
-            scheduling_planned: RefCell::new(false),
-            running_results: RefCell::new(Vec::new()),
             file_storage,
             ctx,
         }
@@ -119,6 +121,7 @@ impl Client {
     async fn process_result_request(&self, req: ResultRequest, event_id: EventId) {
         let mut result = ResultInfo {
             spec: req.spec,
+            report_deadline: req.report_deadline,
             output_file: req.output_file,
             state: ResultState::Downloading,
             comp_id: None,
@@ -160,24 +163,12 @@ impl Client {
             .borrow_mut()
             .insert(result.spec.id, result);
 
-        let planned = *self.scheduling_planned.borrow();
-        if !planned {
-            *self.scheduling_planned.borrow_mut() = true;
-            self.ctx.emit_self(ScheduleResults {}, 30.);
-        }
+        self.ctx.emit_self_now(ScheduleResults {});
     }
 
     pub fn schedule_results(&self) {
-        let need_scheduling = self.scheduler.schedule(
-            self.compute.borrow().cores_available(),
-            self.compute.borrow().memory_available(),
-        );
-
-        *self.scheduling_planned.borrow_mut() = false;
-        let planned = *self.scheduling_planned.borrow();
-        if !planned && need_scheduling {
-            *self.scheduling_planned.borrow_mut() = true;
-            self.ctx.emit_self(ScheduleResults {}, 30.);
+        if self.scheduler.schedule() {
+            self.ctx.emit_self(ScheduleResults {}, 200.);
         }
     }
 
@@ -222,7 +213,7 @@ impl Client {
         );
 
         // upload results on data server
-        self.change_result(result_id, Some(ResultState::ReadyToUpload), None);
+        self.change_result_state(result_id, ResultState::ReadyToUpload);
         self.ctx.emit_now(
             OutputFileFromClient {
                 output_file: result.output_file,
@@ -237,7 +228,7 @@ impl Client {
             result_id
         );
 
-        self.change_result(result_id, Some(ResultState::ReadyToNotify), None);
+        self.change_result_state(result_id, ResultState::ReadyToNotify);
         self.net.borrow_mut().send_event(
             ResultCompleted { result_id },
             self.ctx.id(),
@@ -250,25 +241,21 @@ impl Client {
             result_id
         );
 
-        self.change_result(result_id, Some(ResultState::Over), None);
+        self.change_result_state(result_id, ResultState::Over);
         self.ask_for_results();
     }
 
-    pub fn change_result(
-        &self,
-        result_id: ResultId,
-        state: Option<ResultState>,
-        comp_id: Option<EventId>,
-    ) {
+    pub fn change_result_state(&self, result_id: ResultId, state: ResultState) {
         let mut fs_results = self.file_storage.results.borrow_mut();
         let result = fs_results.get_mut(&result_id).unwrap();
-
-        if state.is_some() {
-            result.state = state.unwrap();
-        }
-        if comp_id.is_some() {
-            result.comp_id = comp_id;
-        }
+        log_debug!(
+            self.ctx,
+            "Result {} state: {:?} -> {:?}",
+            result_id,
+            result.state,
+            state
+        );
+        result.state = state;
     }
 
     async fn process_data_server_input_file_download(&self, ref_id: EventId) {
@@ -319,14 +306,26 @@ impl Client {
             self.ctx.id(),
         );
 
-        self.change_result(result_id, Some(ResultState::Running), Some(comp_id));
-        self.running_results.borrow_mut().push(result_id);
+        self.change_result_state(result_id, ResultState::Running);
+        self.file_storage
+            .running_results
+            .borrow_mut()
+            .insert((result_id, comp_id));
 
         self.ctx.recv_event_by_key::<CompStarted>(comp_id).await;
         log_debug!(self.ctx, "started execution of task: {}", spec.id);
 
         self.ctx.recv_event_by_key::<CompFinished>(comp_id).await;
         log_debug!(self.ctx, "completed execution of task: {}", spec.id);
+    }
+
+    pub fn on_continue_result(&self, result_id: ResultId, comp_id: EventId) {
+        self.compute.borrow_mut().continue_computation(comp_id);
+        self.file_storage
+            .running_results
+            .borrow_mut()
+            .insert((result_id, comp_id));
+        self.change_result_state(result_id, ResultState::Running);
     }
 
     fn ask_for_results(&self) {
@@ -349,11 +348,25 @@ impl EventHandler for Client {
             Start {} => {
                 self.on_start();
             }
-            ResultRequest { spec, output_file } => {
-                self.on_result_request(ResultRequest { spec, output_file }, event.id);
+            ResultRequest {
+                spec,
+                report_deadline,
+                output_file,
+            } => {
+                self.on_result_request(
+                    ResultRequest {
+                        spec,
+                        report_deadline,
+                        output_file,
+                    },
+                    event.id,
+                );
             }
             ExecuteResult { result_id } => {
                 self.on_run_result(result_id);
+            }
+            ContinueResult { result_id, comp_id } => {
+                self.on_continue_result(result_id, comp_id);
             }
             ScheduleResults {} => {
                 self.schedule_results();

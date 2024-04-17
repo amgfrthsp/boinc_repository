@@ -16,8 +16,8 @@ use super::job::{InputFileMetadata, JobSpec, JobSpecId};
 use crate::common::Start;
 use crate::simulator::simulator::SetServerIds;
 
-const BATCH_SIZE: u32 = 3;
-const JOBS_AMOUNT_TOTAL: u32 = 5;
+const BATCH_SIZE: u32 = 1;
+const JOBS_AMOUNT_TOTAL: u32 = 3;
 
 #[derive(Clone, Serialize)]
 pub struct ReportStatus {}

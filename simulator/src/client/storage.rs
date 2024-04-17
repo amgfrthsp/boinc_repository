@@ -1,6 +1,8 @@
 use crate::server::job::{InputFileMetadata, OutputFileMetadata};
 
 use crate::server::job::{ResultId, WorkunitId};
+use dslab_core::EventId;
+use std::collections::HashSet;
 use std::{cell::RefCell, collections::HashMap};
 use sugars::refcell;
 
@@ -10,6 +12,7 @@ pub struct FileStorage {
     pub input_files: RefCell<HashMap<WorkunitId, InputFileMetadata>>,
     pub output_files: RefCell<HashMap<ResultId, OutputFileMetadata>>,
     pub results: RefCell<HashMap<ResultId, ResultInfo>>,
+    pub running_results: RefCell<HashSet<(ResultId, EventId)>>,
 }
 
 impl FileStorage {
@@ -18,6 +21,7 @@ impl FileStorage {
             input_files: refcell!(HashMap::new()),
             output_files: refcell!(HashMap::new()),
             results: refcell!(HashMap::new()),
+            running_results: refcell!(HashSet::new()),
         }
     }
 
