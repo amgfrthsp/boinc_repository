@@ -20,5 +20,7 @@ pub struct ResultInfo {
     pub report_deadline: f64,
     pub output_file: OutputFileMetadata,
     pub state: ResultState,
+    pub time_added: f64,
     pub comp_id: Option<EventId>,
+    pub sim_miss_deadline: bool,
 }

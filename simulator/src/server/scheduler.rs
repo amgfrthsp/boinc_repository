@@ -61,15 +61,14 @@ impl Scheduler {
             let result = db_result_mut.get_mut(&result_id).unwrap();
             let workunit = db_workunit_mut.get_mut(&result.workunit_id).unwrap();
 
-            if workunit.spec.min_cores > *cpus_available || workunit.spec.memory > *memory_available
-            {
+            if workunit.spec.cores > *cpus_available || workunit.spec.memory > *memory_available {
                 continue;
             }
 
             let mut checked_clients = Vec::new();
 
             while let Some((client_id, (memory, cpus, speed))) = clients_queue.pop() {
-                if cpus >= workunit.spec.min_cores && memory >= workunit.spec.memory {
+                if cpus >= workunit.spec.cores && memory >= workunit.spec.memory {
                     log_debug!(
                         self.ctx,
                         "assigned result {} to client {}",
@@ -87,9 +86,9 @@ impl Scheduler {
 
                     // update client record
                     let client = clients.get_mut(&client_id).unwrap();
-                    client.cpus_available -= workunit.spec.min_cores;
+                    client.cpus_available -= workunit.spec.cores;
                     client.memory_available -= workunit.spec.memory;
-                    *cpus_available -= workunit.spec.min_cores;
+                    *cpus_available -= workunit.spec.cores;
                     *memory_available -= workunit.spec.memory;
                     checked_clients.push((client.id, client.score()));
 

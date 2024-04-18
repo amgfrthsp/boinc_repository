@@ -270,9 +270,9 @@ impl Server {
         }
 
         let client = self.clients.get_mut(&client_id).unwrap();
-        client.cpus_available += workunit.spec.min_cores;
+        client.cpus_available += workunit.spec.cores;
         client.memory_available += workunit.spec.memory;
-        self.cpus_available += workunit.spec.min_cores;
+        self.cpus_available += workunit.spec.cores;
         self.memory_available += workunit.spec.memory;
     }
 
@@ -389,8 +389,7 @@ impl EventHandler for Server {
                 id,
                 flops,
                 memory,
-                min_cores,
-                max_cores,
+                cores,
                 cores_dependency,
                 input_file,
             } => {
@@ -399,8 +398,7 @@ impl EventHandler for Server {
                         id,
                         flops,
                         memory,
-                        min_cores,
-                        max_cores,
+                        cores,
                         cores_dependency,
                         input_file,
                     },

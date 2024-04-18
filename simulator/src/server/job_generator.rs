@@ -16,8 +16,8 @@ use super::job::{InputFileMetadata, JobSpec, JobSpecId};
 use crate::common::Start;
 use crate::simulator::simulator::SetServerIds;
 
-const BATCH_SIZE: u32 = 1;
-const JOBS_AMOUNT_TOTAL: u32 = 3;
+const BATCH_SIZE: u32 = 3;
+const JOBS_AMOUNT_TOTAL: u32 = 12;
 
 #[derive(Clone, Serialize)]
 pub struct ReportStatus {}
@@ -60,8 +60,7 @@ impl JobGenerator {
                 id: job_id,
                 flops: self.ctx.gen_range(100..=1000) as f64,
                 memory: self.ctx.gen_range(1..=8) * 128,
-                min_cores: 1,
-                max_cores: 1,
+                cores: 1,
                 cores_dependency: CoresDependency::Linear,
                 input_file: InputFileMetadata {
                     workunit_id: job_id, // when workunit is created on server, its id equals to job_id

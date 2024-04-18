@@ -8,7 +8,7 @@ use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
 use dslab_core::event::Event;
 use dslab_core::handler::EventHandler;
-use dslab_core::{cast, log_debug, EventId};
+use dslab_core::{cast, log_debug, log_info, EventId};
 use dslab_network::Network;
 use dslab_storage::disk::Disk;
 use dslab_storage::events::{
@@ -55,6 +55,9 @@ pub struct ContinueResult {
 
 #[derive(Clone, Serialize)]
 pub struct ScheduleResults {}
+
+#[derive(Clone, Serialize)]
+pub struct ReportStatus {}
 
 // on result_request ->
 // (ds) download input_file (start data transfer) ->
@@ -112,7 +115,8 @@ impl Client {
             self.server_id.unwrap(),
             0.5,
         );
-        self.ctx.emit_self(ScheduleResults {}, 200.);
+        self.ctx.emit_self(ScheduleResults {}, 75.);
+        self.ctx.emit_self(ReportStatus {}, 100.);
     }
 
     fn on_result_request(&self, req: ResultRequest, event_id: EventId) {
@@ -125,7 +129,9 @@ impl Client {
             report_deadline: req.report_deadline,
             output_file: req.output_file,
             state: ResultState::Downloading,
+            time_added: self.ctx.time(),
             comp_id: None,
+            sim_miss_deadline: false,
         };
         log_debug!(self.ctx, "job spec {:?}", result.spec);
 
@@ -196,12 +202,8 @@ impl Client {
             result_id
         );
 
-        log_debug!(self.ctx, "result {}: execution started", result_id);
-
         // comp start & update state
         self.process_compute(result_id, result.spec.clone()).await;
-
-        log_debug!(self.ctx, "result {}: computing finished", result_id);
 
         // disk write
         self.process_disk_write(DataServerFile::Output(result.output_file.clone()))
@@ -311,14 +313,14 @@ impl Client {
         let comp_id = self.compute.borrow_mut().run(
             spec.flops,
             spec.memory,
-            spec.min_cores,
-            spec.max_cores,
+            spec.cores,
+            spec.cores,
             spec.cores_dependency,
             self.ctx.id(),
         );
 
         self.ctx.recv_event_by_key::<CompStarted>(comp_id).await;
-        log_debug!(self.ctx, "started execution of task: {}", spec.id);
+        log_debug!(self.ctx, "result {}: execution started", spec.id);
 
         self.change_result(result_id, Some(ResultState::Running), Some(comp_id));
         self.file_storage
@@ -327,7 +329,7 @@ impl Client {
             .insert(result_id);
 
         self.ctx.recv_event_by_key::<CompFinished>(comp_id).await;
-        log_debug!(self.ctx, "completed execution of task: {}", spec.id);
+        log_debug!(self.ctx, "result {}: execution finished", spec.id);
 
         self.file_storage
             .running_results
@@ -349,6 +351,29 @@ impl Client {
         self.net
             .borrow_mut()
             .send_event(ResultsInquiry {}, self.ctx.id(), self.server_id.unwrap());
+    }
+
+    fn is_active(&self) -> bool {
+        return !self.file_storage.running_results.borrow().is_empty();
+    }
+
+    fn report_status(&mut self) {
+        log_info!(
+            self.ctx,
+            "CPU: {:.2} / MEMORY: {:.2}",
+            (self.compute.borrow().cores_total() - self.compute.borrow().cores_available()) as f64
+                / self.compute.borrow().cores_total() as f64,
+            (self.compute.borrow().memory_total() - self.compute.borrow().memory_available())
+                as f64
+                / self.compute.borrow().memory_total() as f64,
+        );
+        let fs_ref = self.file_storage.results.borrow();
+        for result in fs_ref.values() {
+            log_info!(self.ctx, "Result {}: {:?}", result.spec.id, result.state);
+        }
+        if self.is_active() {
+            self.ctx.emit_self(ReportStatus {}, 100.);
+        }
     }
 }
 
@@ -387,6 +412,9 @@ impl EventHandler for Client {
             }
             ScheduleResults {} => {
                 self.schedule_results();
+            }
+            ReportStatus {} => {
+                self.report_status();
             }
         })
     }

@@ -11,6 +11,7 @@ pub struct FileStorage {
     pub input_files: RefCell<HashMap<WorkunitId, InputFileMetadata>>,
     pub output_files: RefCell<HashMap<ResultId, OutputFileMetadata>>,
     pub results: RefCell<HashMap<ResultId, ResultInfo>>,
+    pub results_queue: RefCell<Vec<ResultId>>,
     pub running_results: RefCell<HashSet<ResultId>>,
 }
 
@@ -20,6 +21,7 @@ impl FileStorage {
             input_files: refcell!(HashMap::new()),
             output_files: refcell!(HashMap::new()),
             results: refcell!(HashMap::new()),
+            results_queue: refcell!(Vec::new()),
             running_results: refcell!(HashSet::new()),
         }
     }

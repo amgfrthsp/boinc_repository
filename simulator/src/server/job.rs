@@ -43,8 +43,7 @@ pub struct JobSpec {
     pub id: JobSpecId,
     pub flops: f64,
     pub memory: u64,
-    pub min_cores: u32,
-    pub max_cores: u32,
+    pub cores: u32,
     pub cores_dependency: CoresDependency,
     pub input_file: InputFileMetadata,
 }

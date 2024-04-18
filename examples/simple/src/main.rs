@@ -28,7 +28,7 @@ fn main() {
 
     // params
     let args = Args::parse();
-    let host_count = 2;
+    let host_count = 10;
     let local_latency = 0.0;
     let local_bandwidth = 10000;
     let network_latency = 0.5;
