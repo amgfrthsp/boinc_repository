@@ -121,19 +121,25 @@ impl Scheduler {
             scheduled_results.push(result_id);
         }
 
-        for (result_id, comp_id) in self.file_storage.running_results.borrow().clone() {
+        let clone = self.file_storage.running_results.borrow().clone();
+
+        for result_id in clone {
             if !scheduled_results.contains(&result_id) {
-                self.compute.borrow_mut().preempt_computation(comp_id);
-
                 let result = fs_results.get_mut(&result_id).unwrap();
-                result.state = ResultState::Preempted { comp_id };
 
+                self.compute
+                    .borrow_mut()
+                    .preempt_computation(result.comp_id.unwrap());
+
+                result.state = ResultState::Preempted {
+                    comp_id: result.comp_id.unwrap(),
+                };
                 log_debug!(self.ctx, "Preempt result {}", result_id);
 
                 self.file_storage
                     .running_results
                     .borrow_mut()
-                    .remove(&(result_id, comp_id));
+                    .remove(&result_id);
             }
         }
 

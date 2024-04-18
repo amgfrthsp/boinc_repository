@@ -112,6 +112,7 @@ impl Client {
             self.server_id.unwrap(),
             0.5,
         );
+        self.ctx.emit_self(ScheduleResults {}, 200.);
     }
 
     fn on_result_request(&self, req: ResultRequest, event_id: EventId) {
@@ -163,7 +164,7 @@ impl Client {
             .borrow_mut()
             .insert(result.spec.id, result);
 
-        self.ctx.emit_self_now(ScheduleResults {});
+        //self.ctx.emit_self_now(ScheduleResults {});
     }
 
     pub fn schedule_results(&self) {
@@ -213,7 +214,7 @@ impl Client {
         );
 
         // upload results on data server
-        self.change_result_state(result_id, ResultState::ReadyToUpload);
+        self.change_result(result_id, Some(ResultState::ReadyToUpload), None);
         self.ctx.emit_now(
             OutputFileFromClient {
                 output_file: result.output_file,
@@ -228,7 +229,7 @@ impl Client {
             result_id
         );
 
-        self.change_result_state(result_id, ResultState::ReadyToNotify);
+        self.change_result(result_id, Some(ResultState::ReadyToNotify), None);
         self.net.borrow_mut().send_event(
             ResultCompleted { result_id },
             self.ctx.id(),
@@ -241,11 +242,16 @@ impl Client {
             result_id
         );
 
-        self.change_result_state(result_id, ResultState::Over);
+        self.change_result(result_id, Some(ResultState::Over), None);
         self.ask_for_results();
     }
 
-    pub fn change_result_state(&self, result_id: ResultId, state: ResultState) {
+    pub fn change_result(
+        &self,
+        result_id: ResultId,
+        state: Option<ResultState>,
+        comp_id: Option<EventId>,
+    ) {
         let mut fs_results = self.file_storage.results.borrow_mut();
         let result = fs_results.get_mut(&result_id).unwrap();
         log_debug!(
@@ -255,7 +261,12 @@ impl Client {
             result.state,
             state
         );
-        result.state = state;
+        if state.is_some() {
+            result.state = state.unwrap();
+        }
+        if comp_id.is_some() {
+            result.comp_id = comp_id;
+        }
     }
 
     async fn process_data_server_input_file_download(&self, ref_id: EventId) {
@@ -306,17 +317,22 @@ impl Client {
             self.ctx.id(),
         );
 
-        self.change_result_state(result_id, ResultState::Running);
-        self.file_storage
-            .running_results
-            .borrow_mut()
-            .insert((result_id, comp_id));
-
         self.ctx.recv_event_by_key::<CompStarted>(comp_id).await;
         log_debug!(self.ctx, "started execution of task: {}", spec.id);
 
+        self.change_result(result_id, Some(ResultState::Running), Some(comp_id));
+        self.file_storage
+            .running_results
+            .borrow_mut()
+            .insert(result_id);
+
         self.ctx.recv_event_by_key::<CompFinished>(comp_id).await;
         log_debug!(self.ctx, "completed execution of task: {}", spec.id);
+
+        self.file_storage
+            .running_results
+            .borrow_mut()
+            .remove(&result_id);
     }
 
     pub fn on_continue_result(&self, result_id: ResultId, comp_id: EventId) {
@@ -324,8 +340,9 @@ impl Client {
         self.file_storage
             .running_results
             .borrow_mut()
-            .insert((result_id, comp_id));
-        self.change_result_state(result_id, ResultState::Running);
+            .insert(result_id);
+        log_debug!(self.ctx, "continue result: {}", result_id);
+        self.change_result(result_id, Some(ResultState::Running), None);
     }
 
     fn ask_for_results(&self) {
