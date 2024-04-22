@@ -1,5 +1,4 @@
 use boinc_simulator::{config::sim_config::SimulationConfig, simulator::simulator::Simulator};
-use clap::Parser;
 use env_logger::Builder;
 use std::io::Write;
 

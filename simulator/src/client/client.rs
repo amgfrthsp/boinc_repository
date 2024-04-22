@@ -76,6 +76,8 @@ pub struct Client {
     data_server_id: Option<Id>,
     scheduler: Scheduler,
     file_storage: Rc<FileStorage>,
+    next_scheduling_time: RefCell<f64>,
+    scheduling_event: RefCell<Option<EventId>>,
     pub ctx: SimulationContext,
 }
 
@@ -100,6 +102,8 @@ impl Client {
             data_server_id: None,
             scheduler,
             file_storage,
+            next_scheduling_time: RefCell::new(0.),
+            scheduling_event: RefCell::new(None),
             ctx,
         }
     }
@@ -115,7 +119,6 @@ impl Client {
             self.server_id.unwrap(),
             0.5,
         );
-        self.ctx.emit_self(ScheduleResults {}, 75.);
         self.ctx.emit_self(ReportStatus {}, 100.);
     }
 
@@ -170,13 +173,31 @@ impl Client {
             .borrow_mut()
             .insert(result.spec.id, result);
 
-        //self.ctx.emit_self_now(ScheduleResults {});
+        self.plan_scheduling(5.);
+    }
+
+    pub fn plan_scheduling(&self, delay: f64) {
+        let planned = self.scheduling_event.borrow().is_some();
+        if planned {
+            if *self.next_scheduling_time.borrow() <= self.ctx.time() + delay {
+                return;
+            } else {
+                self.ctx
+                    .cancel_event(self.scheduling_event.borrow().unwrap());
+            }
+        }
+        log_debug!(
+            self.ctx,
+            "Planned scheduling for {}",
+            self.ctx.time() + delay
+        );
+        *self.scheduling_event.borrow_mut() = Some(self.ctx.emit_self(ScheduleResults {}, delay));
+        *self.next_scheduling_time.borrow_mut() = self.ctx.time() + delay;
     }
 
     pub fn schedule_results(&self) {
-        if self.scheduler.schedule() {
-            self.ctx.emit_self(ScheduleResults {}, 200.);
-        }
+        self.scheduler.schedule();
+        *self.scheduling_event.borrow_mut() = None;
     }
 
     pub fn on_run_result(&self, result_id: ResultId) {
@@ -191,6 +212,8 @@ impl Client {
             .get_mut(&result_id)
             .unwrap()
             .clone();
+
+        self.change_result(result_id, Some(ResultState::Running), None);
 
         // disk read
         self.process_disk_read(DataServerFile::Input(result.spec.input_file.clone()))
@@ -245,6 +268,7 @@ impl Client {
         );
 
         self.change_result(result_id, Some(ResultState::Over), None);
+        self.plan_scheduling(5.);
         self.ask_for_results();
     }
 
@@ -322,7 +346,7 @@ impl Client {
         self.ctx.recv_event_by_key::<CompStarted>(comp_id).await;
         log_debug!(self.ctx, "result {}: execution started", spec.id);
 
-        self.change_result(result_id, Some(ResultState::Running), Some(comp_id));
+        self.change_result(result_id, None, Some(comp_id));
         self.file_storage
             .running_results
             .borrow_mut()

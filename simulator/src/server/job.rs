@@ -45,6 +45,9 @@ pub struct JobSpec {
     pub memory: u64,
     pub cores: u32,
     pub cores_dependency: CoresDependency,
+    pub delay_bound: f64,
+    pub min_quorum: u64,
+    pub target_nresults: u64,
     pub input_file: InputFileMetadata,
 }
 
@@ -80,13 +83,9 @@ pub enum ResultOutcome {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub enum ValidateState {
-    Undefined,
     Init,
     Valid,
     Invalid,
-    NoCheck,
-    Error,
-    Inconclusive,
     TooLate,
 }
 
@@ -114,9 +113,6 @@ pub struct WorkunitInfo {
     pub spec: JobSpec,
     pub result_ids: Vec<ResultId>,
     pub transition_time: f64,
-    pub delay_bound: f64,
-    pub min_quorum: u64,
-    pub target_nresults: u64,
     pub need_validate: bool,
     pub file_delete_state: FileDeleteState,
     pub canonical_resultid: Option<ResultId>,

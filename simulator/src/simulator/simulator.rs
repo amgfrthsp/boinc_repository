@@ -145,9 +145,9 @@ impl Simulator {
         let job_generator_name = &format!("{}::job_generator", node_name);
 
         let job_generator = rc!(refcell!(JobGenerator::new(
-            config,
             self.net.clone(),
             self.sim.borrow_mut().create_context(job_generator_name),
+            config,
         )));
         let job_generator_id = self
             .sim
@@ -191,6 +191,7 @@ impl Simulator {
         let validator = Validator::new(
             database.clone(),
             self.sim.borrow_mut().create_context(validator_name),
+            config.validator.clone(),
         );
 
         // Assimilator
@@ -198,6 +199,7 @@ impl Simulator {
         let assimilator = Assimilator::new(
             database.clone(),
             self.sim.borrow_mut().create_context(assimilator_name),
+            config.assimilator.clone(),
         );
 
         // Transitioner
@@ -205,6 +207,7 @@ impl Simulator {
         let transitioner = Transitioner::new(
             database.clone(),
             self.sim.borrow_mut().create_context(transitioner_name),
+            config.transitioner.clone(),
         );
 
         // Database purger
@@ -212,6 +215,7 @@ impl Simulator {
         let db_purger = DBPurger::new(
             database.clone(),
             self.sim.borrow_mut().create_context(db_purger_name),
+            config.db_purger.clone(),
         );
 
         // Feeder
@@ -229,6 +233,7 @@ impl Simulator {
             shared_memory.clone(),
             database.clone(),
             self.sim.borrow_mut().create_context(feeder_name),
+            config.feeder.clone(),
         );
 
         // Scheduler
@@ -236,7 +241,8 @@ impl Simulator {
         let scheduler = rc!(refcell!(ServerScheduler::new(
             self.net.clone(),
             database.clone(),
-            self.sim.borrow_mut().create_context(scheduler_name)
+            self.sim.borrow_mut().create_context(scheduler_name),
+            config.scheduler.clone(),
         )));
         let scheduler_id = self
             .sim
@@ -258,7 +264,8 @@ impl Simulator {
         let data_server: Rc<RefCell<DataServer>> = rc!(refcell!(DataServer::new(
             self.net.clone(),
             disk,
-            self.sim.borrow_mut().create_context(data_server_name)
+            self.sim.borrow_mut().create_context(data_server_name),
+            config.data_servers[0].clone(),
         )));
         let data_server_id = self
             .sim
@@ -275,6 +282,7 @@ impl Simulator {
             database.clone(),
             data_server.clone(),
             self.sim.borrow_mut().create_context(file_deleter_name),
+            config.file_deleter.clone(),
         );
 
         let server = rc!(refcell!(Server::new(

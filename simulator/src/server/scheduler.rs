@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::time::Instant;
 
+use crate::config::sim_config::SchedulerConfig;
 use crate::server::job::{OutputFileMetadata, ResultRequest, ResultState};
 
 use super::database::BoincDatabase;
@@ -21,22 +22,28 @@ pub struct Scheduler {
     net: Rc<RefCell<Network>>,
     db: Rc<BoincDatabase>,
     ctx: SimulationContext,
+    #[allow(dead_code)]
+    config: SchedulerConfig,
 }
 
 impl Scheduler {
-    pub fn new(net: Rc<RefCell<Network>>, db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
+    pub fn new(
+        net: Rc<RefCell<Network>>,
+        db: Rc<BoincDatabase>,
+        ctx: SimulationContext,
+        config: SchedulerConfig,
+    ) -> Self {
         Self {
             id: ctx.id(),
             net,
             db,
             ctx,
+            config,
         }
     }
 
     pub fn schedule(
         &mut self,
-        cpus_available: &mut u32,
-        memory_available: &mut u64,
         clients: &mut BTreeMap<Id, ClientInfo>,
         clients_queue: &mut PriorityQueue<Id, ClientScore>,
     ) {
@@ -61,10 +68,6 @@ impl Scheduler {
             let result = db_result_mut.get_mut(&result_id).unwrap();
             let workunit = db_workunit_mut.get_mut(&result.workunit_id).unwrap();
 
-            if workunit.spec.cores > *cpus_available || workunit.spec.memory > *memory_available {
-                continue;
-            }
-
             let mut checked_clients = Vec::new();
 
             while let Some((client_id, (memory, cpus, speed))) = clients_queue.pop() {
@@ -78,7 +81,7 @@ impl Scheduler {
 
                     // update state
                     result.server_state = ResultState::InProgress;
-                    result.report_deadline = self.ctx.time() + workunit.delay_bound;
+                    result.report_deadline = self.ctx.time() + workunit.spec.delay_bound;
                     workunit.transition_time =
                         f64::min(workunit.transition_time, result.report_deadline);
 
@@ -88,8 +91,6 @@ impl Scheduler {
                     let client = clients.get_mut(&client_id).unwrap();
                     client.cpus_available -= workunit.spec.cores;
                     client.memory_available -= workunit.spec.memory;
-                    *cpus_available -= workunit.spec.cores;
-                    *memory_available -= workunit.spec.memory;
                     checked_clients.push((client.id, client.score()));
 
                     // send result instance to client

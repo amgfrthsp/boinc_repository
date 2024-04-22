@@ -24,18 +24,19 @@ pub struct ReportStatus {}
 pub struct GenerateJobs {}
 
 pub struct JobGenerator {
-    config: JobGeneratorConfig,
     net: Rc<RefCell<Network>>,
     server_id: Option<Id>,
     jobs_generated: u64,
     ctx: SimulationContext,
+    #[allow(dead_code)]
+    config: JobGeneratorConfig,
 }
 
 impl JobGenerator {
     pub fn new(
-        config: JobGeneratorConfig,
         net: Rc<RefCell<Network>>,
         ctx: SimulationContext,
+        config: JobGeneratorConfig,
     ) -> Self {
         Self {
             config,
@@ -61,6 +62,9 @@ impl JobGenerator {
         }
         for i in 0..self.config.job_batch_size {
             let job_id = (self.jobs_generated + i as u64) as JobSpecId;
+            let min_quorum = self
+                .ctx
+                .gen_range(self.config.min_quorum_lower_bound..=self.config.min_quorum_upper_bound);
             let job = JobSpec {
                 id: job_id,
                 flops: self
@@ -74,6 +78,14 @@ impl JobGenerator {
                     .ctx
                     .gen_range(self.config.cores_lower_bound..=self.config.cores_upper_bound),
                 cores_dependency: CoresDependency::Linear,
+                delay_bound: self
+                    .ctx
+                    .gen_range(self.config.delay_lower_bound..=self.config.delay_upper_bound),
+                min_quorum,
+                target_nresults: min_quorum
+                    + self
+                        .ctx
+                        .gen_range(0..=self.config.target_nresults_redundancy),
                 input_file: InputFileMetadata {
                     workunit_id: job_id, // when workunit is created on server, its id equals to job_id
                     size: self.ctx.gen_range(

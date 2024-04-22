@@ -4,6 +4,7 @@ use dslab_core::log_info;
 use std::borrow::Borrow;
 use std::rc::Rc;
 
+use crate::config::sim_config::TransitionerConfig;
 use crate::server::job::{
     AssimilateState, FileDeleteState, ResultOutcome, ResultState, ValidateState,
 };
@@ -18,14 +19,17 @@ pub struct Transitioner {
     db: Rc<BoincDatabase>,
     next_result_id: ResultId,
     ctx: SimulationContext,
+    #[allow(dead_code)]
+    config: TransitionerConfig,
 }
 
 impl Transitioner {
-    pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
+    pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext, config: TransitionerConfig) -> Self {
         Self {
             db,
             next_result_id: 0,
             ctx,
+            config,
         }
     }
 
@@ -33,6 +37,7 @@ impl Transitioner {
         let workunits_to_transit =
             BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
                 self.ctx.time() >= wu.transition_time
+                    && wu.file_delete_state != FileDeleteState::Done
             });
         log_info!(self.ctx, "transitioning started");
 
@@ -42,7 +47,14 @@ impl Transitioner {
             // check for timed-out results
             let workunit = db_workunit_mut.get_mut(&wu_id).unwrap();
 
-            let mut next_transition_time = current_time + workunit.delay_bound;
+            log_debug!(
+                self.ctx,
+                "transitioning workunit {}: {:?}",
+                workunit.id,
+                workunit
+            );
+
+            let mut next_transition_time = current_time + workunit.spec.delay_bound;
             let mut new_results_needed_cnt: u64 = 0;
 
             self.check_timed_out_and_validation(
@@ -81,7 +93,7 @@ impl Transitioner {
         let mut res_outcome_success_cnt = 0;
 
         let mut need_validate = false;
-        *next_transition_time = current_time + workunit.delay_bound;
+        *next_transition_time = current_time + workunit.spec.delay_bound;
 
         for result_id in &workunit.result_ids {
             let result = db_result_mut.get_mut(result_id).unwrap();
@@ -126,18 +138,23 @@ impl Transitioner {
         }
 
         // trigger validation if needed
-        if need_validate && res_outcome_success_cnt >= workunit.min_quorum {
+        if need_validate && res_outcome_success_cnt >= workunit.spec.min_quorum {
             workunit.need_validate = true;
         }
 
-        *new_results_needed_cnt = u64::max(
-            0,
-            workunit
-                .target_nresults
-                .saturating_sub(res_server_state_unsent_cnt)
-                .saturating_sub(res_server_state_inprogress_cnt)
-                .saturating_sub(res_outcome_success_cnt),
-        );
+        if workunit.canonical_resultid.is_some() {
+            *new_results_needed_cnt = 0;
+        } else {
+            *new_results_needed_cnt = u64::max(
+                0,
+                workunit
+                    .spec
+                    .target_nresults
+                    .saturating_sub(res_server_state_unsent_cnt)
+                    .saturating_sub(res_server_state_inprogress_cnt)
+                    .saturating_sub(res_outcome_success_cnt),
+            );
+        }
     }
 
     fn generate_new_results(&self, workunit: &mut WorkunitInfo, cnt: u64) {

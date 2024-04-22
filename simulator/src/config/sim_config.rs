@@ -38,6 +38,11 @@ pub struct JobGeneratorConfig {
     pub memory_upper_bound: u64,
     pub cores_lower_bound: u32,
     pub cores_upper_bound: u32,
+    pub delay_lower_bound: f64,
+    pub delay_upper_bound: f64,
+    pub min_quorum_lower_bound: u64,
+    pub min_quorum_upper_bound: u64,
+    pub target_nresults_redundancy: u64,
     pub input_size_lower_bound: u64,
     pub input_size_upper_bound: u64,
     pub local_latency: f64,
@@ -58,6 +63,7 @@ pub struct ServerConfig {
     pub db_purger: DBPurgerConfig,
     pub file_deleter: FileDeleterConfig,
     pub feeder: FeederConfig,
+    pub scheduler: SchedulerConfig,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]

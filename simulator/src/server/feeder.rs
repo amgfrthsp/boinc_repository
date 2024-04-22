@@ -4,6 +4,9 @@ use serde::Serialize;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::config::sim_config::FeederConfig;
+use crate::server::job::ResultState;
+
 use super::database::BoincDatabase;
 use super::job::{ResultId, WorkunitId};
 
@@ -24,6 +27,8 @@ pub struct Feeder {
     shared_memory: Rc<RefCell<Vec<SharedMemoryItem>>>,
     db: Rc<BoincDatabase>,
     ctx: SimulationContext,
+    #[allow(dead_code)]
+    config: FeederConfig,
 }
 
 impl Feeder {
@@ -31,11 +36,13 @@ impl Feeder {
         shared_memory: Rc<RefCell<Vec<SharedMemoryItem>>>,
         db: Rc<BoincDatabase>,
         ctx: SimulationContext,
+        config: FeederConfig,
     ) -> Self {
         Self {
             shared_memory,
             db,
             ctx,
+            config,
         }
     }
 
@@ -43,7 +50,7 @@ impl Feeder {
         log_info!(self.ctx, "feeder scanning started");
         let mut vacant_results =
             BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
-                !result.in_shared_mem
+                result.server_state == ResultState::Unsent && !result.in_shared_mem
             });
 
         let mut db_result_mut = self.db.result.borrow_mut();

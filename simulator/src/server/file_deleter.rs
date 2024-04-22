@@ -3,6 +3,7 @@ use dslab_core::log_info;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::config::sim_config::FileDeleterConfig;
 use crate::server::job::FileDeleteState;
 
 use super::data_server::DataServer;
@@ -16,6 +17,8 @@ pub struct FileDeleter {
     db: Rc<BoincDatabase>,
     data_server: Rc<RefCell<DataServer>>,
     ctx: SimulationContext,
+    #[allow(dead_code)]
+    config: FileDeleterConfig,
 }
 
 impl FileDeleter {
@@ -23,11 +26,13 @@ impl FileDeleter {
         db: Rc<BoincDatabase>,
         data_server: Rc<RefCell<DataServer>>,
         ctx: SimulationContext,
+        config: FileDeleterConfig,
     ) -> Self {
         Self {
             db,
             data_server,
             ctx,
+            config,
         }
     }
 

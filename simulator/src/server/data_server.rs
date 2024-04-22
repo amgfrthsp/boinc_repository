@@ -11,6 +11,8 @@ use futures::{select, FutureExt};
 use serde::Serialize;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+use crate::config::sim_config::DataServerConfig;
+
 use super::job::{DataServerFile, InputFileMetadata, OutputFileMetadata, ResultId, WorkunitId};
 
 #[derive(Clone, Serialize)]
@@ -46,10 +48,17 @@ pub struct DataServer {
     input_files: RefCell<HashMap<WorkunitId, InputFileMetadata>>, // workunit_id -> input files
     output_files: RefCell<HashMap<ResultId, OutputFileMetadata>>, // result_id -> output files
     ctx: SimulationContext,
+    #[allow(dead_code)]
+    config: DataServerConfig,
 }
 
 impl DataServer {
-    pub fn new(net: Rc<RefCell<Network>>, disk: Rc<RefCell<Disk>>, ctx: SimulationContext) -> Self {
+    pub fn new(
+        net: Rc<RefCell<Network>>,
+        disk: Rc<RefCell<Disk>>,
+        ctx: SimulationContext,
+        config: DataServerConfig,
+    ) -> Self {
         ctx.register_key_getter_for::<DataTransferCompleted>(|e| e.dt.id as u64);
         ctx.register_key_getter_for::<DataWriteCompleted>(|e| e.request_id);
         ctx.register_key_getter_for::<DataWriteFailed>(|e| e.request_id);
@@ -66,6 +75,7 @@ impl DataServer {
             input_files: RefCell::new(HashMap::new()),
             output_files: RefCell::new(HashMap::new()),
             ctx,
+            config,
         }
     }
 

@@ -2,6 +2,7 @@ use dslab_core::context::SimulationContext;
 use dslab_core::{log_debug, log_info};
 use std::rc::Rc;
 
+use crate::config::sim_config::AssimilatorConfig;
 use crate::server::job::AssimilateState;
 
 use super::database::BoincDatabase;
@@ -13,11 +14,13 @@ use super::database::BoincDatabase;
 pub struct Assimilator {
     db: Rc<BoincDatabase>,
     ctx: SimulationContext,
+    #[allow(dead_code)]
+    config: AssimilatorConfig,
 }
 
 impl Assimilator {
-    pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
-        Self { db, ctx }
+    pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext, config: AssimilatorConfig) -> Self {
+        Self { db, ctx, config }
     }
 
     pub fn assimilate(&self) {

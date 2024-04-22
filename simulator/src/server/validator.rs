@@ -3,6 +3,7 @@ use dslab_core::log_debug;
 use dslab_core::log_info;
 use std::rc::Rc;
 
+use crate::config::sim_config::ValidatorConfig;
 use crate::server::job::{
     AssimilateState, FileDeleteState, ResultOutcome, ResultState, ValidateState,
 };
@@ -23,11 +24,13 @@ pub enum TransitionTime {
 pub struct Validator {
     db: Rc<BoincDatabase>,
     ctx: SimulationContext,
+    #[allow(dead_code)]
+    config: ValidatorConfig,
 }
 
 impl Validator {
-    pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
-        Self { db, ctx }
+    pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext, config: ValidatorConfig) -> Self {
+        Self { db, ctx, config }
     }
 
     pub fn validate(&self) {
@@ -54,8 +57,7 @@ impl Validator {
                     let result = db_result_mut.get_mut(result_id).unwrap();
                     if !(result.server_state == ResultState::Over
                         && result.outcome == ResultOutcome::Success
-                        && (result.validate_state == ValidateState::Init
-                            || result.validate_state == ValidateState::Inconclusive))
+                        && result.validate_state == ValidateState::Init)
                     {
                         continue;
                     }
@@ -95,7 +97,7 @@ impl Validator {
                     }
                     viable_results.push(*result_id);
                 }
-                if viable_results.len() >= workunit.min_quorum as usize {
+                if viable_results.len() >= workunit.spec.min_quorum as usize {
                     let mut canonical_result_id = None;
 
                     // todo: check_set function implement according to boinc

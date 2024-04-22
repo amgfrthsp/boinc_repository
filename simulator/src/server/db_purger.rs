@@ -2,6 +2,8 @@ use dslab_core::context::SimulationContext;
 use dslab_core::{log_debug, log_info};
 use std::rc::Rc;
 
+use crate::config::sim_config::DBPurgerConfig;
+
 use super::database::BoincDatabase;
 use super::job::FileDeleteState;
 
@@ -12,11 +14,13 @@ use super::job::FileDeleteState;
 pub struct DBPurger {
     db: Rc<BoincDatabase>,
     ctx: SimulationContext,
+    #[allow(dead_code)]
+    config: DBPurgerConfig,
 }
 
 impl DBPurger {
-    pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
-        Self { db, ctx }
+    pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext, config: DBPurgerConfig) -> Self {
+        Self { db, ctx, config }
     }
 
     pub fn purge_database(&self) {

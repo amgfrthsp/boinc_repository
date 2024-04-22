@@ -107,10 +107,6 @@ pub struct Server {
     // data server
     data_server: Rc<RefCell<DataServer>>,
     //
-    cpus_total: u32,
-    cpus_available: u32,
-    memory_total: u64,
-    memory_available: u64,
     pub scheduling_time: f64,
     scheduling_planned: RefCell<bool>,
     pub ctx: SimulationContext,
@@ -144,10 +140,6 @@ impl Server {
             db_purger,
             scheduler,
             data_server,
-            cpus_total: 0,
-            cpus_available: 0,
-            memory_total: 0,
-            memory_available: 0,
             scheduling_time: 0.,
             scheduling_planned: RefCell::new(false),
             ctx,
@@ -193,10 +185,6 @@ impl Server {
             memory_available: memory_total,
         };
         log_debug!(self.ctx, "registered client {:?}", client);
-        self.cpus_total += client.cpus_total;
-        self.cpus_available += client.cpus_available;
-        self.memory_total += client.memory_total;
-        self.memory_available += client.memory_available;
         self.client_queue.push(client_id, client.score());
         self.clients.insert(client.id, client);
     }
@@ -209,9 +197,6 @@ impl Server {
             spec: spec.clone(),
             result_ids: Vec::new(),
             transition_time: self.ctx.time(),
-            delay_bound: 1000.,
-            min_quorum: 2,
-            target_nresults: 2,
             need_validate: false,
             file_delete_state: FileDeleteState::Init,
             canonical_resultid: None,
@@ -282,8 +267,6 @@ impl Server {
         let client = self.clients.get_mut(&client_id).unwrap();
         client.cpus_available += workunit.spec.cores;
         client.memory_available += workunit.spec.memory;
-        self.cpus_available += workunit.spec.cores;
-        self.memory_available += workunit.spec.memory;
     }
 
     // ******* daemons **********
@@ -291,57 +274,61 @@ impl Server {
     fn envoke_feeder(&mut self) {
         self.feeder.scan_work_array();
         if self.is_active() {
-            self.ctx.emit_self(EnvokeFeeder {}, 60.);
+            self.ctx
+                .emit_self(EnvokeFeeder {}, self.config.feeder.interval);
         }
     }
 
     fn schedule_results(&mut self) {
-        self.scheduler.borrow_mut().schedule(
-            &mut self.cpus_available,
-            &mut self.memory_available,
-            &mut self.clients,
-            &mut self.client_queue,
-        );
+        self.scheduler
+            .borrow_mut()
+            .schedule(&mut self.clients, &mut self.client_queue);
 
         *self.scheduling_planned.borrow_mut() = false;
         if self.is_active() {
             *self.scheduling_planned.borrow_mut() = true;
-            self.ctx.emit_self(ScheduleJobs {}, 10.);
+            self.ctx
+                .emit_self(ScheduleJobs {}, self.config.scheduler.interval);
         }
     }
 
     fn envoke_transitioner(&mut self) {
         self.transitioner.transit(self.ctx.time());
         if self.is_active() {
-            self.ctx.emit_self(EnvokeTransitioner {}, 10.);
+            self.ctx
+                .emit_self(EnvokeTransitioner {}, self.config.transitioner.interval);
         }
     }
 
     fn validate_results(&mut self) {
         self.validator.validate();
         if self.is_active() {
-            self.ctx.emit_self(ValidateResults {}, 50.);
+            self.ctx
+                .emit_self(ValidateResults {}, self.config.validator.interval);
         }
     }
 
     fn assimilate_results(&mut self) {
         self.assimilator.assimilate();
         if self.is_active() {
-            self.ctx.emit_self(AssimilateResults {}, 20.);
+            self.ctx
+                .emit_self(AssimilateResults {}, self.config.assimilator.interval);
         }
     }
 
     fn delete_files(&mut self) {
         self.file_deleter.delete_files();
         if self.is_active() {
-            self.ctx.emit_self(DeleteFiles {}, 60.);
+            self.ctx
+                .emit_self(DeleteFiles {}, self.config.file_deleter.interval);
         }
     }
 
     fn purge_db(&mut self) {
         self.db_purger.purge_database();
         if self.is_active() {
-            self.ctx.emit_self(PurgeDB {}, 100.);
+            self.ctx
+                .emit_self(PurgeDB {}, self.config.db_purger.interval);
         }
     }
 
@@ -357,9 +344,7 @@ impl Server {
     fn report_status(&mut self) {
         log_info!(
             self.ctx,
-            "CPU: {:.2} / MEMORY: {:.2} / UNSENT RESULTS: {} / IN PROGRESS RESULTS: {} / COMPLETED RESULTS: {}",
-            (self.cpus_total - self.cpus_available) as f64 / self.cpus_total as f64,
-            (self.memory_total - self.memory_available) as f64 / self.memory_total as f64,
+            "UNSENT RESULTS: {} / IN PROGRESS RESULTS: {} / COMPLETED RESULTS: {}",
             BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
                 result.server_state == ResultState::Unsent
             })
@@ -374,7 +359,8 @@ impl Server {
             .len()
         );
         if self.is_active() {
-            self.ctx.emit_self(ReportStatus {}, 100.);
+            self.ctx
+                .emit_self(ReportStatus {}, self.config.report_status_interval);
         }
     }
 }
@@ -401,6 +387,9 @@ impl EventHandler for Server {
                 memory,
                 cores,
                 cores_dependency,
+                delay_bound,
+                min_quorum,
+                target_nresults,
                 input_file,
             } => {
                 self.ctx.spawn(self.on_job_spec(
@@ -410,6 +399,9 @@ impl EventHandler for Server {
                         memory,
                         cores,
                         cores_dependency,
+                        delay_bound,
+                        min_quorum,
+                        target_nresults,
                         input_file,
                     },
                     event.src,
