@@ -51,7 +51,7 @@ impl JobGenerator {
         self.ctx.emit_self(GenerateJobs {}, 1.);
         if log_enabled!(Info) {
             self.ctx
-                .emit_self(ReportStatus {}, self.config.report_status_period);
+                .emit_self(ReportStatus {}, self.config.report_status_interval);
         }
     }
 
@@ -88,7 +88,7 @@ impl JobGenerator {
         self.jobs_generated += self.config.job_batch_size;
         if self.jobs_generated < self.config.job_count {
             self.ctx
-                .emit_self(GenerateJobs {}, self.config.job_generation_period);
+                .emit_self(GenerateJobs {}, self.config.job_generation_interval);
         }
     }
 }

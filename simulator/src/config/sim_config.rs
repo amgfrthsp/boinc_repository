@@ -31,7 +31,7 @@ pub struct HostConfig {
 pub struct JobGeneratorConfig {
     pub job_count: u64,
     pub job_batch_size: u64,
-    pub job_generation_period: f64,
+    pub job_generation_interval: f64,
     pub flops_lower_bound: f64,
     pub flops_upper_bound: f64,
     pub memory_lower_bound: u64,
@@ -42,7 +42,7 @@ pub struct JobGeneratorConfig {
     pub input_size_upper_bound: u64,
     pub local_latency: f64,
     pub local_bandwidth: f64,
-    pub report_status_period: f64,
+    pub report_status_interval: f64,
 }
 
 /// Holds configuration of the main server
@@ -50,7 +50,49 @@ pub struct JobGeneratorConfig {
 pub struct ServerConfig {
     pub local_latency: f64,
     pub local_bandwidth: f64,
+    pub report_status_interval: f64,
     pub data_servers: Vec<DataServerConfig>,
+    pub assimilator: AssimilatorConfig,
+    pub validator: ValidatorConfig,
+    pub transitioner: TransitionerConfig,
+    pub db_purger: DBPurgerConfig,
+    pub file_deleter: FileDeleterConfig,
+    pub feeder: FeederConfig,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
+pub struct AssimilatorConfig {
+    pub interval: f64,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
+pub struct ValidatorConfig {
+    pub interval: f64,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
+pub struct TransitionerConfig {
+    pub interval: f64,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
+pub struct DBPurgerConfig {
+    pub interval: f64,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
+pub struct FileDeleterConfig {
+    pub interval: f64,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
+pub struct FeederConfig {
+    pub interval: f64,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
+pub struct SchedulerConfig {
+    pub interval: f64,
 }
 
 /// Holds configuration of a single data server or a set of identical data servers.

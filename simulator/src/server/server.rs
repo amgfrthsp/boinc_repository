@@ -24,6 +24,7 @@ use super::transitioner::Transitioner;
 use super::validator::Validator;
 use crate::client::client::{ClientRegister, ResultCompleted, ResultsInquiry};
 use crate::common::Start;
+use crate::config::sim_config::ServerConfig;
 use crate::server::data_server::InputFileDownloadCompleted;
 
 #[derive(Clone, Serialize)]
@@ -113,6 +114,7 @@ pub struct Server {
     pub scheduling_time: f64,
     scheduling_planned: RefCell<bool>,
     pub ctx: SimulationContext,
+    config: ServerConfig,
 }
 
 impl Server {
@@ -127,6 +129,7 @@ impl Server {
         scheduler: Rc<RefCell<Scheduler>>,
         data_server: Rc<RefCell<DataServer>>,
         ctx: SimulationContext,
+        config: ServerConfig,
     ) -> Self {
         data_server.borrow_mut().set_server_id(ctx.id());
         Self {
@@ -148,6 +151,7 @@ impl Server {
             scheduling_time: 0.,
             scheduling_planned: RefCell::new(false),
             ctx,
+            config,
         }
     }
 
@@ -156,13 +160,19 @@ impl Server {
         *self.scheduling_planned.borrow_mut() = true;
         self.ctx.emit_self(ScheduleJobs {}, 1.);
         self.ctx.emit_self(EnvokeTransitioner {}, 3.);
-        self.ctx.emit_self(ValidateResults {}, 50.);
-        self.ctx.emit_self(AssimilateResults {}, 20.);
-        self.ctx.emit_self(EnvokeFeeder {}, 60.);
-        self.ctx.emit_self(PurgeDB {}, 60.);
-        self.ctx.emit_self(DeleteFiles {}, 60.);
+        self.ctx
+            .emit_self(ValidateResults {}, self.config.validator.interval);
+        self.ctx
+            .emit_self(AssimilateResults {}, self.config.assimilator.interval);
+        self.ctx
+            .emit_self(EnvokeFeeder {}, self.config.feeder.interval);
+        self.ctx
+            .emit_self(PurgeDB {}, self.config.db_purger.interval);
+        self.ctx
+            .emit_self(DeleteFiles {}, self.config.file_deleter.interval);
         if log_enabled!(Info) {
-            self.ctx.emit_self(ReportStatus {}, 100.);
+            self.ctx
+                .emit_self(ReportStatus {}, self.config.report_status_interval);
         }
     }
 

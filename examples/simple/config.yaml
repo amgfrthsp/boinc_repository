@@ -16,7 +16,7 @@ hosts:
 job_generator:
   job_count: 10
   job_batch_size: 3
-  job_generation_period: 20.
+  job_generation_interval: 20.
   flops_lower_bound: 100.
   flops_upper_bound: 100.
   memory_lower_bound: 1
@@ -27,11 +27,27 @@ job_generator:
   input_size_upper_bound: 1000
   local_latency: 0.0
   local_bandwidth: 10000
-  report_status_period: 100.
+  report_status_interval: 100.
 
 server:
   local_latency: 0.0
   local_bandwidth: 10000
+  report_status_interval: 100.
+  assimilator:
+    interval: 20.
+  validator:
+    interval: 50.
+  transitioner:
+    interval: 60.
+  db_purger:
+    interval: 60.
+  file_deleter:
+    interval: 60.
+  feeder:
+    interval: 60.
+  scheduler:
+    interval: 10.
+    
   data_servers:
     - count: 150
       disk_capacity: 25000

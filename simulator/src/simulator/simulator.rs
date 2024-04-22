@@ -287,7 +287,8 @@ impl Simulator {
             db_purger,
             scheduler,
             data_server,
-            self.sim.borrow_mut().create_context(server_name)
+            self.sim.borrow_mut().create_context(server_name),
+            config,
         )));
         let server_id = self.sim.borrow_mut().add_handler(server_name, server);
         self.net.borrow_mut().set_location(server_id, node_name);
