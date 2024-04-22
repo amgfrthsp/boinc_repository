@@ -14,9 +14,20 @@ hosts:
     disk_write_bandwidth: 2000.
 
 job_generator:
+  job_count: 10
+  job_batch_size: 3
+  job_generation_period: 20.
+  flops_lower_bound: 100.
+  flops_upper_bound: 100.
+  memory_lower_bound: 1
+  memory_upper_bound: 8
+  cores_lower_bound: 1
+  cores_upper_bound: 1
+  input_size_lower_bound: 100
+  input_size_upper_bound: 1000
   local_latency: 0.0
   local_bandwidth: 10000
-  job_count: 10
+  report_status_period: 100.
 
 server:
   local_latency: 0.0

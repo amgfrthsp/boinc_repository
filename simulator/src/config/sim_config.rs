@@ -29,9 +29,20 @@ pub struct HostConfig {
 /// Holds configuration of a job generator
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct JobGeneratorConfig {
+    pub job_count: u64,
+    pub job_batch_size: u64,
+    pub job_generation_period: f64,
+    pub flops_lower_bound: f64,
+    pub flops_upper_bound: f64,
+    pub memory_lower_bound: u64,
+    pub memory_upper_bound: u64,
+    pub cores_lower_bound: u32,
+    pub cores_upper_bound: u32,
+    pub input_size_lower_bound: u64,
+    pub input_size_upper_bound: u64,
     pub local_latency: f64,
     pub local_bandwidth: f64,
-    pub job_count: u64,
+    pub report_status_period: f64,
 }
 
 /// Holds configuration of the main server

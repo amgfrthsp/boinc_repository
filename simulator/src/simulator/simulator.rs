@@ -43,7 +43,7 @@ pub struct Simulator {
     data_server_id: Option<u32>,
     client_ids: Vec<u32>,
     ctx: SimulationContext,
-    sim_config: Rc<SimulationConfig>,
+    sim_config: SimulationConfig,
 }
 
 impl Simulator {
@@ -79,7 +79,7 @@ impl Simulator {
             data_server_id: None,
             client_ids: Vec::new(),
             ctx,
-            sim_config: rc!(sim_config),
+            sim_config,
         };
 
         sim.add_job_generator(sim.sim_config.job_generator.clone());
@@ -145,6 +145,7 @@ impl Simulator {
         let job_generator_name = &format!("{}::job_generator", node_name);
 
         let job_generator = rc!(refcell!(JobGenerator::new(
+            config,
             self.net.clone(),
             self.sim.borrow_mut().create_context(job_generator_name),
         )));
