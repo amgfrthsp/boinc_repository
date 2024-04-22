@@ -1,0 +1,28 @@
+# Network
+network_latency: 0.5
+network_bandwidth: 1000
+use_shared_network: false
+
+hosts:
+  - count: 10
+    cpus: 4
+    memory: 128
+    disk_capacity: 5000
+    local_latency: 0.0
+    local_bandwidth: 10000
+    disk_read_bandwidth: 2000.
+    disk_write_bandwidth: 2000.
+
+job_generator:
+  local_latency: 0.0
+  local_bandwidth: 10000
+  job_count: 10
+
+server:
+  local_latency: 0.0
+  local_bandwidth: 10000
+  data_servers:
+    - count: 150
+      disk_capacity: 25000
+      disk_read_bandwidth: 2000.
+      disk_write_bandwidth: 2000.

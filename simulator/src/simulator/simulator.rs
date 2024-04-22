@@ -14,6 +14,7 @@ use sugars::{boxed, rc, refcell};
 
 use crate::client::scheduler::Scheduler as ClientScheduler;
 use crate::client::storage::FileStorage;
+use crate::config::sim_config::{HostConfig, JobGeneratorConfig, ServerConfig, SimulationConfig};
 use crate::server::db_purger::DBPurger;
 use crate::server::feeder::{Feeder, SharedMemoryItem, SharedMemoryItemState};
 use crate::server::file_deleter::FileDeleter;
@@ -42,26 +43,22 @@ pub struct Simulator {
     data_server_id: Option<u32>,
     client_ids: Vec<u32>,
     ctx: SimulationContext,
+    sim_config: Rc<SimulationConfig>,
 }
 
 impl Simulator {
-    pub fn new(
-        seed: u64,
-        use_shared_network: bool,
-        network_bandwidth: f64,
-        network_latency: f64,
-    ) -> Self {
+    pub fn new(seed: u64, sim_config: SimulationConfig) -> Self {
         let mut sim = Simulation::new(seed);
 
-        let network_model: Box<dyn NetworkModel> = if use_shared_network {
+        let network_model: Box<dyn NetworkModel> = if sim_config.use_shared_network {
             boxed!(SharedBandwidthNetworkModel::new(
-                network_bandwidth,
-                network_latency
+                sim_config.network_bandwidth,
+                sim_config.network_latency
             ))
         } else {
             boxed!(ConstantBandwidthNetworkModel::new(
-                network_bandwidth,
-                network_latency
+                sim_config.network_bandwidth,
+                sim_config.network_latency
             ))
         };
         let network = rc!(refcell!(Network::new(
@@ -73,7 +70,7 @@ impl Simulator {
         // context for starting job generator, server and clients
         let ctx = sim.create_context("ctx");
 
-        Self {
+        let mut sim = Self {
             sim: rc!(refcell!(sim)),
             net: network,
             hosts: Vec::new(),
@@ -82,7 +79,20 @@ impl Simulator {
             data_server_id: None,
             client_ids: Vec::new(),
             ctx,
+            sim_config: rc!(sim_config),
+        };
+
+        sim.add_job_generator(sim.sim_config.job_generator.clone());
+        sim.add_server(sim.sim_config.server.clone());
+        // Add hosts from config
+        for host_config in sim.sim_config.hosts.clone() {
+            let count = host_config.count.unwrap_or(1);
+            for _ in 0..count {
+                sim.add_host(host_config.clone());
+            }
         }
+
+        sim
     }
 
     pub fn run(&mut self) {
@@ -121,14 +131,14 @@ impl Simulator {
         );
     }
 
-    pub fn add_job_generator(&mut self, local_bandwidth: f64, local_latency: f64) {
+    pub fn add_job_generator(&mut self, config: JobGeneratorConfig) {
         let n = self.hosts.len();
         let node_name = &format!("host{}", n);
         self.net.borrow_mut().add_node(
             node_name,
             Box::new(SharedBandwidthNetworkModel::new(
-                local_bandwidth,
-                local_latency,
+                config.local_bandwidth,
+                config.local_latency,
             )),
         );
         self.hosts.push(node_name.to_string());
@@ -158,21 +168,14 @@ impl Simulator {
         }
     }
 
-    pub fn add_server(
-        &mut self,
-        local_bandwidth: f64,
-        local_latency: f64,
-        disk_capacity: u64,
-        disk_read_bandwidth: f64,
-        disk_write_bandwidth: f64,
-    ) {
+    pub fn add_server(&mut self, config: ServerConfig) {
         let n = self.hosts.len();
         let node_name = &format!("host{}", n);
         self.net.borrow_mut().add_node(
             node_name,
             Box::new(SharedBandwidthNetworkModel::new(
-                local_bandwidth,
-                local_latency,
+                config.local_bandwidth,
+                config.local_latency,
             )),
         );
         self.hosts.push(node_name.to_string());
@@ -245,9 +248,9 @@ impl Simulator {
         // file storage
         let disk_name = format!("{}::disk", data_server_name);
         let disk = rc!(refcell!(DiskBuilder::simple(
-            disk_capacity,
-            disk_read_bandwidth,
-            disk_write_bandwidth
+            config.data_servers[0].disk_capacity,
+            config.data_servers[0].disk_read_bandwidth,
+            config.data_servers[0].disk_write_bandwidth
         )
         .build(self.sim.borrow_mut().create_context(&disk_name))));
         self.sim.borrow_mut().add_handler(disk_name, disk.clone());
@@ -310,21 +313,14 @@ impl Simulator {
         }
     }
 
-    pub fn add_host(
-        &mut self,
-        local_bandwidth: f64,
-        local_latency: f64,
-        disk_capacity: u64,
-        disk_read_bandwidth: f64,
-        disk_write_bandwidth: f64,
-    ) {
+    pub fn add_host(&mut self, config: HostConfig) {
         let n = self.hosts.len();
         let node_name = &format!("host{}", n);
         self.net.borrow_mut().add_node(
             node_name,
             Box::new(SharedBandwidthNetworkModel::new(
-                local_bandwidth,
-                local_latency,
+                config.local_bandwidth,
+                config.local_latency,
             )),
         );
         self.hosts.push(node_name.to_string());
@@ -342,9 +338,9 @@ impl Simulator {
         // disk
         let disk_name = format!("{}::disk", node_name);
         let disk = rc!(refcell!(DiskBuilder::simple(
-            disk_capacity,
-            disk_read_bandwidth,
-            disk_write_bandwidth
+            config.disk_capacity,
+            config.disk_read_bandwidth,
+            config.disk_write_bandwidth
         )
         .build(self.sim.borrow_mut().create_context(&disk_name))));
         self.sim.borrow_mut().add_handler(disk_name, disk.clone());

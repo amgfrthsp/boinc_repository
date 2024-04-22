@@ -4,31 +4,63 @@ use serde::{Deserialize, Serialize};
 
 /// Holds raw simulation config parsed from YAML file.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
-struct RawSimulationConfig {}
+struct RawSimulationConfig {
+    pub network_latency: Option<f64>,
+    pub network_bandwidth: Option<f64>,
+    pub use_shared_network: Option<bool>,
+    pub job_generator: Option<JobGeneratorConfig>,
+    pub server: Option<ServerConfig>,
+    pub hosts: Option<Vec<HostConfig>>,
+}
 
-/// Holds configuration of a single physical host or a set of identical hosts.
+/// Holds configuration of a single client or a set of identical clients.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct HostConfig {
-    /// Host name.
-    /// Should be set if count = 1.
-    pub name: Option<String>,
-    /// Host name prefix.
-    /// Full name is produced by appending host instance number to the prefix.
-    /// Should be set if count > 1.
-    pub name_prefix: Option<String>,
-    /// Host CPU capacity.
     pub cpus: u32,
-    /// Host memory capacity in GB.
     pub memory: u64,
-    /// Number of such hosts.
+    pub disk_capacity: u64,
+    pub disk_read_bandwidth: f64,
+    pub disk_write_bandwidth: f64,
+    pub local_latency: f64,
+    pub local_bandwidth: f64,
+    pub count: Option<u32>,
+}
+
+/// Holds configuration of a job generator
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
+pub struct JobGeneratorConfig {
+    pub local_latency: f64,
+    pub local_bandwidth: f64,
+    pub job_count: u64,
+}
+
+/// Holds configuration of the main server
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
+pub struct ServerConfig {
+    pub local_latency: f64,
+    pub local_bandwidth: f64,
+    pub data_servers: Vec<DataServerConfig>,
+}
+
+/// Holds configuration of a single data server or a set of identical data servers.
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+pub struct DataServerConfig {
+    pub disk_capacity: u64,
+    pub disk_read_bandwidth: f64,
+    pub disk_write_bandwidth: f64,
+    /// Number of data server instances.
     pub count: Option<u32>,
 }
 
 /// Represents simulation configuration.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct SimulationConfig {
-    /// Period length in seconds for sending statistics from host to monitoring.
-    pub send_stats_period: f64,
+    pub network_latency: f64,
+    pub network_bandwidth: f64,
+    pub use_shared_network: bool,
+    pub hosts: Vec<HostConfig>,
+    pub job_generator: JobGeneratorConfig,
+    pub server: ServerConfig,
 }
 
 impl SimulationConfig {
@@ -42,7 +74,12 @@ impl SimulationConfig {
         .unwrap_or_else(|_| panic!("Can't parse YAML from file {}", file_name));
 
         Self {
-            send_stats_period: raw.send_stats_period.unwrap_or(0.5),
+            network_latency: raw.network_latency.unwrap_or(0.5),
+            network_bandwidth: raw.network_bandwidth.unwrap_or(1000.),
+            use_shared_network: raw.use_shared_network.unwrap_or(false),
+            hosts: raw.hosts.unwrap_or_default(),
+            job_generator: raw.job_generator.unwrap_or_default(),
+            server: raw.server.unwrap_or_default(),
         }
     }
 }
