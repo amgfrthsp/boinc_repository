@@ -20,7 +20,7 @@ use futures::{select, FutureExt};
 use super::scheduler::Scheduler;
 use super::storage::FileStorage;
 use super::task::{ResultInfo, ResultState};
-use crate::common::Start;
+use crate::common::{ReportStatus, Start};
 use crate::config::sim_config::ClientConfig;
 use crate::server::data_server::{
     InputFileUploadCompleted, InputFilesInquiry, OutputFileDownloadCompleted, OutputFileFromClient,
@@ -56,9 +56,6 @@ pub struct ContinueResult {
 
 #[derive(Clone, Serialize)]
 pub struct ScheduleResults {}
-
-#[derive(Clone, Serialize)]
-pub struct ReportStatus {}
 
 pub struct Client {
     compute: Rc<RefCell<Compute>>,
@@ -214,7 +211,6 @@ impl Client {
         // disk read
         self.process_disk_read(DataServerFile::Input(result.spec.input_file.clone()))
             .await;
-
         log_debug!(
             self.ctx,
             "result {}: input files disk reading finished",
@@ -227,7 +223,10 @@ impl Client {
         // disk write
         self.process_disk_write(DataServerFile::Output(result.output_file.clone()))
             .await;
-
+        self.file_storage
+            .output_files
+            .borrow_mut()
+            .insert(result.output_file.result_id, result.output_file.clone());
         log_debug!(
             self.ctx,
             "result {}: output files written on disk",
@@ -238,7 +237,7 @@ impl Client {
         self.change_result(result_id, Some(ResultState::ReadyToUpload), None);
         self.ctx.emit_now(
             OutputFileFromClient {
-                output_file: result.output_file,
+                output_file: result.output_file.clone(),
             },
             self.data_server_id.unwrap(),
         );
@@ -256,7 +255,6 @@ impl Client {
             self.ctx.id(),
             self.server_id.unwrap(),
         );
-
         log_debug!(
             self.ctx,
             "result {}: server is notified about completion",
@@ -265,6 +263,16 @@ impl Client {
 
         self.change_result(result_id, Some(ResultState::Over), None);
         self.plan_scheduling(5.);
+
+        self.process_disk_free(DataServerFile::Input(result.spec.input_file));
+        self.process_disk_free(DataServerFile::Output(result.output_file));
+        log_debug!(
+            self.ctx,
+            "result {}: deleted input/output files from disk",
+            result_id
+        );
+        self.change_result(result_id, Some(ResultState::Deleted), None);
+
         self.ask_for_results();
     }
 
@@ -329,6 +337,27 @@ impl Client {
         };
     }
 
+    fn process_disk_free(&self, file: DataServerFile) {
+        let res = self.disk.borrow_mut().mark_free(file.size());
+
+        if res.is_ok() {
+            match file {
+                DataServerFile::Input(input_file) => {
+                    self.file_storage
+                        .input_files
+                        .borrow_mut()
+                        .remove(&input_file.workunit_id);
+                }
+                DataServerFile::Output(output_file) => {
+                    self.file_storage
+                        .output_files
+                        .borrow_mut()
+                        .remove(&output_file.result_id);
+                }
+            }
+        }
+    }
+
     async fn process_compute(&self, result_id: ResultId, spec: JobSpec) {
         let comp_id = self.compute.borrow_mut().run(
             spec.flops,
@@ -380,12 +409,13 @@ impl Client {
     fn report_status(&mut self) {
         log_info!(
             self.ctx,
-            "CPU: {:.2} / MEMORY: {:.2}",
+            "CPU: {:.2} / MEMORY: {:.2} / DISK: {:.2}",
             (self.compute.borrow().cores_total() - self.compute.borrow().cores_available()) as f64
                 / self.compute.borrow().cores_total() as f64,
             (self.compute.borrow().memory_total() - self.compute.borrow().memory_available())
                 as f64
                 / self.compute.borrow().memory_total() as f64,
+            self.disk.borrow().used_space() as f64 / self.disk.borrow().capacity() as f64
         );
         let fs_ref = self.file_storage.results.borrow();
         for result in fs_ref.values() {

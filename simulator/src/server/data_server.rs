@@ -1,5 +1,5 @@
 use dslab_core::context::SimulationContext;
-use dslab_core::{cast, Event, EventHandler, EventId};
+use dslab_core::{cast, log_info, Event, EventHandler, EventId};
 use dslab_core::{component::Id, log_debug};
 use dslab_network::{DataTransferCompleted, Network};
 use dslab_storage::disk::Disk;
@@ -11,6 +11,7 @@ use futures::{select, FutureExt};
 use serde::Serialize;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+use crate::common::ReportStatus;
 use crate::config::sim_config::DataServerConfig;
 
 use super::job::{DataServerFile, InputFileMetadata, OutputFileMetadata, ResultId, WorkunitId};
@@ -42,6 +43,7 @@ pub struct InputFileUploadCompleted {
 }
 
 pub struct DataServer {
+    pub id: Id,
     server_id: Id,
     net: Rc<RefCell<Network>>,
     disk: Rc<RefCell<Disk>>,
@@ -69,6 +71,7 @@ impl DataServer {
         ctx.register_key_getter_for::<InputFileUploadCompleted>(|e| e.ref_id);
 
         Self {
+            id: ctx.id(),
             server_id: 0,
             net,
             disk,
@@ -275,6 +278,16 @@ impl DataServer {
 
         return 0;
     }
+
+    fn report_status(&self) {
+        log_info!(
+            self.ctx,
+            "DISK: {:.2}",
+            self.disk.borrow().used_space() as f64 / self.disk.borrow().capacity() as f64
+        );
+        log_info!(self.ctx, "INPUT FILES: {:?}", self.input_files);
+        log_info!(self.ctx, "OUTPUT FILES: {:?}", self.output_files);
+    }
 }
 
 impl EventHandler for DataServer {
@@ -288,6 +301,9 @@ impl EventHandler for DataServer {
             }
             OutputFileFromClient { output_file } => {
                 self.download_file(DataServerFile::Output(output_file), event.src);
+            }
+            ReportStatus {} => {
+                self.report_status();
             }
         })
     }

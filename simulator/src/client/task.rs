@@ -12,6 +12,7 @@ pub enum ResultState {
     ReadyToUpload,
     ReadyToNotify,
     Over,
+    Deleted,
 }
 
 #[derive(Debug, Clone)]

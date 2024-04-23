@@ -23,15 +23,12 @@ use super::scheduler::Scheduler;
 use super::transitioner::Transitioner;
 use super::validator::Validator;
 use crate::client::client::{ClientRegister, ResultCompleted, ResultsInquiry};
-use crate::common::Start;
+use crate::common::{ReportStatus, Start};
 use crate::config::sim_config::ServerConfig;
 use crate::server::data_server::InputFileDownloadCompleted;
 
 #[derive(Clone, Serialize)]
 pub struct ServerRegister {}
-
-#[derive(Clone, Serialize)]
-pub struct ReportStatus {}
 
 #[derive(Clone, Serialize)]
 pub struct ScheduleJobs {}
@@ -162,10 +159,13 @@ impl Server {
             .emit_self(PurgeDB {}, self.config.db_purger.interval);
         self.ctx
             .emit_self(DeleteFiles {}, self.config.file_deleter.interval);
-        if log_enabled!(Info) {
-            self.ctx
-                .emit_self(ReportStatus {}, self.config.report_status_interval);
-        }
+        self.ctx
+            .emit_self(ReportStatus {}, self.config.report_status_interval);
+        self.ctx.emit(
+            ReportStatus {},
+            self.data_server.borrow().id,
+            self.config.report_status_interval,
+        );
     }
 
     fn on_client_register(
@@ -361,6 +361,11 @@ impl Server {
         if self.is_active() {
             self.ctx
                 .emit_self(ReportStatus {}, self.config.report_status_interval);
+            self.ctx.emit(
+                ReportStatus {},
+                self.data_server.borrow().id,
+                self.config.report_status_interval,
+            );
         }
     }
 }

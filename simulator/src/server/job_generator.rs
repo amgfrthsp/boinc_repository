@@ -1,6 +1,4 @@
 use dslab_compute::multicore::CoresDependency;
-use log::log_enabled;
-use log::Level::Info;
 use serde::Serialize;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -13,12 +11,9 @@ use dslab_core::{cast, log_debug};
 use dslab_network::Network;
 
 use super::job::{InputFileMetadata, JobSpec, JobSpecId};
-use crate::common::Start;
+use crate::common::{ReportStatus, Start};
 use crate::config::sim_config::JobGeneratorConfig;
 use crate::simulator::simulator::SetServerIds;
-
-#[derive(Clone, Serialize)]
-pub struct ReportStatus {}
 
 #[derive(Clone, Serialize)]
 pub struct GenerateJobs {}
@@ -50,10 +45,8 @@ impl JobGenerator {
     fn on_started(&mut self) {
         log_debug!(self.ctx, "started");
         self.ctx.emit_self(GenerateJobs {}, 1.);
-        if log_enabled!(Info) {
-            self.ctx
-                .emit_self(ReportStatus {}, self.config.report_status_interval);
-        }
+        self.ctx
+            .emit_self(ReportStatus {}, self.config.report_status_interval);
     }
 
     fn generate_jobs(&mut self) {
@@ -117,6 +110,7 @@ impl EventHandler for JobGenerator {
             GenerateJobs {} => {
                 self.generate_jobs();
             }
+            ReportStatus {} => {}
         })
     }
 }
