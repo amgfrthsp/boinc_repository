@@ -38,6 +38,7 @@ impl Transitioner {
             BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
                 self.ctx.time() >= wu.transition_time
                     && wu.file_delete_state != FileDeleteState::Done
+                    && wu.file_delete_state != FileDeleteState::Ready
             });
         log_info!(self.ctx, "transitioning started");
 
@@ -300,19 +301,11 @@ impl Transitioner {
                 let result = db_result_mut.borrow().get(result_id).unwrap();
                 log_debug!(
                     self.ctx,
-                    "workunit {} result {}: server state {:?}; outcome {:?}",
+                    "workunit {} result {} {:?}: {:?}",
                     workunit.id,
                     result_id,
                     result.server_state,
-                    result.outcome,
-                );
-                log_debug!(
-                    self.ctx,
-                    "workunit {} result {}: validate_state {:?}; file_delete_state {:?}",
-                    workunit.id,
-                    result_id,
-                    result.validate_state,
-                    result.file_delete_state,
+                    result
                 );
             }
         }

@@ -53,6 +53,7 @@ impl Scheduler {
             });
 
         log_info!(self.ctx, "scheduling started");
+        log_debug!(self.ctx, "results to schedule: {:?}", results_to_schedule);
 
         let t = Instant::now();
         let mut assigned_results_cnt = 0;

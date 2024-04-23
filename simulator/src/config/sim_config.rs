@@ -10,12 +10,14 @@ struct RawSimulationConfig {
     pub use_shared_network: Option<bool>,
     pub job_generator: Option<JobGeneratorConfig>,
     pub server: Option<ServerConfig>,
-    pub hosts: Option<Vec<HostConfig>>,
+    pub clients: Option<Vec<ClientConfig>>,
 }
 
 /// Holds configuration of a single client or a set of identical clients.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
-pub struct HostConfig {
+pub struct ClientConfig {
+    pub count: Option<u32>,
+    pub speed: f64,
     pub cpus: u32,
     pub memory: u64,
     pub disk_capacity: u64,
@@ -23,7 +25,7 @@ pub struct HostConfig {
     pub disk_write_bandwidth: f64,
     pub local_latency: f64,
     pub local_bandwidth: f64,
-    pub count: Option<u32>,
+    pub report_status_interval: f64,
 }
 
 /// Holds configuration of a job generator
@@ -53,6 +55,7 @@ pub struct JobGeneratorConfig {
 /// Holds configuration of the main server
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct ServerConfig {
+    pub shared_memory_size: usize,
     pub local_latency: f64,
     pub local_bandwidth: f64,
     pub report_status_interval: f64,
@@ -117,7 +120,7 @@ pub struct SimulationConfig {
     pub network_latency: f64,
     pub network_bandwidth: f64,
     pub use_shared_network: bool,
-    pub hosts: Vec<HostConfig>,
+    pub clients: Vec<ClientConfig>,
     pub job_generator: JobGeneratorConfig,
     pub server: ServerConfig,
 }
@@ -136,7 +139,7 @@ impl SimulationConfig {
             network_latency: raw.network_latency.unwrap_or(0.5),
             network_bandwidth: raw.network_bandwidth.unwrap_or(1000.),
             use_shared_network: raw.use_shared_network.unwrap_or(false),
-            hosts: raw.hosts.unwrap_or_default(),
+            clients: raw.clients.unwrap_or_default(),
             job_generator: raw.job_generator.unwrap_or_default(),
             server: raw.server.unwrap_or_default(),
         }

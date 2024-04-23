@@ -1,7 +1,7 @@
 use dslab_compute::multicore::Compute;
 use dslab_core::context::SimulationContext;
-use dslab_core::Simulation;
 use dslab_core::{component::Id, log_info};
+use dslab_core::{log_debug, Simulation};
 use dslab_network::{
     models::{ConstantBandwidthNetworkModel, SharedBandwidthNetworkModel},
     Network, NetworkModel,
@@ -14,7 +14,7 @@ use sugars::{boxed, rc, refcell};
 
 use crate::client::scheduler::Scheduler as ClientScheduler;
 use crate::client::storage::FileStorage;
-use crate::config::sim_config::{HostConfig, JobGeneratorConfig, ServerConfig, SimulationConfig};
+use crate::config::sim_config::{ClientConfig, JobGeneratorConfig, ServerConfig, SimulationConfig};
 use crate::server::db_purger::DBPurger;
 use crate::server::feeder::{Feeder, SharedMemoryItem, SharedMemoryItemState};
 use crate::server::file_deleter::FileDeleter;
@@ -85,7 +85,7 @@ impl Simulator {
         sim.add_job_generator(sim.sim_config.job_generator.clone());
         sim.add_server(sim.sim_config.server.clone());
         // Add hosts from config
-        for host_config in sim.sim_config.hosts.clone() {
+        for host_config in sim.sim_config.clients.clone() {
             let count = host_config.count.unwrap_or(1);
             for _ in 0..count {
                 sim.add_host(host_config.clone());
@@ -224,9 +224,8 @@ impl Simulator {
             result_id: 0,
             workunit_id: 0,
         };
-        let shared_memory_size = 10;
         let shared_memory: Rc<RefCell<Vec<SharedMemoryItem>>> =
-            rc!(refcell!(vec![empty_slot; shared_memory_size]));
+            rc!(refcell!(vec![empty_slot; config.shared_memory_size]));
 
         let feeder_name = &format!("{}::feeder", server_name);
         let feeder: Feeder = Feeder::new(
@@ -323,7 +322,7 @@ impl Simulator {
         }
     }
 
-    pub fn add_host(&mut self, config: HostConfig) {
+    pub fn add_host(&mut self, config: ClientConfig) {
         let n = self.hosts.len();
         let node_name = &format!("host{}", n);
         self.net.borrow_mut().add_node(
@@ -337,9 +336,9 @@ impl Simulator {
         // compute
         let compute_name = format!("{}::compute", node_name);
         let compute = rc!(refcell!(Compute::new(
-            self.ctx.gen_range(1..=10) as f64,
-            self.ctx.gen_range(1..=8),
-            self.ctx.gen_range(1..=4) * 1024,
+            config.speed,
+            config.cpus,
+            config.memory * 1024,
             self.sim.borrow_mut().create_context(&compute_name),
         )));
         self.sim
@@ -375,6 +374,7 @@ impl Simulator {
             scheduler,
             file_storage.clone(),
             self.sim.borrow_mut().create_context(client_name),
+            config,
         );
         let client_id = self
             .sim

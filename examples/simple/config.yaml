@@ -3,18 +3,21 @@ network_latency: 0.5
 network_bandwidth: 1000
 use_shared_network: false
 
-hosts:
-  - count: 8000
+clients:
+  - count: 10
+    speed: 8.
     cpus: 4
-    memory: 128
+    memory: 4
     disk_capacity: 5000
-    local_latency: 0.0
-    local_bandwidth: 10000
     disk_read_bandwidth: 2000.
     disk_write_bandwidth: 2000.
+    local_latency: 0.0
+    local_bandwidth: 10000
+    report_status_interval: 100.
+
 
 job_generator:
-  job_count: 10000
+  job_count: 20
   job_batch_size: 3
   job_generation_interval: 20.
   flops_lower_bound: 20.
@@ -35,6 +38,7 @@ job_generator:
   report_status_interval: 100.
 
 server:
+  shared_memory_size: 20
   local_latency: 0.0
   local_bandwidth: 10000
   report_status_interval: 100.

@@ -21,6 +21,7 @@ use super::scheduler::Scheduler;
 use super::storage::FileStorage;
 use super::task::{ResultInfo, ResultState};
 use crate::common::Start;
+use crate::config::sim_config::ClientConfig;
 use crate::server::data_server::{
     InputFileUploadCompleted, InputFilesInquiry, OutputFileDownloadCompleted, OutputFileFromClient,
 };
@@ -59,15 +60,6 @@ pub struct ScheduleResults {}
 #[derive(Clone, Serialize)]
 pub struct ReportStatus {}
 
-// on result_request ->
-// (ds) download input_file (start data transfer) ->
-// download complete ->
-// start calculation ->
-// calculation finished ->
-// (ds) upload output_file (start data transfer, emit_now(ds, output_file metadata)) ->
-// output file uploaded ->
-//ask for work
-
 pub struct Client {
     compute: Rc<RefCell<Compute>>,
     disk: Rc<RefCell<Disk>>,
@@ -79,6 +71,7 @@ pub struct Client {
     next_scheduling_time: RefCell<f64>,
     scheduling_event: RefCell<Option<EventId>>,
     pub ctx: SimulationContext,
+    config: ClientConfig,
 }
 
 impl Client {
@@ -89,6 +82,7 @@ impl Client {
         mut scheduler: Scheduler,
         file_storage: Rc<FileStorage>,
         ctx: SimulationContext,
+        config: ClientConfig,
     ) -> Self {
         ctx.register_key_getter_for::<CompStarted>(|e| e.id);
         ctx.register_key_getter_for::<CompFinished>(|e| e.id);
@@ -105,6 +99,7 @@ impl Client {
             next_scheduling_time: RefCell::new(0.),
             scheduling_event: RefCell::new(None),
             ctx,
+            config,
         }
     }
 
@@ -119,7 +114,8 @@ impl Client {
             self.server_id.unwrap(),
             0.5,
         );
-        self.ctx.emit_self(ReportStatus {}, 100.);
+        self.ctx
+            .emit_self(ReportStatus {}, self.config.report_status_interval);
     }
 
     fn on_result_request(&self, req: ResultRequest, event_id: EventId) {
@@ -396,7 +392,8 @@ impl Client {
             log_info!(self.ctx, "Result {}: {:?}", result.spec.id, result.state);
         }
         if self.is_active() {
-            self.ctx.emit_self(ReportStatus {}, 100.);
+            self.ctx
+                .emit_self(ReportStatus {}, self.config.report_status_interval);
         }
     }
 }
