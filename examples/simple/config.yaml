@@ -57,8 +57,7 @@ server:
   scheduler:
     interval: 25.
 
-  data_servers:
-    - count: 150
-      disk_capacity: 25000
-      disk_read_bandwidth: 2000.
-      disk_write_bandwidth: 2000.
+  data_server:
+    disk_capacity: 25000
+    disk_read_bandwidth: 2000.
+    disk_write_bandwidth: 2000.

@@ -254,9 +254,9 @@ impl Simulator {
         // file storage
         let disk_name = format!("{}::disk", data_server_name);
         let disk = rc!(refcell!(DiskBuilder::simple(
-            config.data_servers[0].disk_capacity,
-            config.data_servers[0].disk_read_bandwidth,
-            config.data_servers[0].disk_write_bandwidth
+            config.data_server.disk_capacity,
+            config.data_server.disk_read_bandwidth,
+            config.data_server.disk_write_bandwidth
         )
         .build(self.sim.borrow_mut().create_context(&disk_name))));
         self.sim.borrow_mut().add_handler(disk_name, disk.clone());
@@ -264,7 +264,7 @@ impl Simulator {
             self.net.clone(),
             disk,
             self.sim.borrow_mut().create_context(data_server_name),
-            config.data_servers[0].clone(),
+            config.data_server.clone(),
         )));
         let data_server_id = self
             .sim

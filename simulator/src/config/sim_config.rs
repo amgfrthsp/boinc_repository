@@ -59,7 +59,7 @@ pub struct ServerConfig {
     pub local_latency: f64,
     pub local_bandwidth: f64,
     pub report_status_interval: f64,
-    pub data_servers: Vec<DataServerConfig>,
+    pub data_server: DataServerConfig,
     pub assimilator: AssimilatorConfig,
     pub validator: ValidatorConfig,
     pub transitioner: TransitionerConfig,
@@ -105,13 +105,11 @@ pub struct SchedulerConfig {
 }
 
 /// Holds configuration of a single data server or a set of identical data servers.
-#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct DataServerConfig {
     pub disk_capacity: u64,
     pub disk_read_bandwidth: f64,
     pub disk_write_bandwidth: f64,
-    /// Number of data server instances.
-    pub count: Option<u32>,
 }
 
 /// Represents simulation configuration.
