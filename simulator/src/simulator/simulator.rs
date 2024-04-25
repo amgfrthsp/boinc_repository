@@ -2,15 +2,14 @@ use dslab_compute::multicore::Compute;
 use dslab_core::context::SimulationContext;
 use dslab_core::Simulation;
 use dslab_core::{component::Id, log_info};
-use dslab_network::{
-    models::{ConstantBandwidthNetworkModel, SharedBandwidthNetworkModel},
-    Network, NetworkModel,
-};
+use dslab_network::models::TopologyAwareNetworkModel;
+use dslab_network::Link;
+use dslab_network::{models::SharedBandwidthNetworkModel, Network};
 use dslab_storage::disk::DiskBuilder;
 use serde::Serialize;
 use std::rc::Rc;
 use std::{cell::RefCell, time::Instant};
-use sugars::{boxed, rc, refcell};
+use sugars::{rc, refcell};
 
 use crate::client::scheduler::Scheduler as ClientScheduler;
 use crate::client::storage::FileStorage;
@@ -20,7 +19,6 @@ use crate::server::feeder::{Feeder, SharedMemoryItem, SharedMemoryItemState};
 use crate::server::file_deleter::FileDeleter;
 use crate::{
     client::client::Client,
-    common::Start,
     server::{
         assimilator::Assimilator, data_server::DataServer, database::BoincDatabase,
         job_generator::JobGenerator, scheduler::Scheduler as ServerScheduler, server::Server,
@@ -29,19 +27,27 @@ use crate::{
 };
 
 #[derive(Clone, Serialize)]
-pub struct SetServerIds {
+pub struct StartServer {}
+
+#[derive(Clone, Serialize)]
+pub struct StartJobGenerator {
+    pub server_id: Id,
+}
+
+#[derive(Clone, Serialize)]
+pub struct StartClient {
     pub server_id: Id,
     pub data_server_id: Id,
 }
 
 pub struct Simulator {
     sim: Rc<RefCell<Simulation>>,
-    net: Rc<RefCell<Network>>,
+    network: Rc<RefCell<Network>>,
     hosts: Vec<String>,
-    job_generator_id: Option<u32>,
-    server_id: Option<u32>,
-    data_server_id: Option<u32>,
-    client_ids: Vec<u32>,
+    job_generator_id: Option<Id>,
+    server_id: Option<Id>,
+    data_server_id: Option<Id>,
+    client_ids: Vec<Id>,
     ctx: SimulationContext,
     sim_config: SimulationConfig,
 }
@@ -50,29 +56,17 @@ impl Simulator {
     pub fn new(sim_config: SimulationConfig) -> Self {
         let mut sim = Simulation::new(sim_config.seed);
 
-        let network_model: Box<dyn NetworkModel> = if sim_config.use_shared_network {
-            boxed!(SharedBandwidthNetworkModel::new(
-                sim_config.network_bandwidth,
-                sim_config.network_latency
-            ))
-        } else {
-            boxed!(ConstantBandwidthNetworkModel::new(
-                sim_config.network_bandwidth,
-                sim_config.network_latency
-            ))
-        };
         let network = rc!(refcell!(Network::new(
-            network_model,
-            sim.create_context("net")
+            Box::new(TopologyAwareNetworkModel::new()),
+            sim.create_context("net"),
         )));
-        sim.add_handler("net", network.clone());
 
         // context for starting job generator, server and clients
         let ctx = sim.create_context("ctx");
 
         let mut sim = Self {
             sim: rc!(refcell!(sim)),
-            net: network,
+            network: network.clone(),
             hosts: Vec::new(),
             job_generator_id: None,
             server_id: None,
@@ -82,15 +76,18 @@ impl Simulator {
             sim_config,
         };
 
-        sim.add_job_generator(sim.sim_config.job_generator.clone());
-        sim.add_server(sim.sim_config.server.clone());
+        let server_node_name = sim.add_server(sim.sim_config.server.clone());
+        sim.add_job_generator(sim.sim_config.job_generator.clone(), &server_node_name);
         // Add hosts from config
         for host_config in sim.sim_config.clients.clone() {
             let count = host_config.count.unwrap_or(1);
             for _ in 0..count {
-                sim.add_host(host_config.clone());
+                sim.add_host(host_config.clone(), &server_node_name);
             }
         }
+
+        sim.network.borrow_mut().init_topology();
+        sim.sim.borrow_mut().add_handler("net", network.clone());
 
         sim
     }
@@ -105,10 +102,21 @@ impl Simulator {
             return;
         }
         log_info!(self.ctx, "Simulation started");
-        self.ctx.emit_now(Start {}, self.job_generator_id.unwrap());
-        self.ctx.emit_now(Start {}, self.server_id.unwrap());
+        self.ctx.emit_now(
+            StartJobGenerator {
+                server_id: self.server_id.unwrap(),
+            },
+            self.job_generator_id.unwrap(),
+        );
+        self.ctx.emit_now(StartServer {}, self.server_id.unwrap());
         for client_id in &self.client_ids {
-            self.ctx.emit_now(Start {}, *client_id);
+            self.ctx.emit_now(
+                StartClient {
+                    server_id: self.server_id.unwrap(),
+                    data_server_id: self.data_server_id.unwrap(),
+                },
+                *client_id,
+            );
         }
 
         let t = Instant::now();
@@ -131,48 +139,10 @@ impl Simulator {
         );
     }
 
-    pub fn add_job_generator(&mut self, config: JobGeneratorConfig) {
+    pub fn add_server(&mut self, config: ServerConfig) -> String {
         let n = self.hosts.len();
         let node_name = &format!("host{}", n);
-        self.net.borrow_mut().add_node(
-            node_name,
-            Box::new(SharedBandwidthNetworkModel::new(
-                config.local_bandwidth,
-                config.local_latency,
-            )),
-        );
-        self.hosts.push(node_name.to_string());
-        let job_generator_name = &format!("{}::job_generator", node_name);
-
-        let job_generator = rc!(refcell!(JobGenerator::new(
-            self.net.clone(),
-            self.sim.borrow_mut().create_context(job_generator_name),
-            config,
-        )));
-        let job_generator_id = self
-            .sim
-            .borrow_mut()
-            .add_handler(job_generator_name, job_generator.clone());
-        self.net
-            .borrow_mut()
-            .set_location(job_generator_id, node_name);
-        self.job_generator_id = Some(job_generator_id);
-
-        if self.server_id.is_some() {
-            self.ctx.emit_now(
-                SetServerIds {
-                    server_id: self.server_id.unwrap(),
-                    data_server_id: self.data_server_id.unwrap(),
-                },
-                job_generator_id,
-            );
-        }
-    }
-
-    pub fn add_server(&mut self, config: ServerConfig) {
-        let n = self.hosts.len();
-        let node_name = &format!("host{}", n);
-        self.net.borrow_mut().add_node(
+        self.network.borrow_mut().add_node(
             node_name,
             Box::new(SharedBandwidthNetworkModel::new(
                 config.local_bandwidth,
@@ -238,7 +208,7 @@ impl Simulator {
         // Scheduler
         let scheduler_name = &format!("{}::scheduler", server_name);
         let scheduler = rc!(refcell!(ServerScheduler::new(
-            self.net.clone(),
+            self.network.clone(),
             database.clone(),
             self.sim.borrow_mut().create_context(scheduler_name),
             config.scheduler.clone(),
@@ -247,7 +217,9 @@ impl Simulator {
             .sim
             .borrow_mut()
             .add_handler(scheduler_name, scheduler.clone());
-        self.net.borrow_mut().set_location(scheduler_id, node_name);
+        self.network
+            .borrow_mut()
+            .set_location(scheduler_id, node_name);
 
         // Data server
         let data_server_name = &format!("{}::data_server", server_name);
@@ -261,7 +233,7 @@ impl Simulator {
         .build(self.sim.borrow_mut().create_context(&disk_name))));
         self.sim.borrow_mut().add_handler(disk_name, disk.clone());
         let data_server: Rc<RefCell<DataServer>> = rc!(refcell!(DataServer::new(
-            self.net.clone(),
+            self.network.clone(),
             disk,
             self.sim.borrow_mut().create_context(data_server_name),
             config.data_server.clone(),
@@ -271,7 +243,7 @@ impl Simulator {
             .borrow_mut()
             .add_handler(data_server_name, data_server.clone());
         self.data_server_id = Some(data_server_id);
-        self.net
+        self.network
             .borrow_mut()
             .set_location(data_server_id, node_name);
 
@@ -298,39 +270,60 @@ impl Simulator {
             config,
         )));
         let server_id = self.sim.borrow_mut().add_handler(server_name, server);
-        self.net.borrow_mut().set_location(server_id, node_name);
         self.server_id = Some(server_id);
+        self.network.borrow_mut().set_location(server_id, node_name);
 
-        for client_id in &self.client_ids {
-            self.ctx.emit_now(
-                SetServerIds {
-                    server_id,
-                    data_server_id,
-                },
-                *client_id,
-            );
-        }
-
-        if self.job_generator_id.is_some() {
-            self.ctx.emit_now(
-                SetServerIds {
-                    server_id,
-                    data_server_id,
-                },
-                self.job_generator_id.unwrap(),
-            );
-        }
+        node_name.clone()
     }
 
-    pub fn add_host(&mut self, config: ClientConfig) {
+    pub fn add_job_generator(&mut self, config: JobGeneratorConfig, server_node_name: &str) {
         let n = self.hosts.len();
         let node_name = &format!("host{}", n);
-        self.net.borrow_mut().add_node(
+        self.network.borrow_mut().add_node(
             node_name,
             Box::new(SharedBandwidthNetworkModel::new(
                 config.local_bandwidth,
                 config.local_latency,
             )),
+        );
+        self.network.borrow_mut().add_link(
+            &node_name,
+            server_node_name,
+            Link::shared(config.network_bandwidth, config.network_latency),
+        );
+        self.hosts.push(node_name.to_string());
+
+        let job_generator_name = &format!("{}::job_generator", node_name);
+
+        let job_generator = rc!(refcell!(JobGenerator::new(
+            self.network.clone(),
+            self.sim.borrow_mut().create_context(job_generator_name),
+            config,
+        )));
+        let job_generator_id = self
+            .sim
+            .borrow_mut()
+            .add_handler(job_generator_name, job_generator.clone());
+        self.network
+            .borrow_mut()
+            .set_location(job_generator_id, node_name);
+        self.job_generator_id = Some(job_generator_id);
+    }
+
+    pub fn add_host(&mut self, config: ClientConfig, server_node_name: &str) {
+        let n = self.hosts.len();
+        let node_name = &format!("host{}", n);
+        self.network.borrow_mut().add_node(
+            node_name,
+            Box::new(SharedBandwidthNetworkModel::new(
+                config.local_bandwidth,
+                config.local_latency,
+            )),
+        );
+        self.network.borrow_mut().add_link(
+            &node_name,
+            server_node_name,
+            Link::shared(config.network_bandwidth, config.network_latency),
         );
         self.hosts.push(node_name.to_string());
         // compute
@@ -370,7 +363,7 @@ impl Simulator {
         let client = Client::new(
             compute,
             disk,
-            self.net.clone(),
+            self.network.clone(),
             scheduler,
             file_storage.clone(),
             self.sim.borrow_mut().create_context(client_name),
@@ -380,17 +373,7 @@ impl Simulator {
             .sim
             .borrow_mut()
             .add_handler(client_name, rc!(refcell!(client)));
-        self.net.borrow_mut().set_location(client_id, node_name);
+        self.network.borrow_mut().set_location(client_id, node_name);
         self.client_ids.push(client_id);
-
-        if self.server_id.is_some() {
-            self.ctx.emit_now(
-                SetServerIds {
-                    server_id: self.server_id.unwrap(),
-                    data_server_id: self.data_server_id.unwrap(),
-                },
-                client_id,
-            );
-        }
     }
 }

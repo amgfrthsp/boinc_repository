@@ -20,13 +20,13 @@ use futures::{select, FutureExt};
 use super::scheduler::Scheduler;
 use super::storage::FileStorage;
 use super::task::{ResultInfo, ResultState};
-use crate::common::{ReportStatus, Start};
+use crate::common::ReportStatus;
 use crate::config::sim_config::ClientConfig;
 use crate::server::data_server::{
     InputFileUploadCompleted, InputFilesInquiry, OutputFileDownloadCompleted, OutputFileFromClient,
 };
 use crate::server::job::{DataServerFile, JobSpec, ResultId, ResultRequest};
-use crate::simulator::simulator::SetServerIds;
+use crate::simulator::simulator::StartClient;
 
 #[derive(Clone, Serialize)]
 pub struct ResultsInquiry {}
@@ -61,8 +61,8 @@ pub struct Client {
     compute: Rc<RefCell<Compute>>,
     disk: Rc<RefCell<Disk>>,
     net: Rc<RefCell<Network>>,
-    server_id: Option<Id>,
-    data_server_id: Option<Id>,
+    server_id: Id,
+    data_server_id: Id,
     scheduler: Scheduler,
     file_storage: Rc<FileStorage>,
     next_scheduling_time: RefCell<f64>,
@@ -89,8 +89,8 @@ impl Client {
             compute,
             disk,
             net,
-            server_id: None,
-            data_server_id: None,
+            server_id: 0,
+            data_server_id: 0,
             scheduler,
             file_storage,
             next_scheduling_time: RefCell::new(0.),
@@ -100,15 +100,17 @@ impl Client {
         }
     }
 
-    fn on_start(&mut self) {
+    fn on_start(&mut self, server_id: Id, data_server_id: Id) {
         log_debug!(self.ctx, "started");
+        self.server_id = server_id;
+        self.data_server_id = data_server_id;
         self.ctx.emit(
             ClientRegister {
                 speed: self.compute.borrow().speed(),
                 cpus_total: self.compute.borrow().cores_total(),
                 memory_total: self.compute.borrow().memory_total(),
             },
-            self.server_id.unwrap(),
+            self.server_id,
             0.5,
         );
         self.ctx
@@ -145,7 +147,7 @@ impl Client {
                     workunit_id,
                     ref_id: event_id,
                 },
-                self.data_server_id.unwrap(),
+                self.data_server_id,
             );
 
             futures::join!(
@@ -240,7 +242,7 @@ impl Client {
             OutputFileFromClient {
                 output_file: result.output_file.clone(),
             },
-            self.data_server_id.unwrap(),
+            self.data_server_id,
         );
         self.process_data_server_output_file_upload(result_id).await;
 
@@ -254,7 +256,7 @@ impl Client {
         self.net.borrow_mut().send_event(
             ResultCompleted { result_id },
             self.ctx.id(),
-            self.server_id.unwrap(),
+            self.server_id,
         );
         log_debug!(
             self.ctx,
@@ -400,7 +402,7 @@ impl Client {
     fn ask_for_results(&self) {
         self.net
             .borrow_mut()
-            .send_event(ResultsInquiry {}, self.ctx.id(), self.server_id.unwrap());
+            .send_event(ResultsInquiry {}, self.ctx.id(), self.server_id);
     }
 
     fn is_active(&self) -> bool {
@@ -432,15 +434,11 @@ impl Client {
 impl EventHandler for Client {
     fn on(&mut self, event: Event) {
         cast!(match event.data {
-            SetServerIds {
+            StartClient {
                 server_id,
                 data_server_id,
             } => {
-                self.server_id = Some(server_id);
-                self.data_server_id = Some(data_server_id);
-            }
-            Start {} => {
-                self.on_start();
+                self.on_start(server_id, data_server_id);
             }
             ResultRequest {
                 spec,

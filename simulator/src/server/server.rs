@@ -1,5 +1,3 @@
-use log::log_enabled;
-use log::Level::Info;
 use priority_queue::PriorityQueue;
 use serde::Serialize;
 use std::cell::RefCell;
@@ -23,9 +21,10 @@ use super::scheduler::Scheduler;
 use super::transitioner::Transitioner;
 use super::validator::Validator;
 use crate::client::client::{ClientRegister, ResultCompleted, ResultsInquiry};
-use crate::common::{ReportStatus, Start};
+use crate::common::ReportStatus;
 use crate::config::sim_config::ServerConfig;
 use crate::server::data_server::InputFileDownloadCompleted;
+use crate::simulator::simulator::StartServer;
 
 #[derive(Clone, Serialize)]
 pub struct ServerRegister {}
@@ -373,7 +372,7 @@ impl Server {
 impl EventHandler for Server {
     fn on(&mut self, event: Event) {
         cast!(match event.data {
-            Start {} => {
+            StartServer {} => {
                 self.on_started();
             }
             ScheduleJobs {} => {

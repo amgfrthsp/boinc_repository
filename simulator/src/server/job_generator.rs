@@ -11,16 +11,16 @@ use dslab_core::{cast, log_debug};
 use dslab_network::Network;
 
 use super::job::{InputFileMetadata, JobSpec, JobSpecId};
-use crate::common::{ReportStatus, Start};
+use crate::common::ReportStatus;
 use crate::config::sim_config::JobGeneratorConfig;
-use crate::simulator::simulator::SetServerIds;
+use crate::simulator::simulator::StartJobGenerator;
 
 #[derive(Clone, Serialize)]
 pub struct GenerateJobs {}
 
 pub struct JobGenerator {
     net: Rc<RefCell<Network>>,
-    server_id: Option<Id>,
+    server_id: Id,
     jobs_generated: u64,
     ctx: SimulationContext,
     #[allow(dead_code)]
@@ -36,23 +36,21 @@ impl JobGenerator {
         Self {
             config,
             net,
-            server_id: None,
+            server_id: 0,
             jobs_generated: 0,
             ctx,
         }
     }
 
-    fn on_started(&mut self) {
+    fn on_started(&mut self, server_id: Id) {
         log_debug!(self.ctx, "started");
+        self.server_id = server_id;
         self.ctx.emit_self(GenerateJobs {}, 1.);
         self.ctx
             .emit_self(ReportStatus {}, self.config.report_status_interval);
     }
 
     fn generate_jobs(&mut self) {
-        if self.server_id.is_none() {
-            return;
-        }
         for i in 0..self.config.job_batch_size {
             let job_id = (self.jobs_generated + i as u64) as JobSpecId;
             let min_quorum = self
@@ -88,7 +86,7 @@ impl JobGenerator {
             };
             self.net
                 .borrow_mut()
-                .send_event(job, self.ctx.id(), self.server_id.unwrap());
+                .send_event(job, self.ctx.id(), self.server_id);
         }
         self.jobs_generated += self.config.job_batch_size;
         if self.jobs_generated < self.config.job_count {
@@ -101,11 +99,8 @@ impl JobGenerator {
 impl EventHandler for JobGenerator {
     fn on(&mut self, event: Event) {
         cast!(match event.data {
-            SetServerIds { server_id, .. } => {
-                self.server_id = Some(server_id);
-            }
-            Start {} => {
-                self.on_started();
+            StartJobGenerator { server_id } => {
+                self.on_started(server_id);
             }
             GenerateJobs {} => {
                 self.generate_jobs();

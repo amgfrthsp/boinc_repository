@@ -6,9 +6,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 struct RawSimulationConfig {
     pub seed: Option<u64>,
-    pub network_latency: Option<f64>,
-    pub network_bandwidth: Option<f64>,
-    pub use_shared_network: Option<bool>,
     pub job_generator: Option<JobGeneratorConfig>,
     pub server: Option<ServerConfig>,
     pub clients: Option<Vec<ClientConfig>>,
@@ -24,6 +21,8 @@ pub struct ClientConfig {
     pub disk_capacity: u64,
     pub disk_read_bandwidth: f64,
     pub disk_write_bandwidth: f64,
+    pub network_latency: f64,
+    pub network_bandwidth: f64,
     pub local_latency: f64,
     pub local_bandwidth: f64,
     pub report_status_interval: f64,
@@ -48,6 +47,8 @@ pub struct JobGeneratorConfig {
     pub target_nresults_redundancy: u64,
     pub input_size_lower_bound: u64,
     pub input_size_upper_bound: u64,
+    pub network_latency: f64,
+    pub network_bandwidth: f64,
     pub local_latency: f64,
     pub local_bandwidth: f64,
     pub report_status_interval: f64,
@@ -117,9 +118,6 @@ pub struct DataServerConfig {
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct SimulationConfig {
     pub seed: u64,
-    pub network_latency: f64,
-    pub network_bandwidth: f64,
-    pub use_shared_network: bool,
     pub clients: Vec<ClientConfig>,
     pub job_generator: JobGeneratorConfig,
     pub server: ServerConfig,
@@ -137,9 +135,6 @@ impl SimulationConfig {
 
         Self {
             seed: raw.seed.unwrap_or(124),
-            network_latency: raw.network_latency.unwrap_or(0.5),
-            network_bandwidth: raw.network_bandwidth.unwrap_or(1000.),
-            use_shared_network: raw.use_shared_network.unwrap_or(false),
             clients: raw.clients.unwrap_or_default(),
             job_generator: raw.job_generator.unwrap_or_default(),
             server: raw.server.unwrap_or_default(),
