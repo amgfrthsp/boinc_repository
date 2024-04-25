@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Holds raw simulation config parsed from YAML file.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 struct RawSimulationConfig {
+    pub seed: Option<u64>,
     pub network_latency: Option<f64>,
     pub network_bandwidth: Option<f64>,
     pub use_shared_network: Option<bool>,
@@ -115,6 +116,7 @@ pub struct DataServerConfig {
 /// Represents simulation configuration.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct SimulationConfig {
+    pub seed: u64,
     pub network_latency: f64,
     pub network_bandwidth: f64,
     pub use_shared_network: bool,
@@ -134,6 +136,7 @@ impl SimulationConfig {
         .unwrap_or_else(|_| panic!("Can't parse YAML from file {}", file_name));
 
         Self {
+            seed: raw.seed.unwrap_or(124),
             network_latency: raw.network_latency.unwrap_or(0.5),
             network_bandwidth: raw.network_bandwidth.unwrap_or(1000.),
             use_shared_network: raw.use_shared_network.unwrap_or(false),

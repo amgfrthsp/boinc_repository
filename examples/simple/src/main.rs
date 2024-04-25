@@ -9,9 +9,7 @@ fn init_logger() {
 }
 
 fn simulation(sim_config: SimulationConfig) {
-    let seed = 123;
-
-    let mut simulator = Simulator::new(seed, sim_config);
+    let mut simulator = Simulator::new(sim_config);
     // run until completion
     simulator.run();
 }

@@ -1,7 +1,7 @@
 use dslab_compute::multicore::Compute;
 use dslab_core::context::SimulationContext;
+use dslab_core::Simulation;
 use dslab_core::{component::Id, log_info};
-use dslab_core::{log_debug, Simulation};
 use dslab_network::{
     models::{ConstantBandwidthNetworkModel, SharedBandwidthNetworkModel},
     Network, NetworkModel,
@@ -47,8 +47,8 @@ pub struct Simulator {
 }
 
 impl Simulator {
-    pub fn new(seed: u64, sim_config: SimulationConfig) -> Self {
-        let mut sim = Simulation::new(seed);
+    pub fn new(sim_config: SimulationConfig) -> Self {
+        let mut sim = Simulation::new(sim_config.seed);
 
         let network_model: Box<dyn NetworkModel> = if sim_config.use_shared_network {
             boxed!(SharedBandwidthNetworkModel::new(

@@ -6,11 +6,13 @@ use crate::server::job::{JobSpec, OutputFileMetadata};
 #[allow(dead_code)]
 pub enum ResultState {
     Downloading,
-    ReadyToExecute,
+    Unstarted,
+    Reading,
     Running,
     Preempted { comp_id: EventId },
-    ReadyToUpload,
-    ReadyToNotify,
+    Writing,
+    Uploading,
+    Notifying,
     Over,
     Deleted,
 }
