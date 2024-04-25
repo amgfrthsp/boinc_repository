@@ -1,9 +1,10 @@
 use dslab_core::context::SimulationContext;
-use dslab_core::log_info;
+use dslab_core::{log_debug, log_info};
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::config::sim_config::FileDeleterConfig;
+use crate::server::database::{DBResultState, DBWorkunitState};
 use crate::server::job::FileDeleteState;
 
 use super::data_server::DataServer;
@@ -43,9 +44,19 @@ impl FileDeleter {
 
     pub fn delete_input_files(&self) {
         let workunits_to_process =
-            BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
-                wu.file_delete_state == FileDeleteState::Ready
-            });
+            self.db
+                .get_workunits_with_state(DBWorkunitState::FileDeleteState {
+                    state: FileDeleteState::Ready,
+                });
+        // let workunits_to_process_old =
+        //     BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
+        //         wu.file_delete_state == FileDeleteState::Ready
+        //     });
+
+        // log_debug!(self.ctx, "SCAN: {:?}", workunits_to_process_old);
+        // log_debug!(self.ctx, "INDEX: {:?}", workunits_to_process);
+
+        // assert_eq!(workunits_to_process, workunits_to_process_old);
 
         log_info!(self.ctx, "input file deletion started");
 
@@ -56,7 +67,12 @@ impl FileDeleter {
 
             let retval = self.data_server.borrow_mut().delete_input_files(wu_id);
             if retval == 0 {
-                workunit.file_delete_state = FileDeleteState::Done;
+                self.db.change_workunit_state(
+                    workunit,
+                    DBWorkunitState::FileDeleteState {
+                        state: FileDeleteState::Done,
+                    },
+                );
             }
         }
 
@@ -64,9 +80,10 @@ impl FileDeleter {
     }
 
     pub fn delete_output_files(&self) {
-        let results_to_process =
-            BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
-                result.file_delete_state == FileDeleteState::Ready
+        let results_to_process = self
+            .db
+            .get_results_with_state(DBResultState::FileDeleteState {
+                state: FileDeleteState::Ready,
             });
 
         log_info!(self.ctx, "output file deletion started");
@@ -78,7 +95,12 @@ impl FileDeleter {
 
             let retval = self.data_server.borrow_mut().delete_output_files(result_id);
             if retval == 0 {
-                result.file_delete_state = FileDeleteState::Done;
+                self.db.change_result_state(
+                    result,
+                    DBResultState::FileDeleteState {
+                        state: FileDeleteState::Done,
+                    },
+                );
             }
         }
 

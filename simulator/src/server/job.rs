@@ -58,7 +58,7 @@ pub struct ResultRequest {
     pub output_file: OutputFileMetadata,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 #[allow(dead_code)]
 pub enum ResultState {
     Inactive,
@@ -89,7 +89,7 @@ pub enum ValidateState {
     TooLate,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 #[allow(dead_code)]
 pub enum AssimilateState {
     Init,
@@ -97,7 +97,7 @@ pub enum AssimilateState {
     Done,
 }
 
-#[derive(Debug, Clone, PartialEq, Copy)]
+#[derive(Debug, Clone, Eq, PartialEq, Copy, Hash)]
 #[allow(dead_code)]
 pub enum FileDeleteState {
     Init,

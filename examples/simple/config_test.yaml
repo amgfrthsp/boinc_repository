@@ -4,7 +4,7 @@ network_bandwidth: 1000
 use_shared_network: false
 
 clients:
-  - count: 20000
+  - count: 100000
     speed: 8.
     cpus: 4
     memory: 4
@@ -17,7 +17,7 @@ clients:
 
 
 job_generator:
-  job_count: 500000
+  job_count: 1000000
   job_batch_size: 3
   job_generation_interval: 20.
   flops_lower_bound: 20.

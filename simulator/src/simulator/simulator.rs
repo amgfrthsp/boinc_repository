@@ -183,7 +183,10 @@ impl Simulator {
         let server_name = &format!("{}::server", node_name);
 
         // Creating database
-        let database = rc!(BoincDatabase::new());
+        let database_name = &format!("{}::database", server_name);
+        let database = rc!(BoincDatabase::new(
+            self.sim.borrow_mut().create_context(database_name)
+        ));
 
         // Adding daemon components
         // Validator

@@ -4,7 +4,9 @@ use serde::Serialize;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::common::vector_intersection;
 use crate::config::sim_config::FeederConfig;
+use crate::server::database::DBResultState;
 use crate::server::job::ResultState;
 
 use super::database::BoincDatabase;
@@ -48,10 +50,14 @@ impl Feeder {
 
     pub fn scan_work_array(&self) {
         log_info!(self.ctx, "feeder scanning started");
-        let mut vacant_results =
-            BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
-                result.server_state == ResultState::Unsent && !result.in_shared_mem
-            });
+
+        let unsent_results = self.db.get_results_with_state(DBResultState::ServerState {
+            state: ResultState::Unsent,
+        });
+        let not_in_shmem_results = self
+            .db
+            .get_results_with_state(DBResultState::InSharedMemoryFlag { flag: false });
+        let mut vacant_results = vector_intersection(&unsent_results, &not_in_shmem_results);
 
         let mut db_result_mut = self.db.result.borrow_mut();
         let n = self.shared_memory.as_ref().borrow().len();
@@ -70,7 +76,8 @@ impl Feeder {
                 result_id,
                 workunit_id: result.workunit_id,
             };
-            result.in_shared_mem = true;
+            self.db
+                .change_result_state(result, DBResultState::InSharedMemoryFlag { flag: true });
 
             log_info!(self.ctx, "result {} added to shared memory", result_id);
         }

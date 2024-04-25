@@ -4,6 +4,7 @@ use dslab_core::log_info;
 use std::rc::Rc;
 
 use crate::config::sim_config::ValidatorConfig;
+use crate::server::database::DBWorkunitState;
 use crate::server::job::{
     AssimilateState, FileDeleteState, ResultOutcome, ResultState, ValidateState,
 };
@@ -34,10 +35,18 @@ impl Validator {
     }
 
     pub fn validate(&self) {
-        let workunits_to_validate =
-            BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
-                wu.need_validate
-            });
+        let workunits_to_validate = self
+            .db
+            .get_workunits_with_state(DBWorkunitState::NeedValidation { flag: true });
+        // let workunits_to_validate_old =
+        //     BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
+        //         wu.need_validate
+        //     });
+
+        // log_debug!(self.ctx, "SCAN: {:?}", workunits_to_validate_old);
+        // log_debug!(self.ctx, "INDEX: {:?}", workunits_to_validate);
+
+        // assert_eq!(workunits_to_validate, workunits_to_validate_old);
         log_info!(self.ctx, "validation started");
 
         let mut db_workunit_mut = self.db.workunit.borrow_mut();
@@ -45,7 +54,8 @@ impl Validator {
 
         for wu_id in workunits_to_validate {
             let workunit = db_workunit_mut.get_mut(&wu_id).unwrap();
-            workunit.need_validate = false;
+            self.db
+                .change_workunit_state(workunit, DBWorkunitState::NeedValidation { flag: false });
 
             if workunit.canonical_resultid.is_some() {
                 // canonical result is found. grant credit or validate
@@ -123,7 +133,12 @@ impl Validator {
                         );
                         // grant credit
                         workunit.canonical_resultid = canonical_result_id;
-                        workunit.assimilate_state = AssimilateState::Ready;
+                        self.db.change_workunit_state(
+                            workunit,
+                            DBWorkunitState::AssimilateState {
+                                state: AssimilateState::Ready,
+                            },
+                        );
                         for result_id in &workunit.result_ids {
                             let result = db_result_mut.get_mut(result_id).unwrap();
                             if result.server_state == ResultState::Unsent {

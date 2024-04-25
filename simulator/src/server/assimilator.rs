@@ -3,6 +3,7 @@ use dslab_core::{log_debug, log_info};
 use std::rc::Rc;
 
 use crate::config::sim_config::AssimilatorConfig;
+use crate::server::database::DBWorkunitState;
 use crate::server::job::AssimilateState;
 
 use super::database::BoincDatabase;
@@ -25,9 +26,20 @@ impl Assimilator {
 
     pub fn assimilate(&self) {
         let workunits_to_assimilate =
-            BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
-                wu.assimilate_state == AssimilateState::Ready
-            });
+            self.db
+                .get_workunits_with_state(DBWorkunitState::AssimilateState {
+                    state: AssimilateState::Ready,
+                });
+        // let workunits_to_assimilate_old =
+        //     BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
+        //         wu.assimilate_state == AssimilateState::Ready
+        //     });
+
+        // log_debug!(self.ctx, "SCAN: {:?}", workunits_to_assimilate_old);
+        // log_debug!(self.ctx, "INDEX: {:?}", workunits_to_assimilate);
+
+        // assert_eq!(workunits_to_assimilate, workunits_to_assimilate_old);
+
         log_info!(self.ctx, "assimilation started");
         let mut assimilated_cnt = 0;
 
@@ -42,7 +54,12 @@ impl Assimilator {
                 workunit.assimilate_state,
                 AssimilateState::Done
             );
-            workunit.assimilate_state = AssimilateState::Done;
+            self.db.change_workunit_state(
+                workunit,
+                DBWorkunitState::AssimilateState {
+                    state: AssimilateState::Done,
+                },
+            );
             assimilated_cnt += 1;
         }
         log_info!(self.ctx, "assimilated {} workunits", assimilated_cnt);

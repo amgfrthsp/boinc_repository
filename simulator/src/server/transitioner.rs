@@ -5,10 +5,12 @@ use std::borrow::Borrow;
 use std::rc::Rc;
 
 use crate::config::sim_config::TransitionerConfig;
+use crate::server::database::DBResultState;
 use crate::server::job::{
     AssimilateState, FileDeleteState, ResultOutcome, ResultState, ValidateState,
 };
 
+use super::database::DBWorkunitState;
 use super::job::ResultId;
 use super::{
     database::BoincDatabase,
@@ -116,7 +118,12 @@ impl Transitioner {
                             ResultState::Over,
                             ResultOutcome::NoReply,
                         );
-                        result.server_state = ResultState::Over;
+                        self.db.change_result_state(
+                            result,
+                            DBResultState::ServerState {
+                                state: ResultState::Over,
+                            },
+                        );
                         result.outcome = ResultOutcome::NoReply;
                         result.validate_state = ValidateState::Invalid;
                     } else {
@@ -140,7 +147,8 @@ impl Transitioner {
 
         // trigger validation if needed
         if need_validate && res_outcome_success_cnt >= workunit.spec.min_quorum {
-            workunit.need_validate = true;
+            self.db
+                .change_workunit_state(workunit, DBWorkunitState::NeedValidation { flag: true });
         }
 
         if workunit.canonical_resultid.is_some() {
@@ -161,8 +169,6 @@ impl Transitioner {
     fn generate_new_results(&self, workunit: &mut WorkunitInfo, cnt: u64) {
         // if no WU errors, generate new results if needed
 
-        let mut db_result_mut = self.db.result.borrow_mut();
-
         for i in 0..cnt {
             let result = ResultInfo {
                 id: self.next_result_id + i,
@@ -175,7 +181,7 @@ impl Transitioner {
                 in_shared_mem: false,
             };
             workunit.result_ids.push(result.id);
-            db_result_mut.insert(result.id, result);
+            self.db.create_new_result(result);
         }
 
         if cnt > 0 {
@@ -225,15 +231,12 @@ impl Transitioner {
                 && delete_output_files
                 && result.file_delete_state == FileDeleteState::Init
             {
-                log_debug!(
-                    self.ctx,
-                    "result {} file delete state {:?} -> {:?}; wu assimilate_state {:?}",
-                    result.id,
-                    result.file_delete_state,
-                    FileDeleteState::Ready,
-                    workunit.assimilate_state,
+                self.db.change_result_state(
+                    result,
+                    DBResultState::FileDeleteState {
+                        state: FileDeleteState::Ready,
+                    },
                 );
-                result.file_delete_state = FileDeleteState::Ready;
             }
         }
 
@@ -254,7 +257,12 @@ impl Transitioner {
                     FileDeleteState::Ready,
                     workunit.assimilate_state,
                 );
-                canonical_result.file_delete_state = FileDeleteState::Ready;
+                self.db.change_result_state(
+                    canonical_result,
+                    DBResultState::FileDeleteState {
+                        state: FileDeleteState::Ready,
+                    },
+                );
             }
         }
 
@@ -269,7 +277,12 @@ impl Transitioner {
                 workunit.file_delete_state,
                 FileDeleteState::Ready,
             );
-            workunit.file_delete_state = FileDeleteState::Ready;
+            self.db.change_workunit_state(
+                workunit,
+                DBWorkunitState::FileDeleteState {
+                    state: FileDeleteState::Ready,
+                },
+            );
         }
     }
 

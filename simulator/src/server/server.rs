@@ -1,5 +1,3 @@
-use log::log_enabled;
-use log::Level::Info;
 use priority_queue::PriorityQueue;
 use serde::Serialize;
 use std::cell::RefCell;
@@ -26,6 +24,7 @@ use crate::client::client::{ClientRegister, ResultCompleted, ResultsInquiry};
 use crate::common::{ReportStatus, Start};
 use crate::config::sim_config::ServerConfig;
 use crate::server::data_server::InputFileDownloadCompleted;
+use crate::server::database::DBResultState;
 
 #[derive(Clone, Serialize)]
 pub struct ServerRegister {}
@@ -225,7 +224,7 @@ impl Server {
             workunit.id
         );
 
-        self.db.workunit.borrow_mut().insert(workunit.id, workunit);
+        self.db.create_new_workunit(workunit);
 
         let planned = *self.scheduling_planned.borrow();
         if !planned {
@@ -258,7 +257,12 @@ impl Server {
         let result = db_result_mut.get_mut(&result_id).unwrap();
         let workunit = db_workunit_mut.get_mut(&result.workunit_id).unwrap();
         if result.outcome == ResultOutcome::Undefined {
-            result.server_state = ResultState::Over;
+            self.db.change_result_state(
+                result,
+                DBResultState::ServerState {
+                    state: ResultState::Over,
+                },
+            );
             result.outcome = ResultOutcome::Success;
             result.validate_state = ValidateState::Init;
             workunit.transition_time = self.ctx.time();
@@ -335,38 +339,35 @@ impl Server {
     // ******* utilities & statistics *********
 
     fn is_active(&self) -> bool {
-        !BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
-            wu.canonical_resultid.is_none()
-        })
-        .is_empty()
+        !self.db.workunit.borrow().is_empty()
     }
 
     fn report_status(&mut self) {
-        log_info!(
-            self.ctx,
-            "UNSENT RESULTS: {} / IN PROGRESS RESULTS: {} / COMPLETED RESULTS: {}",
-            BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
-                result.server_state == ResultState::Unsent
-            })
-            .len(),
-            BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
-                result.server_state == ResultState::InProgress
-            })
-            .len(),
-            BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
-                result.server_state == ResultState::Over
-            })
-            .len()
-        );
-        if self.is_active() {
-            self.ctx
-                .emit_self(ReportStatus {}, self.config.report_status_interval);
-            self.ctx.emit(
-                ReportStatus {},
-                self.data_server.borrow().id,
-                self.config.report_status_interval,
-            );
-        }
+        // log_info!(
+        //     self.ctx,
+        //     "UNSENT RESULTS: {} / IN PROGRESS RESULTS: {} / COMPLETED RESULTS: {}",
+        //     BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
+        //         result.server_state == ResultState::Unsent
+        //     })
+        //     .len(),
+        //     BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
+        //         result.server_state == ResultState::InProgress
+        //     })
+        //     .len(),
+        //     BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
+        //         result.server_state == ResultState::Over
+        //     })
+        //     .len()
+        // );
+        // if self.is_active() {
+        //     self.ctx
+        //         .emit_self(ReportStatus {}, self.config.report_status_interval);
+        //     self.ctx.emit(
+        //         ReportStatus {},
+        //         self.data_server.borrow().id,
+        //         self.config.report_status_interval,
+        //     );
+        // }
     }
 }
 

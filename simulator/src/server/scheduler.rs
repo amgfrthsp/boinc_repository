@@ -9,6 +9,7 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use crate::config::sim_config::SchedulerConfig;
+use crate::server::database::DBResultState;
 use crate::server::job::{OutputFileMetadata, ResultRequest, ResultState};
 
 use super::database::BoincDatabase;
@@ -47,10 +48,9 @@ impl Scheduler {
         clients: &mut BTreeMap<Id, ClientInfo>,
         clients_queue: &mut PriorityQueue<Id, ClientScore>,
     ) {
-        let results_to_schedule =
-            BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
-                result.server_state == ResultState::Unsent
-            });
+        let results_to_schedule = self.db.get_results_with_state(DBResultState::ServerState {
+            state: ResultState::Unsent,
+        });
 
         log_info!(self.ctx, "scheduling started");
         log_debug!(self.ctx, "results to schedule: {:?}", results_to_schedule);
@@ -59,13 +59,13 @@ impl Scheduler {
         let mut assigned_results_cnt = 0;
 
         let mut db_workunit_mut = self.db.workunit.borrow_mut();
-        let mut db_result_mut = self.db.result.borrow_mut();
 
         for result_id in results_to_schedule {
             if clients_queue.is_empty() {
                 break;
             }
 
+            let mut db_result_mut = self.db.result.borrow_mut();
             let result = db_result_mut.get_mut(&result_id).unwrap();
             let workunit = db_workunit_mut.get_mut(&result.workunit_id).unwrap();
 
@@ -81,7 +81,6 @@ impl Scheduler {
                     );
 
                     // update state
-                    result.server_state = ResultState::InProgress;
                     result.report_deadline = self.ctx.time() + workunit.spec.delay_bound;
                     workunit.transition_time =
                         f64::min(workunit.transition_time, result.report_deadline);
@@ -108,6 +107,14 @@ impl Scheduler {
                     self.net
                         .borrow_mut()
                         .send_event(request, self.id, client_id);
+
+                    // already borrowed problem
+                    self.db.change_result_state(
+                        result,
+                        DBResultState::ServerState {
+                            state: ResultState::InProgress,
+                        },
+                    );
 
                     break;
                 } else {

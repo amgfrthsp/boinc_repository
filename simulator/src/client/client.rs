@@ -206,7 +206,7 @@ impl Client {
             .unwrap()
             .clone();
 
-        self.change_result(result_id, Some(ResultState::Running), None);
+        self.change_result(result_id, Some(ResultState::Reading), None);
 
         // disk read
         self.process_disk_read(DataServerFile::Input(result.spec.input_file.clone()))
@@ -216,9 +216,12 @@ impl Client {
             "result {}: input files disk reading finished",
             result_id
         );
+        self.change_result(result_id, Some(ResultState::Running), None);
 
         // comp start & update state
         self.process_compute(result_id, result.spec.clone()).await;
+
+        self.change_result(result_id, Some(ResultState::Writing), None);
 
         // disk write
         self.process_disk_write(DataServerFile::Output(result.output_file.clone()))
@@ -234,7 +237,7 @@ impl Client {
         );
 
         // upload results on data server
-        self.change_result(result_id, Some(ResultState::ReadyToUpload), None);
+        self.change_result(result_id, Some(ResultState::Uploading), None);
         self.ctx.emit_now(
             OutputFileFromClient {
                 output_file: result.output_file.clone(),
@@ -249,7 +252,7 @@ impl Client {
             result_id
         );
 
-        self.change_result(result_id, Some(ResultState::ReadyToNotify), None);
+        self.change_result(result_id, Some(ResultState::Notifying), None);
         self.net.borrow_mut().send_event(
             ResultCompleted { result_id },
             self.ctx.id(),

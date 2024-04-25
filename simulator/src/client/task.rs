@@ -7,10 +7,12 @@ use crate::server::job::{JobSpec, OutputFileMetadata};
 pub enum ResultState {
     Downloading,
     ReadyToExecute,
+    Reading,
     Running,
     Preempted { comp_id: EventId },
-    ReadyToUpload,
-    ReadyToNotify,
+    Writing,
+    Uploading,
+    Notifying,
     Over,
     Deleted,
 }

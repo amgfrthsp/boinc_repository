@@ -3,6 +3,7 @@ use dslab_core::{log_debug, log_info};
 use std::rc::Rc;
 
 use crate::config::sim_config::DBPurgerConfig;
+use crate::server::database::DBWorkunitState;
 
 use super::database::BoincDatabase;
 use super::job::FileDeleteState;
@@ -27,9 +28,19 @@ impl DBPurger {
         log_info!(self.ctx, "database purging started");
 
         let workunits_to_delete =
-            BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
-                wu.file_delete_state == FileDeleteState::Done
-            });
+            self.db
+                .get_workunits_with_state(DBWorkunitState::FileDeleteState {
+                    state: FileDeleteState::Done,
+                });
+        // let workunits_to_delete_old =
+        //     BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
+        //         wu.file_delete_state == FileDeleteState::Done
+        //     });
+
+        // log_debug!(self.ctx, "SCAN: {:?}", workunits_to_delete_old);
+        // log_debug!(self.ctx, "INDEX: {:?}", workunits_to_delete);
+
+        // assert_eq!(workunits_to_delete, workunits_to_delete_old);
 
         let mut db_workunit_mut = self.db.workunit.borrow_mut();
         let mut db_result_mut = self.db.result.borrow_mut();
@@ -45,11 +56,13 @@ impl DBPurger {
                 if result.file_delete_state != FileDeleteState::Done {
                     all_results_deleted = false;
                 } else {
+                    self.db.process_result_deleted(result);
                     db_result_mut.remove(result_id);
                     log_debug!(self.ctx, "removed result {} from database", result_id);
                 }
             }
             if all_results_deleted {
+                self.db.process_workunit_deleted(workunit);
                 db_workunit_mut.remove(&wu_id);
                 log_debug!(self.ctx, "removed workunit {} from database", wu_id);
             }
