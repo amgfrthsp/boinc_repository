@@ -8,6 +8,7 @@ pub enum ResultState {
     Downloading,
     Unstarted,
     Reading,
+    Canceled,
     Running,
     Preempted { comp_id: EventId },
     Writing,

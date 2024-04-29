@@ -11,6 +11,7 @@ use std::rc::Rc;
 use std::{cell::RefCell, time::Instant};
 use sugars::{rc, refcell};
 
+use crate::client::rr_simulation::RRSimulation;
 use crate::client::scheduler::Scheduler as ClientScheduler;
 use crate::client::storage::FileStorage;
 use crate::config::sim_config::{ClientConfig, JobGeneratorConfig, ServerConfig, SimulationConfig};
@@ -352,9 +353,20 @@ impl Simulator {
         // File Storage
         let file_storage: Rc<FileStorage> = rc!(FileStorage::new());
 
+        // RR Simulator
+        let rr_simulator_name = &format!("{}::rr_simulator", client_name);
+        let rr_simulator = rc!(refcell!(RRSimulation::new(
+            config.buffered_work_lower_bound,
+            config.buffered_work_upper_bound,
+            file_storage.clone(),
+            compute.clone(),
+            self.sim.borrow_mut().create_context(rr_simulator_name),
+        )));
+
         // Scheduler
         let scheduler_name = &format!("{}::scheduler", client_name);
         let scheduler = ClientScheduler::new(
+            rr_simulator.clone(),
             compute.clone(),
             file_storage.clone(),
             self.sim.borrow_mut().create_context(scheduler_name),
@@ -365,6 +377,7 @@ impl Simulator {
             disk,
             self.network.clone(),
             scheduler,
+            rr_simulator.clone(),
             file_storage.clone(),
             self.sim.borrow_mut().create_context(client_name),
             config,

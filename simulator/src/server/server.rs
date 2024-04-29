@@ -1,7 +1,6 @@
-use priority_queue::PriorityQueue;
 use serde::Serialize;
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use dslab_core::component::Id;
@@ -20,17 +19,16 @@ use super::job::*;
 use super::scheduler::Scheduler;
 use super::transitioner::Transitioner;
 use super::validator::Validator;
-use crate::client::client::{ClientRegister, ResultCompleted, ResultsInquiry};
+use crate::client::client::{ClientRegister, ResultCompleted};
+use crate::client::rr_simulation::WorkFetchRequest;
 use crate::common::ReportStatus;
 use crate::config::sim_config::ServerConfig;
 use crate::server::data_server::InputFileDownloadCompleted;
+use crate::server::job_generator::AllJobsSent;
 use crate::simulator::simulator::StartServer;
 
 #[derive(Clone, Serialize)]
 pub struct ServerRegister {}
-
-#[derive(Clone, Serialize)]
-pub struct ScheduleJobs {}
 
 #[derive(Clone, Serialize)]
 pub struct EnvokeTransitioner {}
@@ -65,30 +63,11 @@ pub enum ClientState {
 #[derive(Debug)]
 pub struct ClientInfo {
     pub id: Id,
-    #[allow(dead_code)]
-    state: ClientState,
     speed: f64,
-    cpus_total: u32,
-    pub cpus_available: u32,
-    memory_total: u64,
-    pub memory_available: u64,
-}
-
-pub type ClientScore = (u64, u32, u64);
-
-impl ClientInfo {
-    pub fn score(&self) -> ClientScore {
-        (
-            self.memory_available,
-            self.cpus_available,
-            (self.speed * 1000.) as u64,
-        )
-    }
 }
 
 pub struct Server {
-    clients: BTreeMap<Id, ClientInfo>,
-    client_queue: PriorityQueue<Id, ClientScore>,
+    clients: HashMap<Id, ClientInfo>,
     // db
     db: Rc<BoincDatabase>,
     //daemons
@@ -103,8 +82,7 @@ pub struct Server {
     // data server
     data_server: Rc<RefCell<DataServer>>,
     //
-    pub scheduling_time: f64,
-    scheduling_planned: RefCell<bool>,
+    received_all_jobs: bool,
     pub ctx: SimulationContext,
     config: ServerConfig,
 }
@@ -123,10 +101,10 @@ impl Server {
         ctx: SimulationContext,
         config: ServerConfig,
     ) -> Self {
+        scheduler.borrow_mut().set_server_id(ctx.id());
         data_server.borrow_mut().set_server_id(ctx.id());
         Self {
-            clients: BTreeMap::new(),
-            client_queue: PriorityQueue::new(),
+            clients: HashMap::new(),
             db: database,
             validator,
             assimilator,
@@ -136,8 +114,7 @@ impl Server {
             db_purger,
             scheduler,
             data_server,
-            scheduling_time: 0.,
-            scheduling_planned: RefCell::new(false),
+            received_all_jobs: false,
             ctx,
             config,
         }
@@ -145,8 +122,6 @@ impl Server {
 
     fn on_started(&mut self) {
         log_debug!(self.ctx, "started");
-        *self.scheduling_planned.borrow_mut() = true;
-        self.ctx.emit_self(ScheduleJobs {}, 1.);
         self.ctx.emit_self(EnvokeTransitioner {}, 3.);
         self.ctx
             .emit_self(ValidateResults {}, self.config.validator.interval);
@@ -167,24 +142,12 @@ impl Server {
         );
     }
 
-    fn on_client_register(
-        &mut self,
-        client_id: Id,
-        cpus_total: u32,
-        memory_total: u64,
-        speed: f64,
-    ) {
+    fn on_client_register(&mut self, client_id: Id, speed: f64) {
         let client = ClientInfo {
             id: client_id,
-            state: ClientState::Online,
             speed,
-            cpus_total,
-            cpus_available: cpus_total,
-            memory_total,
-            memory_available: memory_total,
         };
         log_debug!(self.ctx, "registered client {:?}", client);
-        self.client_queue.push(client_id, client.score());
         self.clients.insert(client.id, client);
     }
 
@@ -225,18 +188,6 @@ impl Server {
         );
 
         self.db.workunit.borrow_mut().insert(workunit.id, workunit);
-
-        let planned = *self.scheduling_planned.borrow();
-        if !planned {
-            *self.scheduling_planned.borrow_mut() = true;
-            self.ctx.emit_self(ScheduleJobs {}, 10.);
-        }
-    }
-
-    fn on_work_inquiry(&mut self, client_id: Id) {
-        log_info!(self.ctx, "client {} asks for work", client_id);
-        let client = self.clients.get(&client_id).unwrap();
-        self.client_queue.push(client_id, client.score());
     }
 
     fn on_result_completed(&mut self, result_id: ResultId, client_id: Id) {
@@ -262,10 +213,6 @@ impl Server {
             result.validate_state = ValidateState::Init;
             workunit.transition_time = self.ctx.time();
         }
-
-        let client = self.clients.get_mut(&client_id).unwrap();
-        client.cpus_available += workunit.spec.cores;
-        client.memory_available += workunit.spec.memory;
     }
 
     // ******* daemons **********
@@ -278,17 +225,9 @@ impl Server {
         }
     }
 
-    fn schedule_results(&mut self) {
-        self.scheduler
-            .borrow_mut()
-            .schedule(&mut self.clients, &mut self.client_queue);
-
-        *self.scheduling_planned.borrow_mut() = false;
-        if self.is_active() {
-            *self.scheduling_planned.borrow_mut() = true;
-            self.ctx
-                .emit_self(ScheduleJobs {}, self.config.scheduler.interval);
-        }
+    fn schedule_results(&mut self, client_id: Id, req: WorkFetchRequest) {
+        let client_info = self.clients.get(&client_id).unwrap();
+        self.scheduler.borrow_mut().schedule(client_info, req);
     }
 
     fn envoke_transitioner(&mut self) {
@@ -334,10 +273,18 @@ impl Server {
     // ******* utilities & statistics *********
 
     fn is_active(&self) -> bool {
-        !BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
-            wu.canonical_resultid.is_none()
-        })
-        .is_empty()
+        let is_active =
+            !BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
+                wu.canonical_resultid.is_none()
+            })
+            .is_empty();
+
+        if !is_active {
+            for (client_id, _) in &self.clients {
+                self.ctx.emit_now(AllJobsSent {}, *client_id);
+            }
+        }
+        is_active
     }
 
     fn report_status(&mut self) {
@@ -375,15 +322,8 @@ impl EventHandler for Server {
             StartServer {} => {
                 self.on_started();
             }
-            ScheduleJobs {} => {
-                self.schedule_results();
-            }
-            ClientRegister {
-                speed,
-                cpus_total,
-                memory_total,
-            } => {
-                self.on_client_register(event.src, cpus_total, memory_total, speed);
+            ClientRegister { speed } => {
+                self.on_client_register(event.src, speed);
             }
             JobSpec {
                 id,
@@ -417,8 +357,19 @@ impl EventHandler for Server {
             ReportStatus {} => {
                 self.report_status();
             }
-            ResultsInquiry {} => {
-                self.on_work_inquiry(event.src)
+            WorkFetchRequest {
+                req_secs,
+                req_instances,
+                estimated_delay,
+            } => {
+                self.schedule_results(
+                    event.src,
+                    WorkFetchRequest {
+                        req_secs,
+                        req_instances,
+                        estimated_delay,
+                    },
+                );
             }
             ValidateResults {} => {
                 self.validate_results();
@@ -437,6 +388,9 @@ impl EventHandler for Server {
             }
             DeleteFiles {} => {
                 self.delete_files();
+            }
+            AllJobsSent {} => {
+                self.received_all_jobs = true;
             }
         })
     }

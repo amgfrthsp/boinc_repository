@@ -11,12 +11,14 @@ use dslab_core::{cast, log_debug};
 use dslab_network::Network;
 
 use super::job::{InputFileMetadata, JobSpec, JobSpecId};
-use crate::common::ReportStatus;
 use crate::config::sim_config::JobGeneratorConfig;
 use crate::simulator::simulator::StartJobGenerator;
 
 #[derive(Clone, Serialize)]
 pub struct GenerateJobs {}
+
+#[derive(Clone, Serialize)]
+pub struct AllJobsSent {}
 
 pub struct JobGenerator {
     net: Rc<RefCell<Network>>,
@@ -46,8 +48,6 @@ impl JobGenerator {
         log_debug!(self.ctx, "started");
         self.server_id = server_id;
         self.ctx.emit_self(GenerateJobs {}, 1.);
-        self.ctx
-            .emit_self(ReportStatus {}, self.config.report_status_interval);
     }
 
     fn generate_jobs(&mut self) {
@@ -92,6 +92,8 @@ impl JobGenerator {
         if self.jobs_generated < self.config.job_count {
             self.ctx
                 .emit_self(GenerateJobs {}, self.config.job_generation_interval);
+        } else {
+            self.ctx.emit_now(AllJobsSent {}, self.server_id);
         }
     }
 }
@@ -105,7 +107,6 @@ impl EventHandler for JobGenerator {
             GenerateJobs {} => {
                 self.generate_jobs();
             }
-            ReportStatus {} => {}
         })
     }
 }

@@ -17,6 +17,7 @@ use dslab_storage::events::{
 use dslab_storage::storage::Storage;
 use futures::{select, FutureExt};
 
+use super::rr_simulation::RRSimulation;
 use super::scheduler::Scheduler;
 use super::storage::FileStorage;
 use super::task::{ResultInfo, ResultState};
@@ -26,16 +27,15 @@ use crate::server::data_server::{
     InputFileUploadCompleted, InputFilesInquiry, OutputFileDownloadCompleted, OutputFileFromClient,
 };
 use crate::server::job::{DataServerFile, JobSpec, ResultId, ResultRequest};
+use crate::server::job_generator::AllJobsSent;
 use crate::simulator::simulator::StartClient;
 
 #[derive(Clone, Serialize)]
-pub struct ResultsInquiry {}
+pub struct AskForWork {}
 
 #[derive(Clone, Serialize)]
 pub struct ClientRegister {
     pub speed: f64,
-    pub cpus_total: u32,
-    pub memory_total: u64,
 }
 
 #[derive(Clone, Serialize)]
@@ -64,9 +64,11 @@ pub struct Client {
     server_id: Id,
     data_server_id: Id,
     scheduler: Scheduler,
+    rr_sim: Rc<RefCell<RRSimulation>>,
     file_storage: Rc<FileStorage>,
     next_scheduling_time: RefCell<f64>,
     scheduling_event: RefCell<Option<EventId>>,
+    received_all_jobs: bool,
     pub ctx: SimulationContext,
     config: ClientConfig,
 }
@@ -77,6 +79,7 @@ impl Client {
         disk: Rc<RefCell<Disk>>,
         net: Rc<RefCell<Network>>,
         mut scheduler: Scheduler,
+        rr_sim: Rc<RefCell<RRSimulation>>,
         file_storage: Rc<FileStorage>,
         ctx: SimulationContext,
         config: ClientConfig,
@@ -92,9 +95,11 @@ impl Client {
             server_id: 0,
             data_server_id: 0,
             scheduler,
+            rr_sim,
             file_storage,
             next_scheduling_time: RefCell::new(0.),
             scheduling_event: RefCell::new(None),
+            received_all_jobs: false,
             ctx,
             config,
         }
@@ -107,14 +112,14 @@ impl Client {
         self.ctx.emit(
             ClientRegister {
                 speed: self.compute.borrow().speed(),
-                cpus_total: self.compute.borrow().cores_total(),
-                memory_total: self.compute.borrow().memory_total(),
             },
             self.server_id,
             0.5,
         );
         self.ctx
             .emit_self(ReportStatus {}, self.config.report_status_interval);
+        self.ctx
+            .emit_self(AskForWork {}, self.config.work_fetch_interval);
     }
 
     fn on_result_request(&self, req: ResultRequest, event_id: EventId) {
@@ -218,6 +223,10 @@ impl Client {
             "result {}: input files disk reading finished",
             result_id
         );
+        if result.state == ResultState::Canceled {
+            self.change_result(result_id, Some(ResultState::Unstarted), None);
+            return;
+        }
 
         // comp start & update state
         self.process_compute(result_id, result.spec.clone()).await;
@@ -275,8 +284,6 @@ impl Client {
             result_id
         );
         self.change_result(result_id, Some(ResultState::Deleted), None);
-
-        self.ask_for_results();
     }
 
     pub fn change_result(
@@ -399,14 +406,25 @@ impl Client {
         self.change_result(result_id, Some(ResultState::Running), None);
     }
 
-    fn ask_for_results(&self) {
-        self.net
-            .borrow_mut()
-            .send_event(ResultsInquiry {}, self.ctx.id(), self.server_id);
+    fn on_work_fetch(&self) {
+        let sim_result = self.rr_sim.borrow().simulate();
+
+        if sim_result.work_fetch_req.estimated_delay < self.config.buffered_work_lower_bound {
+            self.net.borrow_mut().send_event(
+                sim_result.work_fetch_req,
+                self.ctx.id(),
+                self.server_id,
+            );
+        }
+
+        if self.is_active() {
+            self.ctx
+                .emit_self(AskForWork {}, self.config.work_fetch_interval);
+        }
     }
 
     fn is_active(&self) -> bool {
-        return !self.file_storage.running_results.borrow().is_empty();
+        return !(self.received_all_jobs && self.file_storage.running_results.borrow().is_empty());
     }
 
     fn report_status(&mut self) {
@@ -463,8 +481,14 @@ impl EventHandler for Client {
             ScheduleResults {} => {
                 self.schedule_results();
             }
+            AskForWork {} => {
+                self.on_work_fetch();
+            }
             ReportStatus {} => {
                 self.report_status();
+            }
+            AllJobsSent {} => {
+                self.received_all_jobs = true;
             }
         })
     }
