@@ -12,14 +12,8 @@ use crate::client::task::ResultState;
 use crate::common::FloatWrapper;
 use crate::server::job::ResultId;
 
+use super::client::WorkFetchRequest;
 use super::task::ResultInfo;
-
-#[derive(Clone, Serialize)]
-pub struct WorkFetchRequest {
-    pub req_secs: f64,
-    pub req_instances: u32,
-    pub estimated_delay: f64,
-}
 
 #[derive(Clone, Serialize)]
 pub struct RRSimulationResult {
@@ -113,7 +107,7 @@ impl RRSimulation {
             results_to_schedule,
             work_fetch_req: WorkFetchRequest {
                 req_secs: shortfall,
-                req_instances: self.compute.borrow().cores_available(),
+                req_instances: self.compute.borrow().cores_available() as i32,
                 estimated_delay: busy_time,
             },
         }

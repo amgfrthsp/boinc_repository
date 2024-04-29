@@ -19,8 +19,7 @@ use super::job::*;
 use super::scheduler::Scheduler;
 use super::transitioner::Transitioner;
 use super::validator::Validator;
-use crate::client::client::{ClientRegister, ResultCompleted};
-use crate::client::rr_simulation::WorkFetchRequest;
+use crate::client::client::{ClientRegister, ResultCompleted, WorkFetchRequest};
 use crate::common::ReportStatus;
 use crate::config::sim_config::ServerConfig;
 use crate::server::data_server::InputFileDownloadCompleted;
@@ -63,7 +62,9 @@ pub enum ClientState {
 #[derive(Debug)]
 pub struct ClientInfo {
     pub id: Id,
-    speed: f64,
+    pub speed: f64,
+    pub cores: u32,
+    pub memory: u64,
 }
 
 pub struct Server {
@@ -142,10 +143,12 @@ impl Server {
         );
     }
 
-    fn on_client_register(&mut self, client_id: Id, speed: f64) {
+    fn on_client_register(&mut self, client_id: Id, speed: f64, cores: u32, memory: u64) {
         let client = ClientInfo {
             id: client_id,
             speed,
+            cores,
+            memory,
         };
         log_debug!(self.ctx, "registered client {:?}", client);
         self.clients.insert(client.id, client);
@@ -322,8 +325,12 @@ impl EventHandler for Server {
             StartServer {} => {
                 self.on_started();
             }
-            ClientRegister { speed } => {
-                self.on_client_register(event.src, speed);
+            ClientRegister {
+                speed,
+                cores,
+                memory,
+            } => {
+                self.on_client_register(event.src, speed, cores, memory);
             }
             JobSpec {
                 id,

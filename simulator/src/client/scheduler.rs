@@ -45,7 +45,7 @@ impl Scheduler {
 
         let sim_result = self.rr_sim.borrow().simulate();
 
-        let mut results_to_schedule = sim_result.results_to_schedule;
+        let results_to_schedule = sim_result.results_to_schedule;
         let n_results_to_schedule = results_to_schedule.len();
 
         let mut cores_available = self.compute.borrow().cores_total();

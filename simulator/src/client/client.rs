@@ -31,11 +31,25 @@ use crate::server::job_generator::AllJobsSent;
 use crate::simulator::simulator::StartClient;
 
 #[derive(Clone, Serialize)]
+pub struct WorkFetchRequest {
+    pub req_secs: f64,
+    pub req_instances: i32,
+    pub estimated_delay: f64,
+}
+
+#[derive(Clone, Serialize)]
+pub struct WorkFetchReply {
+    pub requests: Vec<ResultRequest>,
+}
+
+#[derive(Clone, Serialize)]
 pub struct AskForWork {}
 
 #[derive(Clone, Serialize)]
 pub struct ClientRegister {
     pub speed: f64,
+    pub cores: u32,
+    pub memory: u64,
 }
 
 #[derive(Clone, Serialize)]
@@ -112,18 +126,21 @@ impl Client {
         self.ctx.emit(
             ClientRegister {
                 speed: self.compute.borrow().speed(),
+                cores: self.compute.borrow().cores_total(),
+                memory: self.compute.borrow().memory_total(),
             },
             self.server_id,
             0.5,
         );
         self.ctx
             .emit_self(ReportStatus {}, self.config.report_status_interval);
-        self.ctx
-            .emit_self(AskForWork {}, self.config.work_fetch_interval);
+        self.ctx.emit_self(AskForWork {}, 65.);
     }
 
-    fn on_result_request(&self, req: ResultRequest, event_id: EventId) {
-        self.ctx.spawn(self.process_result_request(req, event_id));
+    fn on_result_requests(&self, reqs: Vec<ResultRequest>, event_id: EventId) {
+        for req in reqs {
+            self.ctx.spawn(self.process_result_request(req, event_id));
+        }
     }
 
     async fn process_result_request(&self, req: ResultRequest, event_id: EventId) {
@@ -458,19 +475,8 @@ impl EventHandler for Client {
             } => {
                 self.on_start(server_id, data_server_id);
             }
-            ResultRequest {
-                spec,
-                report_deadline,
-                output_file,
-            } => {
-                self.on_result_request(
-                    ResultRequest {
-                        spec,
-                        report_deadline,
-                        output_file,
-                    },
-                    event.id,
-                );
+            WorkFetchReply { requests } => {
+                self.on_result_requests(requests, event.id);
             }
             ExecuteResult { result_id } => {
                 self.on_run_result(result_id);

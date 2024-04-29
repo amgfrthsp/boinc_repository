@@ -8,7 +8,7 @@ use crate::config::sim_config::FeederConfig;
 use crate::server::job::ResultState;
 
 use super::database::BoincDatabase;
-use super::job::{ResultId, WorkunitId};
+use super::job::ResultId;
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub enum SharedMemoryItemState {
@@ -20,7 +20,6 @@ pub enum SharedMemoryItemState {
 pub struct SharedMemoryItem {
     pub state: SharedMemoryItemState,
     pub result_id: ResultId,
-    pub workunit_id: WorkunitId,
 }
 
 pub struct Feeder {
@@ -68,7 +67,6 @@ impl Feeder {
             self.shared_memory.borrow_mut()[i] = SharedMemoryItem {
                 state: SharedMemoryItemState::Present,
                 result_id,
-                workunit_id: result.workunit_id,
             };
             result.in_shared_mem = true;
 

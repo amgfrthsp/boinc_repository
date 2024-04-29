@@ -6,11 +6,13 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
 
-use crate::client::rr_simulation::WorkFetchRequest;
+use crate::client::client::{WorkFetchReply, WorkFetchRequest};
 use crate::config::sim_config::SchedulerConfig;
+use crate::server::feeder::SharedMemoryItemState;
 use crate::server::job::{OutputFileMetadata, ResultRequest, ResultState};
 
 use super::database::BoincDatabase;
+use super::feeder::SharedMemoryItem;
 use super::job::JobSpec;
 use super::server::ClientInfo;
 
@@ -18,6 +20,7 @@ pub struct Scheduler {
     server_id: Id,
     net: Rc<RefCell<Network>>,
     db: Rc<BoincDatabase>,
+    shared_memory: Rc<RefCell<Vec<SharedMemoryItem>>>,
     ctx: SimulationContext,
     #[allow(dead_code)]
     config: SchedulerConfig,
@@ -27,6 +30,7 @@ impl Scheduler {
     pub fn new(
         net: Rc<RefCell<Network>>,
         db: Rc<BoincDatabase>,
+        shared_memory: Rc<RefCell<Vec<SharedMemoryItem>>>,
         ctx: SimulationContext,
         config: SchedulerConfig,
     ) -> Self {
@@ -34,6 +38,7 @@ impl Scheduler {
             server_id: 0,
             net,
             db,
+            shared_memory,
             ctx,
             config,
         }
@@ -44,13 +49,7 @@ impl Scheduler {
     }
 
     pub fn schedule(&mut self, client_info: &ClientInfo, mut req: WorkFetchRequest) {
-        let results_to_schedule =
-            BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
-                result.in_shared_mem
-            });
-
         log_info!(self.ctx, "scheduling started");
-        log_debug!(self.ctx, "results to schedule: {:?}", results_to_schedule);
 
         let t = Instant::now();
         let mut assigned_results = Vec::new();
@@ -58,25 +57,51 @@ impl Scheduler {
 
         let mut db_workunit_mut = self.db.workunit.borrow_mut();
         let mut db_result_mut = self.db.result.borrow_mut();
+        let mut shmem_mut = self.shared_memory.borrow_mut();
 
-        for result_id in results_to_schedule {
-            let result = db_result_mut.get_mut(&result_id).unwrap();
+        let shmem_size = shmem_mut.len();
+        let start_ind = self.ctx.gen_range(0..shmem_size);
+        let mut i = (start_ind + 1) % shmem_size;
+
+        log_debug!(self.ctx, "Starting from index {}", i);
+
+        while i != start_ind && !(req.req_secs < 0. && req.req_instances < 0) {
+            let item = shmem_mut.get_mut(i).unwrap();
+            i += 1;
+            i %= shmem_size;
+            log_debug!(self.ctx, "index {}", i);
+            if item.state == SharedMemoryItemState::Empty {
+                continue;
+            }
+
+            log_debug!(
+                self.ctx,
+                "Req secs {}; req_instances {}; estimated delay {}",
+                req.req_secs,
+                req.req_instances,
+                req.estimated_delay
+            );
+
+            let result = db_result_mut.get_mut(&item.result_id).unwrap();
             let workunit = db_workunit_mut.get_mut(&result.workunit_id).unwrap();
 
-            let est_runtime = self.get_est_runtime(&workunit.spec);
+            let est_runtime = self.get_est_runtime(&workunit.spec, client_info.speed);
 
             if req.estimated_delay + est_runtime < workunit.spec.delay_bound {
                 log_debug!(
                     self.ctx,
                     "assigned result {} to client {}",
-                    result_id,
+                    result.id,
                     client_info.id
                 );
 
+                item.state = SharedMemoryItemState::Empty;
+
                 req.estimated_delay += est_runtime;
                 req.req_secs -= est_runtime;
-                req.req_instances -= workunit.spec.cores;
+                req.req_instances -= workunit.spec.cores as i32;
 
+                result.in_shared_mem = false;
                 result.server_state = ResultState::InProgress;
                 result.report_deadline = self.ctx.time() + workunit.spec.delay_bound;
                 workunit.transition_time =
@@ -94,11 +119,17 @@ impl Scheduler {
                         size: self.ctx.gen_range(10..=100),
                     },
                 });
+            } else {
+                log_debug!(self.ctx, "Skipping result {}", result.id);
             }
         }
-        self.net
-            .borrow_mut()
-            .send_event(assigned_results, self.server_id, client_info.id);
+        self.net.borrow_mut().send_event(
+            WorkFetchReply {
+                requests: assigned_results,
+            },
+            self.server_id,
+            client_info.id,
+        );
 
         let schedule_duration = t.elapsed();
         log_info!(
@@ -109,8 +140,9 @@ impl Scheduler {
         );
     }
 
-    pub fn get_est_runtime(&self, spec: &JobSpec) -> f64 {
-        0.
+    // FIX: take into account I/O
+    pub fn get_est_runtime(&self, spec: &JobSpec, client_speed: f64) -> f64 {
+        spec.flops / client_speed / spec.cores_dependency.speedup(spec.cores)
     }
 }
 

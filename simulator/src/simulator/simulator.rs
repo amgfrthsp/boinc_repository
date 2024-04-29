@@ -193,7 +193,6 @@ impl Simulator {
         let empty_slot = SharedMemoryItem {
             state: SharedMemoryItemState::Empty,
             result_id: 0,
-            workunit_id: 0,
         };
         let shared_memory: Rc<RefCell<Vec<SharedMemoryItem>>> =
             rc!(refcell!(vec![empty_slot; config.shared_memory_size]));
@@ -211,6 +210,7 @@ impl Simulator {
         let scheduler = rc!(refcell!(ServerScheduler::new(
             self.network.clone(),
             database.clone(),
+            shared_memory.clone(),
             self.sim.borrow_mut().create_context(scheduler_name),
             config.scheduler.clone(),
         )));
