@@ -46,7 +46,7 @@ impl RRSimulation {
         }
     }
 
-    pub fn simulate(&self) -> RRSimulationResult {
+    pub fn simulate(&self, is_scheduling: bool) -> RRSimulationResult {
         let results_to_consider =
             FileStorage::get_map_keys_by_predicate(&self.file_storage.results.borrow(), |result| {
                 result.state == ResultState::Unstarted
@@ -62,7 +62,7 @@ impl RRSimulation {
         );
 
         let mut fs_results = self.file_storage.results.borrow_mut();
-        let mut results_to_schedule = Vec::new();
+        let mut results_to_schedule: Vec<&ResultInfo> = Vec::new();
 
         for result_id in &results_to_consider {
             let result = fs_results.get_mut(result_id).unwrap();
@@ -70,11 +70,19 @@ impl RRSimulation {
             if result.state == ResultState::Running && self.is_running_finished(result) {
                 continue;
             }
-            log_debug!(self.ctx, "Result to schedule: {:?}", result);
+            if is_scheduling {
+                log_debug!(self.ctx, "Result to schedule: {:?}", result);
+            }
             if self.deadline_missed(result) {
                 result.sim_miss_deadline = true;
             }
-            results_to_schedule.push(*result_id);
+        }
+        for result_id in &results_to_consider {
+            let result = fs_results.get(result_id).unwrap();
+            if result.state == ResultState::Running && self.is_running_finished(result) {
+                continue;
+            }
+            results_to_schedule.push(result);
         }
 
         results_to_schedule.sort_by(|a, b| self.result_cmp(a, b));
@@ -84,11 +92,10 @@ impl RRSimulation {
             cores_release_time.push(FloatWrapper(0.));
         }
 
-        for result_id in &results_to_schedule {
-            let result = fs_results.get_mut(result_id).unwrap();
+        for result in &results_to_schedule {
             let min_core_release_time = cores_release_time.pop().unwrap();
             cores_release_time.push(FloatWrapper(
-                min_core_release_time.0 + self.est_result_runtime(result),
+                min_core_release_time.0 + self.est_result_runtime(*result),
             ));
         }
 
@@ -103,13 +110,22 @@ impl RRSimulation {
             }
         }
 
+        let work_fetch_req = WorkFetchRequest {
+            req_secs: shortfall,
+            req_instances: self.compute.borrow().cores_available() as i32,
+            estimated_delay: busy_time,
+        };
+
+        if !is_scheduling {
+            log_debug!(self.ctx, "WorkFetchRequest: {:?}", work_fetch_req);
+        }
+
         RRSimulationResult {
-            results_to_schedule,
-            work_fetch_req: WorkFetchRequest {
-                req_secs: shortfall,
-                req_instances: self.compute.borrow().cores_available() as i32,
-                estimated_delay: busy_time,
-            },
+            results_to_schedule: results_to_schedule
+                .into_iter()
+                .map(|r| r.spec.id)
+                .collect::<Vec<_>>(),
+            work_fetch_req,
         }
     }
 
@@ -155,12 +171,7 @@ impl RRSimulation {
             )
     }
 
-    pub fn result_cmp(&self, result1_id: &ResultId, result2_id: &ResultId) -> Ordering {
-        let fs_results = self.file_storage.results.borrow();
-
-        let result1 = fs_results.get(result1_id).unwrap();
-        let result2 = fs_results.get(result2_id).unwrap();
-
+    pub fn result_cmp(&self, result1: &ResultInfo, result2: &ResultInfo) -> Ordering {
         if result1.sim_miss_deadline && !result2.sim_miss_deadline {
             return Ordering::Less;
         }

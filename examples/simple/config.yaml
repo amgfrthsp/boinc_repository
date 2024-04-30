@@ -5,8 +5,8 @@ clients:
     speed: 8.
     cpus: 4
     work_fetch_interval: 220.
-    buffered_work_lower_bound: 100.
-    buffered_work_upper_bound: 200.
+    buffered_work_lower_bound: 30.
+    buffered_work_upper_bound: 50.
     memory: 4
     disk_capacity: 5000
     disk_read_bandwidth: 2000.

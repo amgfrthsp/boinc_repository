@@ -30,7 +30,7 @@ use crate::server::job::{DataServerFile, JobSpec, ResultId, ResultRequest};
 use crate::server::job_generator::AllJobsSent;
 use crate::simulator::simulator::StartClient;
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Debug)]
 pub struct WorkFetchRequest {
     pub req_secs: f64,
     pub req_instances: i32,
@@ -137,13 +137,14 @@ impl Client {
         self.ctx.emit_self(AskForWork {}, 65.);
     }
 
-    fn on_result_requests(&self, reqs: Vec<ResultRequest>, event_id: EventId) {
+    fn on_result_requests(&self, reqs: Vec<ResultRequest>) {
         for req in reqs {
-            self.ctx.spawn(self.process_result_request(req, event_id));
+            self.ctx.spawn(self.process_result_request(req));
         }
     }
 
-    async fn process_result_request(&self, req: ResultRequest, event_id: EventId) {
+    async fn process_result_request(&self, req: ResultRequest) {
+        let ref_id = req.spec.id;
         let mut result = ResultInfo {
             spec: req.spec,
             report_deadline: req.report_deadline,
@@ -167,13 +168,13 @@ impl Client {
             self.ctx.emit_now(
                 InputFilesInquiry {
                     workunit_id,
-                    ref_id: event_id,
+                    ref_id,
                 },
                 self.data_server_id,
             );
 
             futures::join!(
-                self.process_data_server_input_file_download(event_id),
+                self.process_data_server_input_file_download(ref_id),
                 self.process_disk_write(DataServerFile::Input(result.spec.input_file.clone())),
             );
 
@@ -424,7 +425,7 @@ impl Client {
     }
 
     fn on_work_fetch(&self) {
-        let sim_result = self.rr_sim.borrow().simulate();
+        let sim_result = self.rr_sim.borrow().simulate(false);
 
         if sim_result.work_fetch_req.estimated_delay < self.config.buffered_work_lower_bound {
             self.net.borrow_mut().send_event(
@@ -476,7 +477,7 @@ impl EventHandler for Client {
                 self.on_start(server_id, data_server_id);
             }
             WorkFetchReply { requests } => {
-                self.on_result_requests(requests, event.id);
+                self.on_result_requests(requests);
             }
             ExecuteResult { result_id } => {
                 self.on_run_result(result_id);

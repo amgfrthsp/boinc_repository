@@ -83,6 +83,7 @@ impl JobGenerator {
                         self.config.input_size_lower_bound..=self.config.input_size_upper_bound,
                     ),
                 },
+                event_id: 0, // set in server
             };
             self.net
                 .borrow_mut()
@@ -93,7 +94,7 @@ impl JobGenerator {
             self.ctx
                 .emit_self(GenerateJobs {}, self.config.job_generation_interval);
         } else {
-            self.ctx.emit_now(AllJobsSent {}, self.server_id);
+            self.ctx.emit(AllJobsSent {}, self.server_id, 5.);
         }
     }
 }

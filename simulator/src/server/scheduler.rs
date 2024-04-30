@@ -69,8 +69,20 @@ impl Scheduler {
             let item = shmem_mut.get_mut(i).unwrap();
             i += 1;
             i %= shmem_size;
-            log_debug!(self.ctx, "index {}", i);
             if item.state == SharedMemoryItemState::Empty {
+                continue;
+            }
+            if !db_result_mut.contains_key(&item.result_id) {
+                item.state = SharedMemoryItemState::Empty;
+                continue;
+            }
+
+            let result = db_result_mut.get_mut(&item.result_id).unwrap();
+            let workunit = db_workunit_mut.get_mut(&result.workunit_id).unwrap();
+
+            if result.server_state != ResultState::Unsent {
+                item.state = SharedMemoryItemState::Empty;
+                result.in_shared_mem = false;
                 continue;
             }
 
@@ -81,9 +93,6 @@ impl Scheduler {
                 req.req_instances,
                 req.estimated_delay
             );
-
-            let result = db_result_mut.get_mut(&item.result_id).unwrap();
-            let workunit = db_workunit_mut.get_mut(&result.workunit_id).unwrap();
 
             let est_runtime = self.get_est_runtime(&workunit.spec, client_info.speed);
 
@@ -134,9 +143,10 @@ impl Scheduler {
         let schedule_duration = t.elapsed();
         log_info!(
             self.ctx,
-            "scheduling finished: assigned {} results in {:.2?}",
+            "scheduling finished: assigned {} results in {:.2?} for client {}",
             assigned_results_cnt,
-            schedule_duration
+            schedule_duration,
+            client_info.id
         );
     }
 
