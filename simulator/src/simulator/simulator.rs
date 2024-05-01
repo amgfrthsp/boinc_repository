@@ -132,18 +132,19 @@ impl Simulator {
         let stats_ref = self.server_stats.clone().unwrap();
         let stats = stats_ref.borrow();
 
+        println!("Jobs processed: {}", stats.n_workunits_total);
         println!("Results processed: {}", stats.n_results_total);
         println!("Calculated {} FLOPS", stats.flops_total);
         println!(
-            "Average result processing time: {}",
+            "Average result processing time: {:.2}",
             stats.results_processing_time / stats.n_results_total as f64
         );
         println!(
-            "Min result processing time: {}",
+            "Min result processing time: {:.2}",
             stats.min_result_processing_time
         );
         println!(
-            "Max result processing time: {}",
+            "Max result processing time: {:.2}",
             stats.max_result_processing_time
         );
         println!(

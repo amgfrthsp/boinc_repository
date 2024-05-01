@@ -195,6 +195,7 @@ impl Server {
         );
 
         self.db.workunit.borrow_mut().insert(workunit.id, workunit);
+        self.stats.borrow_mut().n_workunits_total += 1;
     }
 
     fn on_result_completed(&mut self, result_id: ResultId, client_id: Id) {
