@@ -20,6 +20,11 @@ pub struct GenerateJobs {}
 #[derive(Clone, Serialize)]
 pub struct AllJobsSent {}
 
+#[derive(Clone, Serialize)]
+pub struct NewJobs {
+    pub jobs: Vec<JobSpec>,
+}
+
 pub struct JobGenerator {
     net: Rc<RefCell<Network>>,
     server_id: Id,
@@ -51,6 +56,7 @@ impl JobGenerator {
     }
 
     fn generate_jobs(&mut self) {
+        let mut generated_jobs = Vec::new();
         for i in 0..self.config.job_batch_size {
             let job_id = (self.jobs_generated + i as u64) as JobSpecId;
             let min_quorum = self
@@ -83,12 +89,18 @@ impl JobGenerator {
                         self.config.input_size_lower_bound..=self.config.input_size_upper_bound,
                     ),
                 },
-                event_id: 0, // set in server
             };
-            self.net
-                .borrow_mut()
-                .send_event(job, self.ctx.id(), self.server_id);
+            generated_jobs.push(job);
         }
+
+        self.net.borrow_mut().send_event(
+            NewJobs {
+                jobs: generated_jobs,
+            },
+            self.ctx.id(),
+            self.server_id,
+        );
+
         self.jobs_generated += self.config.job_batch_size;
         if self.jobs_generated < self.config.job_count {
             self.ctx

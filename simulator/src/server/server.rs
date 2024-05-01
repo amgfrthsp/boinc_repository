@@ -1,4 +1,3 @@
-use dslab_core::async_mode::EventKey;
 use serde::Serialize;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -24,7 +23,7 @@ use crate::client::client::{ClientRegister, ResultCompleted, WorkFetchRequest};
 use crate::common::ReportStatus;
 use crate::config::sim_config::ServerConfig;
 use crate::server::data_server::InputFileDownloadCompleted;
-use crate::server::job_generator::AllJobsSent;
+use crate::server::job_generator::{AllJobsSent, NewJobs};
 use crate::simulator::simulator::StartServer;
 
 #[derive(Clone, Serialize)]
@@ -155,10 +154,8 @@ impl Server {
         self.clients.insert(client.id, client);
     }
 
-    async fn on_job_spec(&self, mut spec: JobSpec, from: Id, event_id: EventKey) {
+    async fn on_job_spec(&self, mut spec: JobSpec, from: Id) {
         log_debug!(self.ctx, "job spec {:?}", spec.clone());
-
-        spec.event_id = event_id;
 
         let workunit = WorkunitInfo {
             id: spec.id,
@@ -335,34 +332,10 @@ impl EventHandler for Server {
             } => {
                 self.on_client_register(event.src, speed, cores, memory);
             }
-            JobSpec {
-                id,
-                flops,
-                memory,
-                cores,
-                cores_dependency,
-                delay_bound,
-                min_quorum,
-                target_nresults,
-                input_file,
-                event_id,
-            } => {
-                self.ctx.spawn(self.on_job_spec(
-                    JobSpec {
-                        id,
-                        flops,
-                        memory,
-                        cores,
-                        cores_dependency,
-                        delay_bound,
-                        min_quorum,
-                        target_nresults,
-                        input_file,
-                        event_id,
-                    },
-                    event.src,
-                    event.id,
-                ));
+            NewJobs { jobs } => {
+                for job in jobs {
+                    self.ctx.spawn(self.on_job_spec(job, event.src));
+                }
             }
             ResultCompleted { result_id } => {
                 self.on_result_completed(result_id, event.src);

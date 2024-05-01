@@ -1,4 +1,3 @@
-use dslab_core::async_mode::EventKey;
 use serde::Serialize;
 
 use dslab_compute::multicore::CoresDependency;
@@ -50,7 +49,6 @@ pub struct JobSpec {
     pub min_quorum: u64,
     pub target_nresults: u64,
     pub input_file: InputFileMetadata,
-    pub event_id: EventKey,
 }
 
 #[derive(Serialize, Debug, Clone)]
