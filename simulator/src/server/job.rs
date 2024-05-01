@@ -86,7 +86,6 @@ pub enum ValidateState {
     Init,
     Valid,
     Invalid,
-    TooLate,
 }
 
 #[derive(Debug, Clone, PartialEq)]

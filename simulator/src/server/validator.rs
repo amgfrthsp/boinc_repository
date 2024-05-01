@@ -9,6 +9,7 @@ use crate::server::job::{
 };
 
 use super::database::BoincDatabase;
+use super::job::ResultInfo;
 
 // TODO:
 // 1. Calculate delay based on output files size
@@ -46,6 +47,7 @@ impl Validator {
         for wu_id in workunits_to_validate {
             let workunit = db_workunit_mut.get_mut(&wu_id).unwrap();
             workunit.need_validate = false;
+            log_debug!(self.ctx, "validating wu {}", wu_id);
 
             if workunit.canonical_resultid.is_some() {
                 // canonical result is found. grant credit or validate
@@ -74,55 +76,37 @@ impl Validator {
                         result.outcome = ResultOutcome::ValidateError;
                         result.validate_state = ValidateState::Invalid;
                     } else {
-                        // todo: add random & grant credit
-                        log_debug!(
-                            self.ctx,
-                            "result {} validate_state {:?} -> {:?}",
-                            result.id,
-                            result.validate_state,
-                            ValidateState::Valid,
-                        );
-                        result.validate_state = ValidateState::Valid;
+                        self.validate_result(result);
                     }
                 }
             } else {
-                let mut viable_results = vec![];
+                let mut n_valid_results = 0;
+                let mut potential_canonical_result_id = None;
                 for result_id in &workunit.result_ids {
                     let result = db_result_mut.get_mut(result_id).unwrap();
-                    if !(result.server_state == ResultState::Over
+                    log_debug!(self.ctx, "validating result {:?}", result);
+                    if result.server_state == ResultState::Over
                         && result.outcome == ResultOutcome::Success
-                        && result.validate_state != ValidateState::Invalid)
+                        && result.validate_state == ValidateState::Init
                     {
-                        continue;
+                        self.validate_result(result);
                     }
-                    viable_results.push(*result_id);
+                    if result.validate_state == ValidateState::Valid {
+                        n_valid_results += 1;
+                        potential_canonical_result_id = Some(result.id);
+                    }
                 }
-                if viable_results.len() >= workunit.spec.min_quorum as usize {
-                    let mut canonical_result_id = None;
-
-                    // todo: check_set function implement according to boinc
-                    for result_id in viable_results {
-                        let result = db_result_mut.get_mut(&result_id).unwrap();
-                        log_debug!(
-                            self.ctx,
-                            "result {} validate_state {:?} -> {:?}",
-                            result.id,
-                            result.validate_state,
-                            ValidateState::Valid,
-                        );
-                        result.validate_state = ValidateState::Valid;
-                        canonical_result_id = Some(result_id);
-                    }
-
-                    if canonical_result_id.is_some() {
+                log_debug!(self.ctx, "found {} valid results", n_valid_results);
+                if n_valid_results >= workunit.spec.min_quorum as usize {
+                    if potential_canonical_result_id.is_some() {
                         log_debug!(
                             self.ctx,
                             "found canonical result {} for workunit {}",
-                            canonical_result_id.unwrap(),
+                            potential_canonical_result_id.unwrap(),
                             workunit.id,
                         );
                         // grant credit
-                        workunit.canonical_resultid = canonical_result_id;
+                        workunit.canonical_resultid = potential_canonical_result_id;
                         workunit.assimilate_state = AssimilateState::Ready;
                         for result_id in &workunit.result_ids {
                             let result = db_result_mut.get_mut(result_id).unwrap();
@@ -149,5 +133,23 @@ impl Validator {
             workunit.transition_time = self.ctx.time();
         }
         log_info!(self.ctx, "validation finished");
+    }
+
+    // todo: add client's reliability parameter & grant credit
+    pub fn validate_result(&self, result: &mut ResultInfo) {
+        let new_state;
+        if self.ctx.gen_range(0. ..1.) < 0.95 {
+            new_state = ValidateState::Valid;
+        } else {
+            new_state = ValidateState::Invalid;
+        }
+        log_debug!(
+            self.ctx,
+            "result {} validate_state {:?} -> {:?}",
+            result.id,
+            result.validate_state,
+            new_state,
+        );
+        result.validate_state = new_state;
     }
 }
