@@ -93,10 +93,15 @@ impl RRSimulation {
         }
 
         for result in &results_to_schedule {
-            let min_core_release_time = cores_release_time.pop().unwrap();
-            cores_release_time.push(FloatWrapper(
-                min_core_release_time.0 + self.est_result_runtime(*result),
-            ));
+            let est_runtime = self.est_result_runtime(*result);
+            let mut job_cores = Vec::new();
+            // We do not simulate fractional number of cores
+            for _ in 0..result.spec.cores {
+                job_cores.push(cores_release_time.pop().unwrap());
+            }
+            for job_core in job_cores {
+                cores_release_time.push(FloatWrapper(job_core.0 + est_runtime));
+            }
         }
 
         let mut shortfall = 0.;

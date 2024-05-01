@@ -96,7 +96,10 @@ impl Scheduler {
 
             let est_runtime = self.get_est_runtime(&workunit.spec, client_info.speed);
 
-            if req.estimated_delay + est_runtime < workunit.spec.delay_bound {
+            if workunit.spec.cores <= client_info.cores
+                && workunit.spec.memory <= client_info.memory
+                && req.estimated_delay + est_runtime < workunit.spec.delay_bound
+            {
                 log_debug!(
                     self.ctx,
                     "assigned result {} to client {}",
@@ -132,13 +135,15 @@ impl Scheduler {
                 log_debug!(self.ctx, "Skipping result {}", result.id);
             }
         }
-        self.net.borrow_mut().send_event(
-            WorkFetchReply {
-                requests: assigned_results,
-            },
-            self.server_id,
-            client_info.id,
-        );
+        if !assigned_results.is_empty() {
+            self.net.borrow_mut().send_event(
+                WorkFetchReply {
+                    requests: assigned_results,
+                },
+                self.server_id,
+                client_info.id,
+            );
+        }
 
         let schedule_duration = t.elapsed();
         log_info!(
