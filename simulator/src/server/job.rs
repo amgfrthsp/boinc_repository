@@ -72,12 +72,9 @@ pub enum ResultState {
 pub enum ResultOutcome {
     Undefined,
     Success,
-    CouldntSend,
-    ClientError,
     NoReply,
     DidntNeed,
     ValidateError,
-    ClientDetached,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -130,4 +127,5 @@ pub struct ResultInfo {
     pub validate_state: ValidateState,
     pub file_delete_state: FileDeleteState,
     pub in_shared_mem: bool,
+    pub time_sent: f64,
 }

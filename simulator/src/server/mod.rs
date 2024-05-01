@@ -8,5 +8,6 @@ pub mod job;
 pub mod job_generator;
 pub mod scheduler;
 pub mod server;
+pub mod stats;
 pub mod transitioner;
 pub mod validator;

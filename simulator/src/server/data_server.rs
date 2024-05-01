@@ -15,6 +15,7 @@ use crate::common::ReportStatus;
 use crate::config::sim_config::DataServerConfig;
 
 use super::job::{DataServerFile, InputFileMetadata, OutputFileMetadata, ResultId, WorkunitId};
+use super::stats::ServerStats;
 
 #[derive(Clone, Serialize)]
 pub struct InputFilesInquiry {
@@ -52,6 +53,7 @@ pub struct DataServer {
     ctx: SimulationContext,
     #[allow(dead_code)]
     config: DataServerConfig,
+    stats: Rc<RefCell<ServerStats>>,
 }
 
 impl DataServer {
@@ -60,6 +62,7 @@ impl DataServer {
         disk: Rc<RefCell<Disk>>,
         ctx: SimulationContext,
         config: DataServerConfig,
+        stats: Rc<RefCell<ServerStats>>,
     ) -> Self {
         ctx.register_key_getter_for::<DataTransferCompleted>(|e| e.dt.id as u64);
         ctx.register_key_getter_for::<DataWriteCompleted>(|e| e.request_id);
@@ -79,6 +82,7 @@ impl DataServer {
             output_files: RefCell::new(HashMap::new()),
             ctx,
             config,
+            stats,
         }
     }
 

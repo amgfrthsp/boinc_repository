@@ -1,6 +1,7 @@
 use dslab_core::context::SimulationContext;
 use dslab_core::log_debug;
 use dslab_core::log_info;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::config::sim_config::ValidatorConfig;
@@ -10,6 +11,7 @@ use crate::server::job::{
 
 use super::database::BoincDatabase;
 use super::job::ResultInfo;
+use super::stats::ServerStats;
 
 // TODO:
 // 1. Calculate delay based on output files size
@@ -27,11 +29,22 @@ pub struct Validator {
     ctx: SimulationContext,
     #[allow(dead_code)]
     config: ValidatorConfig,
+    stats: Rc<RefCell<ServerStats>>,
 }
 
 impl Validator {
-    pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext, config: ValidatorConfig) -> Self {
-        Self { db, ctx, config }
+    pub fn new(
+        db: Rc<BoincDatabase>,
+        ctx: SimulationContext,
+        config: ValidatorConfig,
+        stats: Rc<RefCell<ServerStats>>,
+    ) -> Self {
+        Self {
+            db,
+            ctx,
+            config,
+            stats,
+        }
     }
 
     pub fn validate(&self) {
@@ -75,6 +88,7 @@ impl Validator {
                         );
                         result.outcome = ResultOutcome::ValidateError;
                         result.validate_state = ValidateState::Invalid;
+                        self.stats.borrow_mut().n_results_invalid += 1;
                     } else {
                         self.validate_result(result);
                     }
@@ -140,8 +154,10 @@ impl Validator {
         let new_state;
         if self.ctx.gen_range(0. ..1.) < 0.95 {
             new_state = ValidateState::Valid;
+            self.stats.borrow_mut().n_results_valid += 1;
         } else {
             new_state = ValidateState::Invalid;
+            self.stats.borrow_mut().n_results_invalid += 1;
         }
         log_debug!(
             self.ctx,

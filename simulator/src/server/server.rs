@@ -17,6 +17,7 @@ use super::feeder::Feeder;
 use super::file_deleter::FileDeleter;
 use super::job::*;
 use super::scheduler::Scheduler;
+use super::stats::ServerStats;
 use super::transitioner::Transitioner;
 use super::validator::Validator;
 use crate::client::client::{ClientRegister, ResultCompleted, WorkFetchRequest};
@@ -86,6 +87,7 @@ pub struct Server {
     received_all_jobs: bool,
     pub ctx: SimulationContext,
     config: ServerConfig,
+    stats: Rc<RefCell<ServerStats>>,
 }
 
 impl Server {
@@ -101,6 +103,7 @@ impl Server {
         data_server: Rc<RefCell<DataServer>>,
         ctx: SimulationContext,
         config: ServerConfig,
+        stats: Rc<RefCell<ServerStats>>,
     ) -> Self {
         scheduler.borrow_mut().set_server_id(ctx.id());
         data_server.borrow_mut().set_server_id(ctx.id());
@@ -118,6 +121,7 @@ impl Server {
             received_all_jobs: false,
             ctx,
             config,
+            stats,
         }
     }
 
@@ -215,7 +219,24 @@ impl Server {
             result.outcome = ResultOutcome::Success;
             result.validate_state = ValidateState::Init;
             workunit.transition_time = self.ctx.time();
+        } else if result.outcome == ResultOutcome::NoReply {
+            self.stats.borrow_mut().n_miss_deadline += 1;
         }
+
+        let processing_time = self.ctx.time() - result.time_sent;
+        self.stats.borrow_mut().results_processing_time += processing_time;
+
+        let min_processing_time = self.stats.borrow_mut().min_result_processing_time;
+        self.stats.borrow_mut().min_result_processing_time = if min_processing_time == 0. {
+            processing_time
+        } else {
+            min_processing_time.min(processing_time)
+        };
+        let max_processing_time = self.stats.borrow_mut().max_result_processing_time;
+        self.stats.borrow_mut().max_result_processing_time =
+            max_processing_time.max(processing_time);
+
+        self.stats.borrow_mut().flops_total += workunit.spec.flops;
     }
 
     // ******* daemons **********

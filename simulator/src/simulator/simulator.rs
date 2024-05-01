@@ -18,6 +18,7 @@ use crate::config::sim_config::{ClientConfig, JobGeneratorConfig, ServerConfig, 
 use crate::server::db_purger::DBPurger;
 use crate::server::feeder::{Feeder, SharedMemoryItem, SharedMemoryItemState};
 use crate::server::file_deleter::FileDeleter;
+use crate::server::stats::ServerStats;
 use crate::{
     client::client::Client,
     server::{
@@ -47,6 +48,7 @@ pub struct Simulator {
     hosts: Vec<String>,
     job_generator_id: Option<Id>,
     server_id: Option<Id>,
+    server_stats: Option<Rc<RefCell<ServerStats>>>,
     data_server_id: Option<Id>,
     client_ids: Vec<Id>,
     ctx: SimulationContext,
@@ -71,6 +73,7 @@ impl Simulator {
             hosts: Vec::new(),
             job_generator_id: None,
             server_id: None,
+            server_stats: None,
             data_server_id: None,
             client_ids: Vec::new(),
             ctx,
@@ -125,6 +128,37 @@ impl Simulator {
         let duration = t.elapsed().as_secs_f64();
 
         log_info!(self.ctx, "Simulation finished");
+
+        let stats_ref = self.server_stats.clone().unwrap();
+        let stats = stats_ref.borrow();
+
+        println!("Results processed: {}", stats.n_results_total);
+        println!("Calculated {} FLOPS", stats.flops_total);
+        println!(
+            "Average result processing time: {}",
+            stats.results_processing_time / stats.n_results_total as f64
+        );
+        println!(
+            "Min result processing time: {}",
+            stats.min_result_processing_time
+        );
+        println!(
+            "Max result processing time: {}",
+            stats.max_result_processing_time
+        );
+        println!(
+            "Results missed deadline: {}, {:.2}%",
+            stats.n_miss_deadline,
+            stats.n_miss_deadline as f64 / stats.n_results_total as f64 * 100.
+        );
+        println!(
+            "Valid results: {:.2}%",
+            stats.n_results_valid as f64 / stats.n_results_total as f64 * 100.
+        );
+        println!(
+            "Invalid results: {:.2}%",
+            stats.n_results_invalid as f64 / stats.n_results_total as f64 * 100.
+        );
         println!("Elapsed time: {:.2}s", duration);
         //println!("Scheduling time: {:.2}s", server.borrow().scheduling_time);
         println!(
@@ -153,6 +187,8 @@ impl Simulator {
         self.hosts.push(node_name.to_string());
         let server_name = &format!("{}::server", node_name);
 
+        let stats = rc!(refcell!(ServerStats::new()));
+
         // Creating database
         let database = rc!(BoincDatabase::new());
 
@@ -163,6 +199,7 @@ impl Simulator {
             database.clone(),
             self.sim.borrow_mut().create_context(validator_name),
             config.validator.clone(),
+            stats.clone(),
         );
 
         // Assimilator
@@ -179,6 +216,7 @@ impl Simulator {
             database.clone(),
             self.sim.borrow_mut().create_context(transitioner_name),
             config.transitioner.clone(),
+            stats.clone(),
         );
 
         // Database purger
@@ -238,6 +276,7 @@ impl Simulator {
             disk,
             self.sim.borrow_mut().create_context(data_server_name),
             config.data_server.clone(),
+            stats.clone()
         )));
         let data_server_id = self
             .sim
@@ -269,7 +308,9 @@ impl Simulator {
             data_server,
             self.sim.borrow_mut().create_context(server_name),
             config,
+            stats.clone()
         )));
+        self.server_stats = Some(stats.clone());
         let server_id = self.sim.borrow_mut().add_handler(server_name, server);
         self.server_id = Some(server_id);
         self.network.borrow_mut().set_location(server_id, node_name);

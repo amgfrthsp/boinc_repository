@@ -115,6 +115,7 @@ impl Scheduler {
 
                 result.in_shared_mem = false;
                 result.server_state = ResultState::InProgress;
+                result.time_sent = self.ctx.time();
                 result.report_deadline = self.ctx.time() + workunit.spec.delay_bound;
                 workunit.transition_time =
                     f64::min(workunit.transition_time, result.report_deadline);

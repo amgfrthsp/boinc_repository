@@ -2,6 +2,7 @@ use dslab_core::context::SimulationContext;
 use dslab_core::log_debug;
 use dslab_core::log_info;
 use std::borrow::Borrow;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::config::sim_config::TransitionerConfig;
@@ -10,6 +11,7 @@ use crate::server::job::{
 };
 
 use super::job::ResultId;
+use super::stats::ServerStats;
 use super::{
     database::BoincDatabase,
     job::{ResultInfo, WorkunitInfo},
@@ -21,15 +23,22 @@ pub struct Transitioner {
     ctx: SimulationContext,
     #[allow(dead_code)]
     config: TransitionerConfig,
+    stats: Rc<RefCell<ServerStats>>,
 }
 
 impl Transitioner {
-    pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext, config: TransitionerConfig) -> Self {
+    pub fn new(
+        db: Rc<BoincDatabase>,
+        ctx: SimulationContext,
+        config: TransitionerConfig,
+        stats: Rc<RefCell<ServerStats>>,
+    ) -> Self {
         Self {
             db,
             next_result_id: 0,
             ctx,
             config,
+            stats,
         }
     }
 
@@ -173,9 +182,12 @@ impl Transitioner {
                 validate_state: ValidateState::Init,
                 file_delete_state: FileDeleteState::Init,
                 in_shared_mem: false,
+                time_sent: 0.,
             };
             workunit.result_ids.push(result.id);
             db_result_mut.insert(result.id, result);
+
+            self.stats.borrow_mut().n_results_total += 1;
         }
 
         if cnt > 0 {
