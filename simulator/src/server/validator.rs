@@ -149,7 +149,7 @@ impl Validator {
         log_info!(self.ctx, "validation finished");
     }
 
-    // todo: add client's reliability parameter & read files from disk
+    // todo: read files from disk
     // Validates results and grants credit if valid
     pub fn validate_result(&self, result: &mut ResultInfo) {
         let mut clients_ref = self.db.clients.borrow_mut();
