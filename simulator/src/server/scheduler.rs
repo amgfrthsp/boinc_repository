@@ -11,10 +11,9 @@ use crate::config::sim_config::SchedulerConfig;
 use crate::server::feeder::SharedMemoryItemState;
 use crate::server::job::{OutputFileMetadata, ResultRequest, ResultState};
 
-use super::database::BoincDatabase;
+use super::database::{BoincDatabase, ClientInfo};
 use super::feeder::SharedMemoryItem;
 use super::job::JobSpec;
-use super::server::ClientInfo;
 
 pub struct Scheduler {
     server_id: Id,
@@ -116,6 +115,7 @@ impl Scheduler {
                 result.in_shared_mem = false;
                 result.server_state = ResultState::InProgress;
                 result.time_sent = self.ctx.time();
+                result.client_id = client_info.id;
                 result.report_deadline = self.ctx.time() + workunit.spec.delay_bound;
                 workunit.transition_time =
                     f64::min(workunit.transition_time, result.report_deadline);

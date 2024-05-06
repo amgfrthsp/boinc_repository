@@ -30,6 +30,10 @@ use crate::server::job::{DataServerFile, JobSpec, ResultId, ResultRequest};
 use crate::server::job_generator::AllJobsSent;
 use crate::simulator::simulator::StartClient;
 
+// 1 credit is given for processing GFLOPS_CREDIT_RATIO GFLOPS
+pub const GFLOPS_CREDIT_RATIO: f64 = 24. * 60. * 60. / 200.;
+pub const GFLOPS: f64 = 1_000_000_000.;
+
 #[derive(Clone, Serialize, Debug)]
 pub struct WorkFetchRequest {
     pub req_secs: f64,
@@ -55,6 +59,7 @@ pub struct ClientRegister {
 #[derive(Clone, Serialize)]
 pub struct ResultCompleted {
     pub result_id: ResultId,
+    pub claimed_credit: f64,
 }
 
 #[derive(Clone, Serialize)]
@@ -280,8 +285,13 @@ impl Client {
         );
 
         self.change_result(result_id, Some(ResultState::Notifying), None);
+
+        let claimed_credit = result.spec.flops / GFLOPS / GFLOPS_CREDIT_RATIO;
         self.net.borrow_mut().send_event(
-            ResultCompleted { result_id },
+            ResultCompleted {
+                result_id,
+                claimed_credit,
+            },
             self.ctx.id(),
             self.server_id,
         );

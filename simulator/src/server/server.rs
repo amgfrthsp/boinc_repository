@@ -24,6 +24,7 @@ use crate::client::client::{ClientRegister, ResultCompleted, WorkFetchRequest};
 use crate::common::ReportStatus;
 use crate::config::sim_config::ServerConfig;
 use crate::server::data_server::InputFileDownloadCompleted;
+use crate::server::database::ClientInfo;
 use crate::server::job_generator::{AllJobsSent, NewJobs};
 use crate::simulator::simulator::StartServer;
 
@@ -53,23 +54,7 @@ pub struct PurgeDB {}
 #[derive(Clone, Serialize)]
 pub struct DeleteFiles {}
 
-#[derive(Debug, PartialEq)]
-#[allow(dead_code)]
-pub enum ClientState {
-    Online,
-    Offline,
-}
-
-#[derive(Debug)]
-pub struct ClientInfo {
-    pub id: Id,
-    pub speed: f64,
-    pub cores: u32,
-    pub memory: u64,
-}
-
 pub struct Server {
-    clients: HashMap<Id, ClientInfo>,
     // db
     db: Rc<BoincDatabase>,
     //daemons
@@ -108,7 +93,6 @@ impl Server {
         scheduler.borrow_mut().set_server_id(ctx.id());
         data_server.borrow_mut().set_server_id(ctx.id());
         Self {
-            clients: HashMap::new(),
             db: database,
             validator,
             assimilator,
@@ -153,9 +137,10 @@ impl Server {
             speed,
             cores,
             memory,
+            credit: 0.,
         };
         log_debug!(self.ctx, "registered client {:?}", client);
-        self.clients.insert(client.id, client);
+        self.db.clients.borrow_mut().insert(client.id, client);
     }
 
     async fn on_job_spec(&self, mut spec: JobSpec, from: Id) {
@@ -198,7 +183,7 @@ impl Server {
         self.stats.borrow_mut().n_workunits_total += 1;
     }
 
-    fn on_result_completed(&mut self, result_id: ResultId, client_id: Id) {
+    fn on_result_completed(&mut self, result_id: ResultId, claimed_credit: f64) {
         if !self.db.result.borrow().contains_key(&result_id) {
             log_debug!(
                 self.ctx,
@@ -220,6 +205,7 @@ impl Server {
             result.outcome = ResultOutcome::Success;
             result.validate_state = ValidateState::Init;
             workunit.transition_time = self.ctx.time();
+            result.claimed_credit = claimed_credit;
         } else if result.outcome == ResultOutcome::NoReply {
             self.stats.borrow_mut().n_miss_deadline += 1;
         }
@@ -251,7 +237,8 @@ impl Server {
     }
 
     fn schedule_results(&mut self, client_id: Id, req: WorkFetchRequest) {
-        let client_info = self.clients.get(&client_id).unwrap();
+        let clients_ref = self.db.clients.borrow();
+        let client_info = clients_ref.get(&client_id).unwrap();
         self.scheduler.borrow_mut().schedule(client_info, req);
     }
 
@@ -304,8 +291,8 @@ impl Server {
             })
             .is_empty();
 
-        if !is_active {
-            for (client_id, _) in &self.clients {
+        if !is_active && self.received_all_jobs {
+            for (client_id, _) in self.db.clients.borrow().iter() {
                 self.ctx.emit_now(AllJobsSent {}, *client_id);
             }
         }
@@ -359,8 +346,11 @@ impl EventHandler for Server {
                     self.ctx.spawn(self.on_job_spec(job, event.src));
                 }
             }
-            ResultCompleted { result_id } => {
-                self.on_result_completed(result_id, event.src);
+            ResultCompleted {
+                result_id,
+                claimed_credit,
+            } => {
+                self.on_result_completed(result_id, claimed_credit);
             }
             ReportStatus {} => {
                 self.report_status();

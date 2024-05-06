@@ -1,10 +1,21 @@
 use super::job::{ResultId, ResultInfo, WorkunitId, WorkunitInfo};
+use dslab_core::Id;
 use std::{cell::RefCell, collections::HashMap};
 use sugars::refcell;
+
+#[derive(Debug)]
+pub struct ClientInfo {
+    pub id: Id,
+    pub speed: f64,
+    pub cores: u32,
+    pub memory: u64,
+    pub credit: f64,
+}
 
 pub struct BoincDatabase {
     pub workunit: RefCell<HashMap<WorkunitId, WorkunitInfo>>,
     pub result: RefCell<HashMap<ResultId, ResultInfo>>,
+    pub clients: RefCell<HashMap<Id, ClientInfo>>,
 }
 
 impl BoincDatabase {
@@ -12,6 +23,7 @@ impl BoincDatabase {
         Self {
             workunit: refcell!(HashMap::new()),
             result: refcell!(HashMap::new()),
+            clients: refcell!(HashMap::new()),
         }
     }
 

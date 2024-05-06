@@ -1,3 +1,4 @@
+use dslab_core::Id;
 use serde::Serialize;
 
 use dslab_compute::multicore::CoresDependency;
@@ -128,4 +129,6 @@ pub struct ResultInfo {
     pub file_delete_state: FileDeleteState,
     pub in_shared_mem: bool,
     pub time_sent: f64,
+    pub client_id: Id,
+    pub claimed_credit: f64,
 }

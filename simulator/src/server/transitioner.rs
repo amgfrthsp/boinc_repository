@@ -184,6 +184,8 @@ impl Transitioner {
                 file_delete_state: FileDeleteState::Init,
                 in_shared_mem: false,
                 time_sent: 0.,
+                client_id: 0,
+                claimed_credit: 0.,
             };
             workunit.result_ids.push(result.id);
             db_result_mut.insert(result.id, result);

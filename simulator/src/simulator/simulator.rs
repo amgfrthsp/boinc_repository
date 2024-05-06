@@ -160,6 +160,7 @@ impl Simulator {
             "Invalid results: {:.2}%",
             stats.n_results_invalid as f64 / stats.n_results_total as f64 * 100.
         );
+        println!("Total credit granted: {:.2}%", stats.total_credit_granted);
         println!("Elapsed time: {:.2}s", duration);
         //println!("Scheduling time: {:.2}s", server.borrow().scheduling_time);
         println!(

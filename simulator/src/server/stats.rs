@@ -9,6 +9,7 @@ pub struct ServerStats {
     pub n_miss_deadline: u64,
     pub n_results_valid: u64,
     pub n_results_invalid: u64,
+    pub total_credit_granted: f64,
 }
 
 impl ServerStats {
@@ -23,6 +24,7 @@ impl ServerStats {
             n_miss_deadline: 0,
             n_results_valid: 0,
             n_results_invalid: 0,
+            total_credit_granted: 0.,
         }
     }
 }
