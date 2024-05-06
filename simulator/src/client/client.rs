@@ -501,10 +501,6 @@ impl Client {
             self.ctx
                 .emit_self(AskForWork {}, self.config.work_fetch_interval);
         }
-
-        if self.ctx.id() % 7 == 0 && !self.file_storage.running_results.borrow().is_empty() {
-            self.ctx.emit_self_now(Suspend {});
-        }
     }
 
     fn is_active(&self) -> bool {
@@ -538,9 +534,6 @@ impl Client {
         if self.is_active() {
             self.ctx
                 .emit_self(ReportStatus {}, self.config.report_status_interval);
-        }
-        if self.suspended {
-            self.ctx.emit_self_now(Resume {});
         }
     }
 }
