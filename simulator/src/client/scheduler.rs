@@ -11,12 +11,14 @@ use crate::server::job::ResultId;
 
 use super::rr_simulation::RRSimulation;
 use super::task::ResultInfo;
+use super::utils::Utilities;
 
 pub struct Scheduler {
     client_id: Id,
     rr_sim: Rc<RefCell<RRSimulation>>,
     compute: Rc<RefCell<Compute>>,
     file_storage: Rc<FileStorage>,
+    utilities: Rc<RefCell<Utilities>>,
     ctx: SimulationContext,
 }
 
@@ -25,6 +27,7 @@ impl Scheduler {
         rr_sim: Rc<RefCell<RRSimulation>>,
         compute: Rc<RefCell<Compute>>,
         file_storage: Rc<FileStorage>,
+        utilities: Rc<RefCell<Utilities>>,
         ctx: SimulationContext,
     ) -> Self {
         Self {
@@ -32,6 +35,7 @@ impl Scheduler {
             rr_sim,
             compute,
             file_storage,
+            utilities,
             ctx,
         }
     }
@@ -91,41 +95,14 @@ impl Scheduler {
             let result = fs_results.get_mut(&result_id).unwrap();
             if !scheduled_results.contains(&result_id)
                 && !(result.state == ResultState::Running
-                    && self.rr_sim.borrow().is_running_finished(result))
+                    && self.utilities.borrow().is_running_finished(result))
             {
-                self.preempt_result(result);
+                self.utilities.borrow().preempt_result(result);
             }
         }
 
         log_info!(self.ctx, "scheduling finished");
 
         n_results_to_schedule - scheduled_results.len() > 0
-    }
-
-    pub fn preempt_result(&self, result: &mut ResultInfo) {
-        match result.state {
-            ResultState::Running => {
-                self.compute
-                    .borrow_mut()
-                    .preempt_computation(result.comp_id.unwrap());
-
-                result.state = ResultState::Preempted {
-                    comp_id: result.comp_id.unwrap(),
-                };
-                log_debug!(self.ctx, "Preempt result {}", result.spec.id);
-
-                self.file_storage
-                    .running_results
-                    .borrow_mut()
-                    .remove(&result.spec.id);
-            }
-            ResultState::Reading => {
-                result.state = ResultState::Canceled;
-                log_debug!(self.ctx, "Cancel result {}", result.spec.id);
-            }
-            _ => {
-                panic!("Cannot preempt result with state {:?}", result.state);
-            }
-        }
     }
 }

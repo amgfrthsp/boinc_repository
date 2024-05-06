@@ -14,6 +14,7 @@ use crate::server::job::ResultId;
 
 use super::client::WorkFetchRequest;
 use super::task::ResultInfo;
+use super::utils::Utilities;
 
 #[derive(Clone, Serialize)]
 pub struct RRSimulationResult {
@@ -26,6 +27,7 @@ pub struct RRSimulation {
     buffered_work_upper_bound: f64,
     file_storage: Rc<FileStorage>,
     compute: Rc<RefCell<Compute>>,
+    utilities: Rc<RefCell<Utilities>>,
     ctx: SimulationContext,
 }
 
@@ -35,6 +37,7 @@ impl RRSimulation {
         buffered_work_upper_bound: f64,
         file_storage: Rc<FileStorage>,
         compute: Rc<RefCell<Compute>>,
+        utilities: Rc<RefCell<Utilities>>,
         ctx: SimulationContext,
     ) -> Self {
         Self {
@@ -42,6 +45,7 @@ impl RRSimulation {
             buffered_work_upper_bound,
             file_storage,
             compute,
+            utilities,
             ctx,
         }
     }
@@ -67,7 +71,9 @@ impl RRSimulation {
         for result_id in &results_to_consider {
             let result = fs_results.get_mut(result_id).unwrap();
             result.sim_miss_deadline = false;
-            if result.state == ResultState::Running && self.is_running_finished(result) {
+            if result.state == ResultState::Running
+                && self.utilities.borrow().is_running_finished(result)
+            {
                 continue;
             }
             if is_scheduling {
@@ -79,7 +85,9 @@ impl RRSimulation {
         }
         for result_id in &results_to_consider {
             let result = fs_results.get(result_id).unwrap();
-            if result.state == ResultState::Running && self.is_running_finished(result) {
+            if result.state == ResultState::Running
+                && self.utilities.borrow().is_running_finished(result)
+            {
                 continue;
             }
             results_to_schedule.push(result);
@@ -132,15 +140,6 @@ impl RRSimulation {
                 .collect::<Vec<_>>(),
             work_fetch_req,
         }
-    }
-
-    // Might be the case when in compute computation is finished and comp_id is deleted
-    // But Scheduling started earlier than CompFinished came to client and result's state got updated
-    pub fn is_running_finished(&self, result: &ResultInfo) -> bool {
-        self.compute
-            .borrow()
-            .fraction_done(result.comp_id.unwrap())
-            .is_err()
     }
 
     pub fn deadline_missed(&self, result: &ResultInfo) -> bool {

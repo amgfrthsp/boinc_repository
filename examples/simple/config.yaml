@@ -4,7 +4,7 @@ clients:
   - count: 10
     speed: 8.
     cpus: 4
-    work_fetch_interval: 55.
+    work_fetch_interval: 25.
     buffered_work_lower_bound: 50.
     buffered_work_upper_bound: 200.
     memory: 4
@@ -19,7 +19,7 @@ clients:
 
 
 job_generator:
-  job_count: 1000
+  job_count: 100
   job_batch_size: 10
   job_generation_interval: 20.
   flops_lower_bound: 100.

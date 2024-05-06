@@ -21,6 +21,7 @@ use super::rr_simulation::RRSimulation;
 use super::scheduler::Scheduler;
 use super::storage::FileStorage;
 use super::task::{ResultInfo, ResultState};
+use super::utils::Utilities;
 use crate::common::ReportStatus;
 use crate::config::sim_config::ClientConfig;
 use crate::server::data_server::{
@@ -48,6 +49,9 @@ pub struct WorkFetchReply {
 
 #[derive(Clone, Serialize)]
 pub struct AskForWork {}
+
+#[derive(Clone, Serialize)]
+pub struct Suspend {}
 
 #[derive(Clone, Serialize)]
 pub struct ClientRegister {
@@ -81,6 +85,7 @@ pub struct Client {
     compute: Rc<RefCell<Compute>>,
     disk: Rc<RefCell<Disk>>,
     net: Rc<RefCell<Network>>,
+    utilities: Rc<RefCell<Utilities>>,
     server_id: Id,
     data_server_id: Id,
     scheduler: Scheduler,
@@ -88,6 +93,7 @@ pub struct Client {
     file_storage: Rc<FileStorage>,
     next_scheduling_time: RefCell<f64>,
     scheduling_event: RefCell<Option<EventId>>,
+    suspended: bool,
     received_all_jobs: bool,
     pub ctx: SimulationContext,
     config: ClientConfig,
@@ -99,6 +105,7 @@ impl Client {
         compute: Rc<RefCell<Compute>>,
         disk: Rc<RefCell<Disk>>,
         net: Rc<RefCell<Network>>,
+        utilities: Rc<RefCell<Utilities>>,
         mut scheduler: Scheduler,
         rr_sim: Rc<RefCell<RRSimulation>>,
         file_storage: Rc<FileStorage>,
@@ -114,6 +121,7 @@ impl Client {
             compute,
             disk,
             net,
+            utilities,
             server_id: 0,
             data_server_id: 0,
             scheduler,
@@ -121,6 +129,7 @@ impl Client {
             file_storage,
             next_scheduling_time: RefCell::new(0.),
             scheduling_event: RefCell::new(None),
+            suspended: false,
             received_all_jobs: false,
             ctx,
             config,
@@ -145,6 +154,18 @@ impl Client {
         self.ctx
             .emit_self(ReportStatus {}, self.config.report_status_interval);
         self.ctx.emit_self(AskForWork {}, 65.);
+    }
+
+    fn on_suspend(&mut self) {
+        log_info!(self.ctx, "Client suspended");
+        self.suspended = true;
+        let running_results = self.file_storage.running_results.borrow().clone();
+        let mut fs_results = self.file_storage.results.borrow_mut();
+
+        for result_id in running_results {
+            let result = fs_results.get_mut(&result_id).unwrap();
+            self.utilities.borrow().preempt_result(result);
+        }
     }
 
     fn on_result_requests(&self, reqs: Vec<ResultRequest>) {
@@ -205,6 +226,9 @@ impl Client {
     }
 
     pub fn plan_scheduling(&self, delay: f64) {
+        if self.suspended {
+            return;
+        }
         let planned = self.scheduling_event.borrow().is_some();
         if planned {
             if *self.next_scheduling_time.borrow() <= self.ctx.time() + delay {
@@ -224,11 +248,17 @@ impl Client {
     }
 
     pub fn schedule_results(&self) {
+        if self.suspended {
+            return;
+        }
         self.scheduler.schedule();
         *self.scheduling_event.borrow_mut() = None;
     }
 
     pub fn on_run_result(&self, result_id: ResultId) {
+        if self.suspended {
+            return;
+        }
         self.ctx.spawn(self.run_result(result_id));
     }
 
@@ -430,6 +460,9 @@ impl Client {
     }
 
     pub fn on_continue_result(&self, result_id: ResultId, comp_id: EventId) {
+        if self.suspended {
+            return;
+        }
         self.compute.borrow_mut().continue_computation(comp_id);
         self.file_storage
             .running_results
@@ -440,6 +473,9 @@ impl Client {
     }
 
     fn on_work_fetch(&self) {
+        if self.suspended {
+            return;
+        }
         let sim_result = self.rr_sim.borrow().simulate(false);
 
         if sim_result.work_fetch_req.estimated_delay < self.config.buffered_work_lower_bound {
@@ -461,6 +497,15 @@ impl Client {
     }
 
     fn report_status(&mut self) {
+        log_info!(
+            self.ctx,
+            "STATUS: {}",
+            if self.suspended {
+                "SUSPENDED"
+            } else {
+                "ACTIVE"
+            }
+        );
         log_info!(
             self.ctx,
             "CPU: {:.2} / MEMORY: {:.2} / DISK: {:.2}",
@@ -490,6 +535,9 @@ impl EventHandler for Client {
                 data_server_id,
             } => {
                 self.on_start(server_id, data_server_id);
+            }
+            Suspend {} => {
+                self.on_suspend();
             }
             WorkFetchReply { requests } => {
                 self.on_result_requests(requests);

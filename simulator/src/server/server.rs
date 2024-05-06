@@ -214,8 +214,6 @@ impl Server {
             result.validate_state = ValidateState::Init;
             workunit.transition_time = self.ctx.time();
             result.claimed_credit = claimed_credit;
-        } else if result.outcome == ResultOutcome::NoReply {
-            self.stats.borrow_mut().n_miss_deadline += 1;
         }
 
         let processing_time = self.ctx.time() - result.time_sent;
