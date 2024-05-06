@@ -54,6 +54,9 @@ pub struct AskForWork {}
 pub struct Suspend {}
 
 #[derive(Clone, Serialize)]
+pub struct Resume {}
+
+#[derive(Clone, Serialize)]
 pub struct ClientRegister {
     pub speed: f64,
     pub cores: u32,
@@ -153,7 +156,8 @@ impl Client {
         );
         self.ctx
             .emit_self(ReportStatus {}, self.config.report_status_interval);
-        self.ctx.emit_self(AskForWork {}, 65.);
+        self.ctx
+            .emit_self(AskForWork {}, self.config.work_fetch_interval);
     }
 
     fn on_suspend(&mut self) {
@@ -166,6 +170,13 @@ impl Client {
             let result = fs_results.get_mut(&result_id).unwrap();
             self.utilities.borrow().preempt_result(result);
         }
+    }
+
+    fn on_resume(&mut self) {
+        log_info!(self.ctx, "Client resumed");
+        self.suspended = false;
+
+        self.ctx.emit_self_now(AskForWork {});
     }
 
     fn on_result_requests(&self, reqs: Vec<ResultRequest>) {
@@ -490,6 +501,10 @@ impl Client {
             self.ctx
                 .emit_self(AskForWork {}, self.config.work_fetch_interval);
         }
+
+        if self.ctx.id() % 7 == 0 && !self.file_storage.running_results.borrow().is_empty() {
+            self.ctx.emit_self_now(Suspend {});
+        }
     }
 
     fn is_active(&self) -> bool {
@@ -524,6 +539,9 @@ impl Client {
             self.ctx
                 .emit_self(ReportStatus {}, self.config.report_status_interval);
         }
+        if self.suspended {
+            self.ctx.emit_self_now(Resume {});
+        }
     }
 }
 
@@ -538,6 +556,9 @@ impl EventHandler for Client {
             }
             Suspend {} => {
                 self.on_suspend();
+            }
+            Resume {} => {
+                self.on_resume();
             }
             WorkFetchReply { requests } => {
                 self.on_result_requests(requests);
