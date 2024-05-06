@@ -62,7 +62,6 @@ pub struct ResultRequest {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub enum ResultState {
-    Inactive,
     Unsent,
     InProgress,
     Over,

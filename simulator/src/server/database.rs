@@ -9,6 +9,7 @@ pub struct ClientInfo {
     pub speed: f64,
     pub cores: u32,
     pub memory: u64,
+    pub reliability: f64,
     pub credit: f64,
 }
 

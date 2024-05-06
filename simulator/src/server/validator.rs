@@ -1,7 +1,6 @@
 use dslab_core::context::SimulationContext;
 use dslab_core::log_debug;
 use dslab_core::log_info;
-use dslab_core::Id;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -11,6 +10,7 @@ use crate::server::job::{
 };
 
 use super::database::BoincDatabase;
+use super::database::ClientInfo;
 use super::job::ResultInfo;
 use super::stats::ServerStats;
 
@@ -152,10 +152,13 @@ impl Validator {
     // todo: add client's reliability parameter & read files from disk
     // Validates results and grants credit if valid
     pub fn validate_result(&self, result: &mut ResultInfo) {
+        let mut clients_ref = self.db.clients.borrow_mut();
+        let client = clients_ref.get_mut(&result.client_id).unwrap();
+
         let new_state;
-        if self.ctx.gen_range(0. ..1.) < 0.95 {
+        if self.ctx.gen_range(0. ..1.) < client.reliability {
             new_state = ValidateState::Valid;
-            self.grant_credit(result.client_id, result.claimed_credit);
+            self.grant_credit(client, result.claimed_credit);
             self.stats.borrow_mut().n_results_valid += 1;
         } else {
             new_state = ValidateState::Invalid;
@@ -171,13 +174,11 @@ impl Validator {
         result.validate_state = new_state;
     }
 
-    pub fn grant_credit(&self, client_id: Id, credit: f64) {
-        let mut clients_ref = self.db.clients.borrow_mut();
-        let client = clients_ref.get_mut(&client_id).unwrap();
+    pub fn grant_credit(&self, client: &mut ClientInfo, credit: f64) {
         log_debug!(
             self.ctx,
             "Client {} credit update: {} + {} = {}",
-            client_id,
+            client.id,
             client.credit,
             credit,
             client.credit + credit

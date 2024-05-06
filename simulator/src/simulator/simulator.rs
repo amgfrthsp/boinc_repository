@@ -424,6 +424,8 @@ impl Simulator {
             file_storage.clone(),
             self.sim.borrow_mut().create_context(client_name),
             config,
+            // Find better distribution for reliability
+            self.ctx.gen_range(0.8..1.),
         );
         let client_id = self
             .sim

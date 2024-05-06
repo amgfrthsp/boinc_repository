@@ -54,6 +54,7 @@ pub struct ClientRegister {
     pub speed: f64,
     pub cores: u32,
     pub memory: u64,
+    pub reliability: f64,
 }
 
 #[derive(Clone, Serialize)]
@@ -90,6 +91,7 @@ pub struct Client {
     received_all_jobs: bool,
     pub ctx: SimulationContext,
     config: ClientConfig,
+    reliability: f64,
 }
 
 impl Client {
@@ -102,6 +104,7 @@ impl Client {
         file_storage: Rc<FileStorage>,
         ctx: SimulationContext,
         config: ClientConfig,
+        reliability: f64,
     ) -> Self {
         ctx.register_key_getter_for::<CompStarted>(|e| e.id);
         ctx.register_key_getter_for::<CompFinished>(|e| e.id);
@@ -121,6 +124,7 @@ impl Client {
             received_all_jobs: false,
             ctx,
             config,
+            reliability,
         }
     }
 
@@ -133,6 +137,7 @@ impl Client {
                 speed: self.compute.borrow().speed(),
                 cores: self.compute.borrow().cores_total(),
                 memory: self.compute.borrow().memory_total(),
+                reliability: self.reliability,
             },
             self.server_id,
             0.5,

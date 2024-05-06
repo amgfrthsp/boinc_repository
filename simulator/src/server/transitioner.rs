@@ -108,9 +108,6 @@ impl Transitioner {
         for result_id in &workunit.result_ids {
             let result = db_result_mut.get_mut(result_id).unwrap();
             match result.server_state {
-                ResultState::Inactive => {
-                    res_server_state_unsent_cnt += 1;
-                }
                 ResultState::Unsent => {
                     res_server_state_unsent_cnt += 1;
                 }

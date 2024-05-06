@@ -131,12 +131,20 @@ impl Server {
         );
     }
 
-    fn on_client_register(&mut self, client_id: Id, speed: f64, cores: u32, memory: u64) {
+    fn on_client_register(
+        &mut self,
+        client_id: Id,
+        speed: f64,
+        cores: u32,
+        memory: u64,
+        reliability: f64,
+    ) {
         let client = ClientInfo {
             id: client_id,
             speed,
             cores,
             memory,
+            reliability,
             credit: 0.,
         };
         log_debug!(self.ctx, "registered client {:?}", client);
@@ -338,8 +346,9 @@ impl EventHandler for Server {
                 speed,
                 cores,
                 memory,
+                reliability,
             } => {
-                self.on_client_register(event.src, speed, cores, memory);
+                self.on_client_register(event.src, speed, cores, memory, reliability);
             }
             NewJobs { jobs } => {
                 for job in jobs {
