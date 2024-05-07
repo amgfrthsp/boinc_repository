@@ -98,7 +98,6 @@ impl Validator {
                 let mut potential_canonical_result_id = None;
                 for result_id in &workunit.result_ids {
                     let result = db_result_mut.get_mut(result_id).unwrap();
-                    log_debug!(self.ctx, "validating result {:?}", result);
                     if result.server_state == ResultState::Over
                         && result.outcome == ResultOutcome::Success
                         && result.validate_state == ValidateState::Init
@@ -111,7 +110,7 @@ impl Validator {
                     }
                 }
                 log_debug!(self.ctx, "found {} valid results", n_valid_results);
-                if n_valid_results >= workunit.spec.min_quorum as usize {
+                if n_valid_results >= (workunit.spec.min_quorum / 2 + 1) as usize {
                     if potential_canonical_result_id.is_some() {
                         log_debug!(
                             self.ctx,
@@ -119,7 +118,6 @@ impl Validator {
                             potential_canonical_result_id.unwrap(),
                             workunit.id,
                         );
-                        // grant credit
                         workunit.canonical_resultid = potential_canonical_result_id;
                         workunit.assimilate_state = AssimilateState::Ready;
                         for result_id in &workunit.result_ids {
@@ -138,12 +136,9 @@ impl Validator {
                                 result.outcome = ResultOutcome::DidntNeed;
                             }
                         }
-                    } else {
-                        // set errors & update target_nresults if needed
                     }
                 }
             }
-            // TransitionTime::Now
             workunit.transition_time = self.ctx.time();
         }
         log_info!(self.ctx, "validation finished");
@@ -156,7 +151,7 @@ impl Validator {
         let client = clients_ref.get_mut(&result.client_id).unwrap();
 
         let new_state;
-        if self.ctx.gen_range(0. ..1.) < client.reliability {
+        if result.is_correct {
             new_state = ValidateState::Valid;
             self.grant_credit(client, result.claimed_credit);
             self.stats.borrow_mut().n_results_valid += 1;

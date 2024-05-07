@@ -183,6 +183,7 @@ impl Transitioner {
                 in_shared_mem: false,
                 time_sent: 0.,
                 client_id: 0,
+                is_correct: false,
                 claimed_credit: 0.,
             };
             workunit.result_ids.push(result.id);

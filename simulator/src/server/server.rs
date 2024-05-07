@@ -1,6 +1,5 @@
 use serde::Serialize;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use dslab_core::component::Id;
@@ -191,7 +190,7 @@ impl Server {
         self.stats.borrow_mut().n_workunits_total += 1;
     }
 
-    fn on_result_completed(&mut self, result_id: ResultId, claimed_credit: f64) {
+    fn on_result_completed(&mut self, result_id: ResultId, is_correct: bool, claimed_credit: f64) {
         if !self.db.result.borrow().contains_key(&result_id) {
             log_debug!(
                 self.ctx,
@@ -214,6 +213,7 @@ impl Server {
             result.validate_state = ValidateState::Init;
             workunit.transition_time = self.ctx.time();
             result.claimed_credit = claimed_credit;
+            result.is_correct = is_correct;
         }
 
         let processing_time = self.ctx.time() - result.time_sent;
@@ -355,9 +355,10 @@ impl EventHandler for Server {
             }
             ResultCompleted {
                 result_id,
+                is_correct,
                 claimed_credit,
             } => {
-                self.on_result_completed(result_id, claimed_credit);
+                self.on_result_completed(result_id, is_correct, claimed_credit);
             }
             ReportStatus {} => {
                 self.report_status();

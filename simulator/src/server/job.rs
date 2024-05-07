@@ -129,5 +129,6 @@ pub struct ResultInfo {
     pub in_shared_mem: bool,
     pub time_sent: f64,
     pub client_id: Id,
+    pub is_correct: bool,
     pub claimed_credit: f64,
 }

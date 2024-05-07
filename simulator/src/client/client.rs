@@ -78,6 +78,7 @@ pub struct ClientRegister {
 #[derive(Clone, Serialize)]
 pub struct ResultCompleted {
     pub result_id: ResultId,
+    pub is_correct: bool,
     pub claimed_credit: f64,
 }
 
@@ -385,6 +386,7 @@ impl Client {
         self.net.borrow_mut().send_event(
             ResultCompleted {
                 result_id,
+                is_correct: self.ctx.gen_range(0. ..1.) < self.reliability,
                 claimed_credit,
             },
             self.ctx.id(),
