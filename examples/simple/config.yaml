@@ -22,8 +22,8 @@ job_generator:
   job_count: 1000
   job_batch_size: 10
   job_generation_interval: 1200.
-  flops_lower_bound: 100.
-  flops_upper_bound: 100.
+  flops_lower_bound: 6000.
+  flops_upper_bound: 6000.
   memory_lower_bound: 1
   memory_upper_bound: 8
   cores_lower_bound: 1

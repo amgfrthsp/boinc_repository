@@ -100,17 +100,16 @@ impl RRSimulation {
             cores_release_time.push(FloatWrapper(0.));
         }
 
-        // take max release time in case of multicore
-
         for result in &results_to_schedule {
             let est_runtime = self.est_result_runtime(*result);
-            let mut job_cores = Vec::new();
             // We do not simulate fractional number of cores
+            let mut start_time: f64 = 0.;
             for _ in 0..result.spec.cores {
-                job_cores.push(cores_release_time.pop().unwrap());
+                start_time = start_time.max(cores_release_time.pop().unwrap().0);
             }
-            for job_core in job_cores {
-                cores_release_time.push(FloatWrapper(job_core.0 + est_runtime));
+            let finish_time = FloatWrapper(start_time + est_runtime);
+            for _ in 0..result.spec.cores {
+                cores_release_time.push(finish_time.clone());
             }
         }
 

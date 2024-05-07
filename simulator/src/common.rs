@@ -9,7 +9,7 @@ pub struct Finish {}
 pub struct ReportStatus {}
 
 // Float wrapper for ordered structs
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FloatWrapper(pub f64);
 
 impl PartialEq for FloatWrapper {
