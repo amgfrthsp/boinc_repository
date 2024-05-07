@@ -108,6 +108,7 @@ pub struct WorkunitInfo {
     pub id: WorkunitId,
     pub spec: JobSpec,
     pub result_ids: Vec<ResultId>,
+    pub client_ids: Vec<Id>,
     pub transition_time: f64,
     pub need_validate: bool,
     pub file_delete_state: FileDeleteState,

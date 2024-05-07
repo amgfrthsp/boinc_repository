@@ -157,6 +157,7 @@ impl Server {
             id: spec.id,
             spec: spec.clone(),
             result_ids: Vec::new(),
+            client_ids: Vec::new(),
             transition_time: self.ctx.time(),
             need_validate: false,
             file_delete_state: FileDeleteState::Init,

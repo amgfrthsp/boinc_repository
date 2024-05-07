@@ -95,7 +95,8 @@ impl Scheduler {
 
             let est_runtime = self.get_est_runtime(&workunit.spec, client_info.speed);
 
-            if workunit.spec.cores <= client_info.cores
+            if !workunit.client_ids.contains(&client_info.id)
+                && workunit.spec.cores <= client_info.cores
                 && workunit.spec.memory <= client_info.memory
                 && req.estimated_delay + est_runtime < workunit.spec.delay_bound
             {
@@ -119,6 +120,7 @@ impl Scheduler {
                 result.report_deadline = self.ctx.time() + workunit.spec.delay_bound;
                 workunit.transition_time =
                     f64::min(workunit.transition_time, result.report_deadline);
+                workunit.client_ids.push(client_info.id);
 
                 assigned_results_cnt += 1;
 

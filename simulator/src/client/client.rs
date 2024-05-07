@@ -1,9 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use rand::distributions::Distribution;
-use rand::rngs::ThreadRng;
-use rand::thread_rng;
 use serde::Serialize;
 
 use dslab_compute::multicore::*;
@@ -113,7 +110,6 @@ pub struct Client {
     pub ctx: SimulationContext,
     config: ClientConfig,
     reliability: f64,
-    rng: ThreadRng,
     av_distribution: Weibull,
     unav_distribution: LogNormal<f64>,
 }
@@ -152,7 +148,6 @@ impl Client {
             ctx,
             config,
             reliability,
-            rng: thread_rng(),
             av_distribution: Weibull::new(AVAILABILITY_WEIBULL_SHAPE, AVAILABILITY_WEIBULL_SCALE)
                 .unwrap(),
             unav_distribution: LogNormal::new(
@@ -182,7 +177,7 @@ impl Client {
         self.ctx
             .emit_self(AskForWork {}, self.config.work_fetch_interval);
 
-        let resume_dur = self.av_distribution.sample(&mut self.rng) * 3600.;
+        let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
 
         self.ctx.emit_self(Suspend {}, self.ctx.time() + resume_dur);
 
@@ -206,7 +201,7 @@ impl Client {
             self.utilities.borrow().preempt_result(result);
         }
 
-        let suspencion_dur = self.unav_distribution.sample(&mut self.rng) * 3600.;
+        let suspencion_dur = self.ctx.sample_from_distribution(&self.unav_distribution) * 3600.;
 
         self.ctx
             .emit_self(Resume {}, self.ctx.time() + suspencion_dur);
@@ -222,7 +217,7 @@ impl Client {
 
         self.ctx.emit_self_now(AskForWork {});
 
-        let resume_dur = self.av_distribution.sample(&mut self.rng) * 3600.;
+        let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
 
         self.ctx.emit_self(Suspend {}, self.ctx.time() + resume_dur);
 
