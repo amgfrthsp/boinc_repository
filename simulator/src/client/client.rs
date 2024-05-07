@@ -1,6 +1,9 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use rand::distributions::Distribution;
+use rand::rngs::ThreadRng;
+use rand::thread_rng;
 use serde::Serialize;
 
 use dslab_compute::multicore::*;
@@ -30,10 +33,18 @@ use crate::server::data_server::{
 use crate::server::job::{DataServerFile, JobSpec, ResultId, ResultRequest};
 use crate::server::job_generator::AllJobsSent;
 use crate::simulator::simulator::StartClient;
+use rand_distr::LogNormal;
+use statrs::distribution::Weibull;
 
 // 1 credit is given for processing GFLOPS_CREDIT_RATIO GFLOPS
 pub const GFLOPS_CREDIT_RATIO: f64 = 24. * 60. * 60. / 200.;
 pub const GFLOPS: f64 = 1_000_000_000.;
+
+pub const AVAILABILITY_WEIBULL_SHAPE: f64 = 0.393;
+pub const AVAILABILITY_WEIBULL_SCALE: f64 = 2.964;
+
+pub const UNAVAILABILITY_LOGNORMAL_P: f64 = 2.844;
+pub const UNAVAILABILITY_LOGNORMAL_MU: f64 = -0.586;
 
 #[derive(Clone, Serialize, Debug)]
 pub struct WorkFetchRequest {
@@ -101,6 +112,9 @@ pub struct Client {
     pub ctx: SimulationContext,
     config: ClientConfig,
     reliability: f64,
+    rng: ThreadRng,
+    av_distribution: Weibull,
+    unav_distribution: LogNormal<f64>,
 }
 
 impl Client {
@@ -137,6 +151,14 @@ impl Client {
             ctx,
             config,
             reliability,
+            rng: thread_rng(),
+            av_distribution: Weibull::new(AVAILABILITY_WEIBULL_SHAPE, AVAILABILITY_WEIBULL_SCALE)
+                .unwrap(),
+            unav_distribution: LogNormal::new(
+                UNAVAILABILITY_LOGNORMAL_MU,
+                UNAVAILABILITY_LOGNORMAL_P,
+            )
+            .unwrap(),
         }
     }
 
@@ -158,10 +180,22 @@ impl Client {
             .emit_self(ReportStatus {}, self.config.report_status_interval);
         self.ctx
             .emit_self(AskForWork {}, self.config.work_fetch_interval);
+
+        let resume_dur = self.av_distribution.sample(&mut self.rng) * 3600.;
+
+        self.ctx.emit_self(Suspend {}, self.ctx.time() + resume_dur);
+
+        log_info!(
+            self.ctx,
+            "Client is started and is active for {}",
+            resume_dur
+        );
     }
 
     fn on_suspend(&mut self) {
-        log_info!(self.ctx, "Client suspended");
+        if !self.is_active() {
+            return;
+        }
         self.suspended = true;
         let running_results = self.file_storage.running_results.borrow().clone();
         let mut fs_results = self.file_storage.results.borrow_mut();
@@ -170,13 +204,28 @@ impl Client {
             let result = fs_results.get_mut(&result_id).unwrap();
             self.utilities.borrow().preempt_result(result);
         }
+
+        let suspencion_dur = self.unav_distribution.sample(&mut self.rng) * 3600.;
+
+        self.ctx
+            .emit_self(Resume {}, self.ctx.time() + suspencion_dur);
+
+        log_info!(self.ctx, "Client suspended for {}s", suspencion_dur);
     }
 
     fn on_resume(&mut self) {
-        log_info!(self.ctx, "Client resumed");
+        if !self.is_active() {
+            return;
+        }
         self.suspended = false;
 
         self.ctx.emit_self_now(AskForWork {});
+
+        let resume_dur = self.av_distribution.sample(&mut self.rng) * 3600.;
+
+        self.ctx.emit_self(Suspend {}, self.ctx.time() + resume_dur);
+
+        log_info!(self.ctx, "Client resumed for {}", resume_dur);
     }
 
     fn on_result_requests(&self, reqs: Vec<ResultRequest>) {

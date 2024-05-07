@@ -4,9 +4,9 @@ clients:
   - count: 10
     speed: 8.
     cpus: 4
-    work_fetch_interval: 25.
-    buffered_work_lower_bound: 50.
-    buffered_work_upper_bound: 200.
+    work_fetch_interval: 3300.
+    buffered_work_lower_bound: 3000.
+    buffered_work_upper_bound: 12000.
     memory: 4
     disk_capacity: 5000
     disk_read_bandwidth: 2000.
@@ -15,21 +15,21 @@ clients:
     network_bandwidth: 1000
     local_latency: 0.0
     local_bandwidth: 10000
-    report_status_interval: 100.
+    report_status_interval: 6000.
 
 
 job_generator:
-  job_count: 100
+  job_count: 1000
   job_batch_size: 10
-  job_generation_interval: 20.
+  job_generation_interval: 1200.
   flops_lower_bound: 100.
   flops_upper_bound: 100.
   memory_lower_bound: 1
   memory_upper_bound: 8
   cores_lower_bound: 1
   cores_upper_bound: 2
-  delay_lower_bound: 50.
-  delay_upper_bound: 50.
+  delay_lower_bound: 3000.
+  delay_upper_bound: 3000.
   min_quorum_lower_bound: 1
   min_quorum_upper_bound: 3
   target_nresults_redundancy: 2
@@ -39,27 +39,27 @@ job_generator:
   network_bandwidth: 1000
   local_latency: 0.0
   local_bandwidth: 10000
-  report_status_interval: 100.
+  report_status_interval: 6000.
 
 server:
   shared_memory_size: 50
   local_latency: 0.0
   local_bandwidth: 10000
-  report_status_interval: 100.
+  report_status_interval: 6000.
   assimilator:
-    interval: 20.
+    interval: 1200.
   validator:
-    interval: 50.
+    interval: 3000.
   transitioner:
-    interval: 20.
+    interval: 1200.
   db_purger:
-    interval: 60.
+    interval: 3600.
   file_deleter:
-    interval: 60.
+    interval: 3600.
   feeder:
-    interval: 60.
+    interval: 3600.
   scheduler:
-    interval: 25.
+    interval: 1500.
 
   data_server:
     disk_capacity: 25000

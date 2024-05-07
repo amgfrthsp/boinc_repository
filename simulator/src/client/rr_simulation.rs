@@ -100,6 +100,8 @@ impl RRSimulation {
             cores_release_time.push(FloatWrapper(0.));
         }
 
+        // take max release time in case of multicore
+
         for result in &results_to_schedule {
             let est_runtime = self.est_result_runtime(*result);
             let mut job_cores = Vec::new();
