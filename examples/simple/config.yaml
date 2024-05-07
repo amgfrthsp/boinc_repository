@@ -35,6 +35,8 @@ job_generator:
   target_nresults_redundancy: 2
   input_size_lower_bound: 5
   input_size_upper_bound: 20
+  output_size_lower_bound: 5
+  output_size_upper_bound: 20
   network_latency: 0.5
   network_bandwidth: 1000
   local_latency: 0.0

@@ -50,13 +50,13 @@ pub struct JobSpec {
     pub min_quorum: u64,
     pub target_nresults: u64,
     pub input_file: InputFileMetadata,
+    pub output_file: OutputFileMetadata,
 }
 
 #[derive(Serialize, Debug, Clone)]
 pub struct ResultRequest {
     pub spec: JobSpec,
     pub report_deadline: f64,
-    pub output_file: OutputFileMetadata,
 }
 
 #[derive(Debug, Clone, PartialEq)]

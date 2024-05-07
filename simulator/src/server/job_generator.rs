@@ -10,7 +10,7 @@ use dslab_core::handler::EventHandler;
 use dslab_core::{cast, log_debug};
 use dslab_network::Network;
 
-use super::job::{InputFileMetadata, JobSpec, JobSpecId};
+use super::job::{InputFileMetadata, JobSpec, JobSpecId, OutputFileMetadata};
 use crate::config::sim_config::JobGeneratorConfig;
 use crate::simulator::simulator::StartJobGenerator;
 
@@ -87,6 +87,12 @@ impl JobGenerator {
                     workunit_id: job_id, // when workunit is created on server, its id equals to job_id
                     size: self.ctx.gen_range(
                         self.config.input_size_lower_bound..=self.config.input_size_upper_bound,
+                    ),
+                },
+                output_file: OutputFileMetadata {
+                    result_id: 0, // set in scheduler
+                    size: self.ctx.gen_range(
+                        self.config.output_size_lower_bound..=self.config.output_size_upper_bound,
                     ),
                 },
             };

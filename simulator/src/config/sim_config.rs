@@ -50,6 +50,8 @@ pub struct JobGeneratorConfig {
     pub target_nresults_redundancy: u64,
     pub input_size_lower_bound: u64,
     pub input_size_upper_bound: u64,
+    pub output_size_lower_bound: u64,
+    pub output_size_upper_bound: u64,
     pub network_latency: f64,
     pub network_bandwidth: f64,
     pub local_latency: f64,

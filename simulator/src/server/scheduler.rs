@@ -9,7 +9,7 @@ use std::time::Instant;
 use crate::client::client::{WorkFetchReply, WorkFetchRequest};
 use crate::config::sim_config::SchedulerConfig;
 use crate::server::feeder::SharedMemoryItemState;
-use crate::server::job::{OutputFileMetadata, ResultRequest, ResultState};
+use crate::server::job::{ResultRequest, ResultState};
 
 use super::database::{BoincDatabase, ClientInfo};
 use super::feeder::SharedMemoryItem;
@@ -124,13 +124,10 @@ impl Scheduler {
 
                 let mut spec = workunit.spec.clone();
                 spec.id = result.id;
+                spec.output_file.result_id = result.id;
                 assigned_results.push(ResultRequest {
                     spec,
                     report_deadline: result.report_deadline,
-                    output_file: OutputFileMetadata {
-                        result_id: result.id,
-                        size: self.ctx.gen_range(10..=100),
-                    },
                 });
             } else {
                 log_debug!(self.ctx, "Skipping result {}", result.id);

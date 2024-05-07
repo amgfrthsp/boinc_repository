@@ -10,7 +10,6 @@ use crate::client::task::ResultState;
 use crate::server::job::ResultId;
 
 use super::rr_simulation::RRSimulation;
-use super::task::ResultInfo;
 use super::utils::Utilities;
 
 pub struct Scheduler {

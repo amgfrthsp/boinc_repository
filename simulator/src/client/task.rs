@@ -1,6 +1,6 @@
 use dslab_core::EventId;
 
-use crate::server::job::{JobSpec, OutputFileMetadata};
+use crate::server::job::JobSpec;
 
 #[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
@@ -22,7 +22,6 @@ pub enum ResultState {
 pub struct ResultInfo {
     pub spec: JobSpec,
     pub report_deadline: f64,
-    pub output_file: OutputFileMetadata,
     pub state: ResultState,
     pub time_added: f64,
     pub comp_id: Option<EventId>,

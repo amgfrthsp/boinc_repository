@@ -240,7 +240,6 @@ impl Client {
         let mut result = ResultInfo {
             spec: req.spec,
             report_deadline: req.report_deadline,
-            output_file: req.output_file,
             state: ResultState::Downloading,
             time_added: self.ctx.time(),
             comp_id: None,
@@ -352,12 +351,12 @@ impl Client {
 
         // disk write
         self.change_result(result_id, Some(ResultState::Writing), None);
-        self.process_disk_write(DataServerFile::Output(result.output_file.clone()))
+        self.process_disk_write(DataServerFile::Output(result.spec.output_file.clone()))
             .await;
-        self.file_storage
-            .output_files
-            .borrow_mut()
-            .insert(result.output_file.result_id, result.output_file.clone());
+        self.file_storage.output_files.borrow_mut().insert(
+            result.spec.output_file.result_id,
+            result.spec.output_file.clone(),
+        );
         log_debug!(
             self.ctx,
             "result {}: output files written on disk",
@@ -368,7 +367,7 @@ impl Client {
         self.change_result(result_id, Some(ResultState::Uploading), None);
         self.ctx.emit_now(
             OutputFileFromClient {
-                output_file: result.output_file.clone(),
+                output_file: result.spec.output_file.clone(),
             },
             self.data_server_id,
         );
@@ -402,7 +401,7 @@ impl Client {
         self.plan_scheduling(5.);
 
         self.process_disk_free(DataServerFile::Input(result.spec.input_file));
-        self.process_disk_free(DataServerFile::Output(result.output_file));
+        self.process_disk_free(DataServerFile::Output(result.spec.output_file));
         log_debug!(
             self.ctx,
             "result {}: deleted input/output files from disk",
