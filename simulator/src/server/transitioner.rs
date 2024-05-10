@@ -188,8 +188,6 @@ impl Transitioner {
             };
             workunit.result_ids.push(result.id);
             db_result_mut.insert(result.id, result);
-
-            self.stats.borrow_mut().n_results_total += 1;
         }
 
         if cnt > 0 {

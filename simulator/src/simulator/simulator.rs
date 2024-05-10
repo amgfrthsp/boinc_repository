@@ -15,7 +15,7 @@ use crate::client::rr_simulation::RRSimulation;
 use crate::client::scheduler::Scheduler as ClientScheduler;
 use crate::client::storage::FileStorage;
 use crate::client::utils::Utilities;
-use crate::config::sim_config::{ClientConfig, JobGeneratorConfig, ServerConfig, SimulationConfig};
+use crate::config::sim_config::{ClientConfig, ServerConfig, SimulationConfig};
 use crate::server::db_purger::DBPurger;
 use crate::server::feeder::{Feeder, SharedMemoryItem, SharedMemoryItemState};
 use crate::server::file_deleter::FileDeleter;
@@ -30,24 +30,21 @@ use crate::{
 };
 
 #[derive(Clone, Serialize)]
-pub struct StartServer {}
-
-#[derive(Clone, Serialize)]
-pub struct StartJobGenerator {
-    pub server_id: Id,
+pub struct StartServer {
+    pub finish_time: f64,
 }
 
 #[derive(Clone, Serialize)]
 pub struct StartClient {
     pub server_id: Id,
     pub data_server_id: Id,
+    pub finish_time: f64,
 }
 
 pub struct Simulator {
     sim: Rc<RefCell<Simulation>>,
     network: Rc<RefCell<Network>>,
     hosts: Vec<String>,
-    job_generator_id: Option<Id>,
     server_id: Option<Id>,
     server_stats: Option<Rc<RefCell<ServerStats>>>,
     data_server_id: Option<Id>,
@@ -65,14 +62,13 @@ impl Simulator {
             sim.create_context("net"),
         )));
 
-        // context for starting job generator, server and clients
+        // context for starting server and clients
         let ctx = sim.create_context("ctx");
 
         let mut sim = Self {
             sim: rc!(refcell!(sim)),
             network: network.clone(),
             hosts: Vec::new(),
-            job_generator_id: None,
             server_id: None,
             server_stats: None,
             data_server_id: None,
@@ -82,7 +78,6 @@ impl Simulator {
         };
 
         let server_node_name = sim.add_server(sim.sim_config.server.clone());
-        sim.add_job_generator(sim.sim_config.job_generator.clone(), &server_node_name);
         // Add hosts from config
         for host_config in sim.sim_config.clients.clone() {
             let count = host_config.count.unwrap_or(1);
@@ -98,27 +93,23 @@ impl Simulator {
     }
 
     pub fn run(&mut self) {
-        if self.job_generator_id.is_none() {
-            println!("Job Generator is not added");
-            return;
-        }
         if self.server_id.is_none() {
             println!("Server is not added");
             return;
         }
         log_info!(self.ctx, "Simulation started");
         self.ctx.emit_now(
-            StartJobGenerator {
-                server_id: self.server_id.unwrap(),
+            StartServer {
+                finish_time: self.sim_config.sim_duration * 3600.,
             },
-            self.job_generator_id.unwrap(),
+            self.server_id.unwrap(),
         );
-        self.ctx.emit_now(StartServer {}, self.server_id.unwrap());
         for client_id in &self.client_ids {
             self.ctx.emit_now(
                 StartClient {
                     server_id: self.server_id.unwrap(),
                     data_server_id: self.data_server_id.unwrap(),
+                    finish_time: self.sim_config.sim_duration * 3600.,
                 },
                 *client_id,
             );
@@ -192,8 +183,15 @@ impl Simulator {
 
         let stats = rc!(refcell!(ServerStats::new()));
 
-        // Creating database
+        // Database
         let database = rc!(BoincDatabase::new());
+
+        // Job generator
+        let job_generator_name = &format!("{}::job_generator", node_name);
+        let job_generator = JobGenerator::new(
+            self.sim.borrow_mut().create_context(job_generator_name),
+            config.job_generator.clone(),
+        );
 
         // Adding daemon components
         // Validator
@@ -211,6 +209,7 @@ impl Simulator {
             database.clone(),
             self.sim.borrow_mut().create_context(assimilator_name),
             config.assimilator.clone(),
+            stats.clone(),
         );
 
         // Transitioner
@@ -301,6 +300,7 @@ impl Simulator {
 
         let server = rc!(refcell!(Server::new(
             database.clone(),
+            job_generator,
             validator,
             assimilator,
             transitioner,
@@ -314,45 +314,16 @@ impl Simulator {
             stats.clone()
         )));
         self.server_stats = Some(stats.clone());
-        let server_id = self.sim.borrow_mut().add_handler(server_name, server);
+        let server_id = self
+            .sim
+            .borrow_mut()
+            .add_handler(server_name, server.clone());
         self.server_id = Some(server_id);
         self.network.borrow_mut().set_location(server_id, node_name);
 
+        server.borrow_mut().generate_jobs();
+
         node_name.clone()
-    }
-
-    pub fn add_job_generator(&mut self, config: JobGeneratorConfig, server_node_name: &str) {
-        let n = self.hosts.len();
-        let node_name = &format!("host{}", n);
-        self.network.borrow_mut().add_node(
-            node_name,
-            Box::new(SharedBandwidthNetworkModel::new(
-                config.local_bandwidth,
-                config.local_latency,
-            )),
-        );
-        self.network.borrow_mut().add_link(
-            &node_name,
-            server_node_name,
-            Link::shared(config.network_bandwidth, config.network_latency),
-        );
-        self.hosts.push(node_name.to_string());
-
-        let job_generator_name = &format!("{}::job_generator", node_name);
-
-        let job_generator = rc!(refcell!(JobGenerator::new(
-            self.network.clone(),
-            self.sim.borrow_mut().create_context(job_generator_name),
-            config,
-        )));
-        let job_generator_id = self
-            .sim
-            .borrow_mut()
-            .add_handler(job_generator_name, job_generator.clone());
-        self.network
-            .borrow_mut()
-            .set_location(job_generator_id, node_name);
-        self.job_generator_id = Some(job_generator_id);
     }
 
     pub fn add_host(&mut self, config: ClientConfig, server_node_name: &str) {

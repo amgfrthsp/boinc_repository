@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 struct RawSimulationConfig {
     pub seed: Option<u64>,
-    pub job_generator: Option<JobGeneratorConfig>,
+    pub sim_duration: Option<f64>,
     pub server: Option<ServerConfig>,
     pub clients: Option<Vec<ClientConfig>>,
 }
@@ -29,6 +29,24 @@ pub struct ClientConfig {
     pub local_latency: f64,
     pub local_bandwidth: f64,
     pub report_status_interval: f64,
+}
+
+/// Holds configuration of the main server
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
+pub struct ServerConfig {
+    pub shared_memory_size: usize,
+    pub local_latency: f64,
+    pub local_bandwidth: f64,
+    pub report_status_interval: f64,
+    pub job_generator: JobGeneratorConfig,
+    pub data_server: DataServerConfig,
+    pub assimilator: AssimilatorConfig,
+    pub validator: ValidatorConfig,
+    pub transitioner: TransitionerConfig,
+    pub db_purger: DBPurgerConfig,
+    pub file_deleter: FileDeleterConfig,
+    pub feeder: FeederConfig,
+    pub scheduler: SchedulerConfig,
 }
 
 /// Holds configuration of a job generator
@@ -57,23 +75,6 @@ pub struct JobGeneratorConfig {
     pub local_latency: f64,
     pub local_bandwidth: f64,
     pub report_status_interval: f64,
-}
-
-/// Holds configuration of the main server
-#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
-pub struct ServerConfig {
-    pub shared_memory_size: usize,
-    pub local_latency: f64,
-    pub local_bandwidth: f64,
-    pub report_status_interval: f64,
-    pub data_server: DataServerConfig,
-    pub assimilator: AssimilatorConfig,
-    pub validator: ValidatorConfig,
-    pub transitioner: TransitionerConfig,
-    pub db_purger: DBPurgerConfig,
-    pub file_deleter: FileDeleterConfig,
-    pub feeder: FeederConfig,
-    pub scheduler: SchedulerConfig,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
@@ -123,8 +124,8 @@ pub struct DataServerConfig {
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct SimulationConfig {
     pub seed: u64,
+    pub sim_duration: f64,
     pub clients: Vec<ClientConfig>,
-    pub job_generator: JobGeneratorConfig,
     pub server: ServerConfig,
 }
 
@@ -140,8 +141,8 @@ impl SimulationConfig {
 
         Self {
             seed: raw.seed.unwrap_or(124),
+            sim_duration: raw.sim_duration.unwrap_or(1.),
             clients: raw.clients.unwrap_or_default(),
-            job_generator: raw.job_generator.unwrap_or_default(),
             server: raw.server.unwrap_or_default(),
         }
     }

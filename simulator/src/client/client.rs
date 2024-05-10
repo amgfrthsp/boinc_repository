@@ -22,13 +22,12 @@ use super::scheduler::Scheduler;
 use super::storage::FileStorage;
 use super::task::{ResultInfo, ResultState};
 use super::utils::Utilities;
-use crate::common::ReportStatus;
+use crate::common::{Finish, ReportStatus};
 use crate::config::sim_config::ClientConfig;
 use crate::server::data_server::{
     InputFileUploadCompleted, InputFilesInquiry, OutputFileDownloadCompleted, OutputFileFromClient,
 };
 use crate::server::job::{DataServerFile, JobSpec, ResultId, ResultRequest};
-use crate::server::job_generator::AllJobsSent;
 use crate::simulator::simulator::StartClient;
 use rand_distr::LogNormal;
 use statrs::distribution::Weibull;
@@ -106,12 +105,12 @@ pub struct Client {
     next_scheduling_time: RefCell<f64>,
     scheduling_event: RefCell<Option<EventId>>,
     suspended: bool,
-    received_all_jobs: bool,
     pub ctx: SimulationContext,
     config: ClientConfig,
     reliability: f64,
     av_distribution: Weibull,
     unav_distribution: LogNormal<f64>,
+    is_active: bool,
 }
 
 impl Client {
@@ -144,7 +143,6 @@ impl Client {
             next_scheduling_time: RefCell::new(0.),
             scheduling_event: RefCell::new(None),
             suspended: false,
-            received_all_jobs: false,
             ctx,
             config,
             reliability,
@@ -155,10 +153,11 @@ impl Client {
                 UNAVAILABILITY_LOGNORMAL_P,
             )
             .unwrap(),
+            is_active: true,
         }
     }
 
-    fn on_start(&mut self, server_id: Id, data_server_id: Id) {
+    fn on_start(&mut self, server_id: Id, data_server_id: Id, finish_time: f64) {
         log_debug!(self.ctx, "started");
         self.server_id = server_id;
         self.data_server_id = data_server_id;
@@ -174,8 +173,7 @@ impl Client {
         );
         self.ctx
             .emit_self(ReportStatus {}, self.config.report_status_interval);
-        self.ctx
-            .emit_self(AskForWork {}, self.config.work_fetch_interval);
+        self.ctx.emit_self(AskForWork {}, 10.);
 
         let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
 
@@ -186,12 +184,11 @@ impl Client {
             "Client is started and is active for {}",
             resume_dur
         );
+
+        self.ctx.emit_self(Finish {}, finish_time);
     }
 
     fn on_suspend(&mut self) {
-        if !self.is_active() {
-            return;
-        }
         self.suspended = true;
         let running_results = self.file_storage.running_results.borrow().clone();
         let mut fs_results = self.file_storage.results.borrow_mut();
@@ -210,9 +207,6 @@ impl Client {
     }
 
     fn on_resume(&mut self) {
-        if !self.is_active() {
-            return;
-        }
         self.suspended = false;
 
         self.ctx.emit_self_now(AskForWork {});
@@ -542,14 +536,8 @@ impl Client {
             );
         }
 
-        if self.is_active() {
-            self.ctx
-                .emit_self(AskForWork {}, self.config.work_fetch_interval);
-        }
-    }
-
-    fn is_active(&self) -> bool {
-        return !(self.received_all_jobs && self.file_storage.running_results.borrow().is_empty());
+        self.ctx
+            .emit_self(AskForWork {}, self.config.work_fetch_interval);
     }
 
     fn report_status(&mut self) {
@@ -576,7 +564,7 @@ impl Client {
         for result in fs_ref.values() {
             log_info!(self.ctx, "Result {}: {:?}", result.spec.id, result.state);
         }
-        if self.is_active() {
+        if self.is_active {
             self.ctx
                 .emit_self(ReportStatus {}, self.config.report_status_interval);
         }
@@ -589,35 +577,52 @@ impl EventHandler for Client {
             StartClient {
                 server_id,
                 data_server_id,
+                finish_time,
             } => {
-                self.on_start(server_id, data_server_id);
+                self.on_start(server_id, data_server_id, finish_time);
             }
             Suspend {} => {
-                self.on_suspend();
+                if self.is_active {
+                    self.on_suspend();
+                }
             }
             Resume {} => {
-                self.on_resume();
+                if self.is_active {
+                    self.on_resume();
+                }
             }
             WorkFetchReply { requests } => {
-                self.on_result_requests(requests);
+                if self.is_active {
+                    self.on_result_requests(requests);
+                }
             }
             ExecuteResult { result_id } => {
-                self.on_run_result(result_id);
+                if self.is_active {
+                    self.on_run_result(result_id);
+                }
             }
             ContinueResult { result_id, comp_id } => {
-                self.on_continue_result(result_id, comp_id);
+                if self.is_active {
+                    self.on_continue_result(result_id, comp_id);
+                }
             }
             ScheduleResults {} => {
-                self.schedule_results();
+                if self.is_active {
+                    self.schedule_results();
+                }
             }
             AskForWork {} => {
-                self.on_work_fetch();
+                if self.is_active {
+                    self.on_work_fetch();
+                }
             }
             ReportStatus {} => {
-                self.report_status();
+                if self.is_active {
+                    self.report_status();
+                }
             }
-            AllJobsSent {} => {
-                self.received_all_jobs = true;
+            Finish {} => {
+                self.is_active = false;
             }
         })
     }

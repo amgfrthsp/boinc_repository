@@ -1,63 +1,28 @@
 use dslab_compute::multicore::CoresDependency;
-use serde::Serialize;
-use std::cell::RefCell;
-use std::rc::Rc;
 
-use dslab_core::component::Id;
-use dslab_core::context::SimulationContext;
-use dslab_core::event::Event;
-use dslab_core::handler::EventHandler;
-use dslab_core::{cast, log_debug};
-use dslab_network::Network;
+use dslab_core::{context::SimulationContext, log_debug};
 
 use super::job::{InputFileMetadata, JobSpec, JobSpecId, OutputFileMetadata};
 use crate::config::sim_config::JobGeneratorConfig;
-use crate::simulator::simulator::StartJobGenerator;
-
-#[derive(Clone, Serialize)]
-pub struct GenerateJobs {}
-
-#[derive(Clone, Serialize)]
-pub struct AllJobsSent {}
-
-#[derive(Clone, Serialize)]
-pub struct NewJobs {
-    pub jobs: Vec<JobSpec>,
-}
 
 pub struct JobGenerator {
-    net: Rc<RefCell<Network>>,
-    server_id: Id,
     jobs_generated: u64,
     ctx: SimulationContext,
-    #[allow(dead_code)]
     config: JobGeneratorConfig,
 }
 
 impl JobGenerator {
-    pub fn new(
-        net: Rc<RefCell<Network>>,
-        ctx: SimulationContext,
-        config: JobGeneratorConfig,
-    ) -> Self {
+    pub fn new(ctx: SimulationContext, config: JobGeneratorConfig) -> Self {
         Self {
             config,
-            net,
-            server_id: 0,
             jobs_generated: 0,
             ctx,
         }
     }
 
-    fn on_started(&mut self, server_id: Id) {
-        log_debug!(self.ctx, "started");
-        self.server_id = server_id;
-        self.ctx.emit_self(GenerateJobs {}, 1.);
-    }
-
-    fn generate_jobs(&mut self) {
+    pub fn generate_jobs(&mut self, cnt: usize) -> Vec<JobSpec> {
         let mut generated_jobs = Vec::new();
-        for i in 0..self.config.job_batch_size {
+        for i in 0..cnt {
             let job_id = (self.jobs_generated + i as u64) as JobSpecId;
             let min_quorum = self
                 .ctx
@@ -99,33 +64,10 @@ impl JobGenerator {
             generated_jobs.push(job);
         }
 
-        self.net.borrow_mut().send_event(
-            NewJobs {
-                jobs: generated_jobs,
-            },
-            self.ctx.id(),
-            self.server_id,
-        );
+        log_debug!(self.ctx, "Generated {} new workunits", generated_jobs.len());
 
-        self.jobs_generated += self.config.job_batch_size;
-        if self.jobs_generated < self.config.job_count {
-            self.ctx
-                .emit_self(GenerateJobs {}, self.config.job_generation_interval);
-        } else {
-            self.ctx.emit(AllJobsSent {}, self.server_id, 5.);
-        }
-    }
-}
+        self.jobs_generated += generated_jobs.len() as u64;
 
-impl EventHandler for JobGenerator {
-    fn on(&mut self, event: Event) {
-        cast!(match event.data {
-            StartJobGenerator { server_id } => {
-                self.on_started(server_id);
-            }
-            GenerateJobs {} => {
-                self.generate_jobs();
-            }
-        })
+        generated_jobs
     }
 }

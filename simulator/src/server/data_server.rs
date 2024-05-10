@@ -11,7 +11,7 @@ use futures::{select, FutureExt};
 use serde::Serialize;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::common::ReportStatus;
+use crate::common::{Finish, ReportStatus};
 use crate::config::sim_config::DataServerConfig;
 
 use super::job::{DataServerFile, InputFileMetadata, OutputFileMetadata, ResultId, WorkunitId};
@@ -50,9 +50,11 @@ pub struct DataServer {
     disk: Rc<RefCell<Disk>>,
     input_files: RefCell<HashMap<WorkunitId, InputFileMetadata>>, // workunit_id -> input files
     output_files: RefCell<HashMap<ResultId, OutputFileMetadata>>, // result_id -> output files
+    is_active: bool,
     ctx: SimulationContext,
     #[allow(dead_code)]
     config: DataServerConfig,
+    #[allow(dead_code)]
     stats: Rc<RefCell<ServerStats>>,
 }
 
@@ -80,6 +82,7 @@ impl DataServer {
             disk,
             input_files: RefCell::new(HashMap::new()),
             output_files: RefCell::new(HashMap::new()),
+            is_active: true,
             ctx,
             config,
             stats,
@@ -101,14 +104,14 @@ impl DataServer {
     }
 
     async fn process_download_file(&self, file: DataServerFile, from: Id) {
-        log_debug!(self.ctx, "file download started {:?}", file);
+        // log_debug!(self.ctx, "file download started {:?}", file);
 
         futures::join!(
             self.process_network_download(file.clone(), from),
             self.process_disk_write(file.clone())
         );
 
-        log_debug!(self.ctx, "file download finished {:?}", file);
+        // log_debug!(self.ctx, "file download finished {:?}", file);
 
         // if retry.contains(file_id) {retry in x} else:
 
@@ -123,11 +126,11 @@ impl DataServer {
                 self.ctx
                     .emit_now(InputFileDownloadCompleted { workunit_id }, self.server_id);
 
-                log_debug!(
-                    self.ctx,
-                    "received a new input file for workunit {}",
-                    workunit_id,
-                );
+                // log_debug!(
+                //     self.ctx,
+                //     "received a new input file for workunit {}",
+                //     workunit_id,
+                // );
             }
             DataServerFile::Output(output_file) => {
                 let result_id = output_file.result_id;
@@ -139,11 +142,11 @@ impl DataServer {
                 self.ctx
                     .emit_now(OutputFileDownloadCompleted { result_id }, from);
 
-                log_debug!(
-                    self.ctx,
-                    "received a new output file for result {}",
-                    result_id,
-                );
+                // log_debug!(
+                //     self.ctx,
+                //     "received a new output file for result {}",
+                //     result_id,
+                // );
             }
         }
     }
@@ -159,14 +162,14 @@ impl DataServer {
             // error: no such file
         }
 
-        log_debug!(self.ctx, "file upload started {:?}", file);
+        // log_debug!(self.ctx, "file upload started {:?}", file);
 
         futures::join!(
             self.process_network_upload(file.clone(), to),
             self.process_disk_read(file.clone())
         );
 
-        log_debug!(self.ctx, "file upload finished {:?}", file);
+        // log_debug!(self.ctx, "file upload finished {:?}", file);
 
         // if retry.contains(file_id) {retry in x} else:
 
@@ -174,12 +177,12 @@ impl DataServer {
             DataServerFile::Input(input_file) => {
                 self.ctx.emit_now(InputFileUploadCompleted { ref_id }, to);
 
-                log_debug!(
-                    self.ctx,
-                    "uploaded input file for workunit {} to client {}",
-                    input_file.workunit_id,
-                    to,
-                );
+                // log_debug!(
+                //     self.ctx,
+                //     "uploaded input file for workunit {} to client {}",
+                //     input_file.workunit_id,
+                //     to,
+                // );
             }
             DataServerFile::Output(_output_file) => {}
         }
@@ -216,7 +219,7 @@ impl DataServer {
 
         select! {
             _ = self.ctx.recv_event_by_key::<DataWriteCompleted>(disk_write_id).fuse() => {
-                log_debug!(self.ctx, "write completed!!!");
+                // log_debug!(self.ctx, "write completed!!!");
             }
             _ = self.ctx.recv_event_by_key::<DataWriteFailed>(disk_write_id).fuse() => {
                 log_debug!(self.ctx, "write FAILED!!!");
@@ -229,7 +232,7 @@ impl DataServer {
 
         select! {
             _ = self.ctx.recv_event_by_key::<DataReadCompleted>(disk_read_id).fuse() => {
-                log_debug!(self.ctx, "read completed!!!");
+                // log_debug!(self.ctx, "read completed!!!");
             }
             _ = self.ctx.recv_event_by_key::<DataReadFailed>(disk_read_id).fuse() => {
                 log_debug!(self.ctx, "read FAILED!!!");
@@ -238,11 +241,11 @@ impl DataServer {
     }
 
     pub fn delete_input_files(&mut self, workunit_id: WorkunitId) -> u32 {
-        log_debug!(
-            self.ctx,
-            "deleting input files for workunit {}",
-            workunit_id,
-        );
+        // log_debug!(
+        //     self.ctx,
+        //     "deleting input files for workunit {}",
+        //     workunit_id,
+        // );
 
         let input_file = self.input_files.borrow_mut().remove(&workunit_id);
         if input_file.is_none() {
@@ -257,13 +260,13 @@ impl DataServer {
 
         // process error
 
-        log_debug!(self.ctx, "deleted input files for workunit {}", workunit_id);
+        // log_debug!(self.ctx, "deleted input files for workunit {}", workunit_id);
 
         return 0;
     }
 
     pub fn delete_output_files(&mut self, result_id: ResultId) -> u32 {
-        log_debug!(self.ctx, "deleting output files for result {}", result_id);
+        // log_debug!(self.ctx, "deleting output files for result {}", result_id);
         let output_file = self.output_files.borrow_mut().remove(&result_id);
         if output_file.is_none() {
             // no such file
@@ -278,7 +281,7 @@ impl DataServer {
 
         // process error
 
-        log_debug!(self.ctx, "deleted output files for result {}", result_id,);
+        // log_debug!(self.ctx, "deleted output files for result {}", result_id,);
 
         return 0;
     }
@@ -289,8 +292,8 @@ impl DataServer {
             "DISK: {:.2}",
             self.disk.borrow().used_space() as f64 / self.disk.borrow().capacity() as f64
         );
-        log_info!(self.ctx, "INPUT FILES: {:?}", self.input_files);
-        log_info!(self.ctx, "OUTPUT FILES: {:?}", self.output_files);
+        // log_info!(self.ctx, "INPUT FILES: {:?}", self.input_files);
+        // log_info!(self.ctx, "OUTPUT FILES: {:?}", self.output_files);
     }
 }
 
@@ -301,13 +304,22 @@ impl EventHandler for DataServer {
                 workunit_id,
                 ref_id,
             } => {
-                self.on_input_files_inquiry(workunit_id, ref_id, event.src);
+                if self.is_active {
+                    self.on_input_files_inquiry(workunit_id, ref_id, event.src);
+                }
             }
             OutputFileFromClient { output_file } => {
-                self.download_file(DataServerFile::Output(output_file), event.src);
+                if self.is_active {
+                    self.download_file(DataServerFile::Output(output_file), event.src);
+                }
             }
             ReportStatus {} => {
-                self.report_status();
+                if self.is_active {
+                    self.report_status();
+                }
+            }
+            Finish {} => {
+                self.is_active = false;
             }
         })
     }

@@ -15,17 +15,20 @@ use super::db_purger::DBPurger;
 use super::feeder::Feeder;
 use super::file_deleter::FileDeleter;
 use super::job::*;
+use super::job_generator::JobGenerator;
 use super::scheduler::Scheduler;
 use super::stats::ServerStats;
 use super::transitioner::Transitioner;
 use super::validator::Validator;
 use crate::client::client::{ClientRegister, ResultCompleted, WorkFetchRequest};
-use crate::common::ReportStatus;
+use crate::common::{Finish, ReportStatus};
 use crate::config::sim_config::ServerConfig;
 use crate::server::data_server::InputFileDownloadCompleted;
 use crate::server::database::ClientInfo;
-use crate::server::job_generator::{AllJobsSent, NewJobs};
 use crate::simulator::simulator::StartServer;
+
+const WORKUNIT_BUFFER_BASE: usize = 5000;
+const WORKUNIT_BUFFER_LOWER_BOUND: usize = 100;
 
 #[derive(Clone, Serialize)]
 pub struct ServerRegister {}
@@ -56,6 +59,8 @@ pub struct DeleteFiles {}
 pub struct Server {
     // db
     db: Rc<BoincDatabase>,
+    //job_generator
+    job_generator: JobGenerator,
     //daemons
     validator: Validator,
     assimilator: Assimilator,
@@ -68,15 +73,16 @@ pub struct Server {
     // data server
     data_server: Rc<RefCell<DataServer>>,
     //
-    received_all_jobs: bool,
     pub ctx: SimulationContext,
     config: ServerConfig,
     stats: Rc<RefCell<ServerStats>>,
+    is_active: bool,
 }
 
 impl Server {
     pub fn new(
         database: Rc<BoincDatabase>,
+        job_generator: JobGenerator,
         validator: Validator,
         assimilator: Assimilator,
         transitioner: Transitioner,
@@ -93,6 +99,7 @@ impl Server {
         data_server.borrow_mut().set_server_id(ctx.id());
         Self {
             db: database,
+            job_generator,
             validator,
             assimilator,
             transitioner,
@@ -101,14 +108,14 @@ impl Server {
             db_purger,
             scheduler,
             data_server,
-            received_all_jobs: false,
             ctx,
             config,
             stats,
+            is_active: true,
         }
     }
 
-    fn on_started(&mut self) {
+    fn on_started(&mut self, finish_time: f64) {
         log_debug!(self.ctx, "started");
         self.ctx.emit_self(EnvokeTransitioner {}, 3.);
         self.ctx
@@ -128,6 +135,9 @@ impl Server {
             self.data_server.borrow().id,
             self.config.report_status_interval,
         );
+        self.ctx
+            .emit(Finish {}, self.data_server.borrow().id, finish_time);
+        self.ctx.emit_self(Finish {}, finish_time);
     }
 
     fn on_client_register(
@@ -150,8 +160,8 @@ impl Server {
         self.db.clients.borrow_mut().insert(client.id, client);
     }
 
-    async fn on_job_spec(&self, mut spec: JobSpec, from: Id) {
-        log_debug!(self.ctx, "job spec {:?}", spec.clone());
+    async fn on_job_spec(&self, mut spec: JobSpec) {
+        // log_debug!(self.ctx, "job spec {:?}", spec.clone());
 
         let workunit = WorkunitInfo {
             id: spec.id,
@@ -167,28 +177,27 @@ impl Server {
 
         spec.input_file.workunit_id = workunit.id;
 
-        log_debug!(
-            self.ctx,
-            "input file download started for workunit {}",
-            workunit.id
-        );
+        // log_debug!(
+        //     self.ctx,
+        //     "input file download started for workunit {}",
+        //     workunit.id
+        // );
 
         self.data_server
             .borrow_mut()
-            .download_file(DataServerFile::Input(spec.input_file), from);
+            .download_file(DataServerFile::Input(spec.input_file), self.ctx.id());
 
         self.ctx
             .recv_event_by_key::<InputFileDownloadCompleted>(workunit.id)
             .await;
 
-        log_debug!(
-            self.ctx,
-            "input file download finished for workunit {}",
-            workunit.id
-        );
+        // log_debug!(
+        //     self.ctx,
+        //     "input file download finished for workunit {}",
+        //     workunit.id
+        // );
 
         self.db.workunit.borrow_mut().insert(workunit.id, workunit);
-        self.stats.borrow_mut().n_workunits_total += 1;
     }
 
     fn on_result_completed(&mut self, result_id: ResultId, is_correct: bool, claimed_credit: f64) {
@@ -218,6 +227,7 @@ impl Server {
         }
 
         let processing_time = self.ctx.time() - result.time_sent;
+        self.stats.borrow_mut().n_results_total += 1;
         self.stats.borrow_mut().results_processing_time += processing_time;
 
         let min_processing_time = self.stats.borrow_mut().min_result_processing_time;
@@ -237,10 +247,8 @@ impl Server {
 
     fn envoke_feeder(&mut self) {
         self.feeder.scan_work_array();
-        if self.is_active() {
-            self.ctx
-                .emit_self(EnvokeFeeder {}, self.config.feeder.interval);
-        }
+        self.ctx
+            .emit_self(EnvokeFeeder {}, self.config.feeder.interval);
     }
 
     fn schedule_results(&mut self, client_id: Id, req: WorkFetchRequest) {
@@ -251,61 +259,45 @@ impl Server {
 
     fn envoke_transitioner(&mut self) {
         self.transitioner.transit(self.ctx.time());
-        if self.is_active() {
-            self.ctx
-                .emit_self(EnvokeTransitioner {}, self.config.transitioner.interval);
-        }
+        self.ctx
+            .emit_self(EnvokeTransitioner {}, self.config.transitioner.interval);
     }
 
     fn validate_results(&mut self) {
         self.validator.validate();
-        if self.is_active() {
-            self.ctx
-                .emit_self(ValidateResults {}, self.config.validator.interval);
-        }
+        self.ctx
+            .emit_self(ValidateResults {}, self.config.validator.interval);
     }
 
     fn assimilate_results(&mut self) {
         self.assimilator.assimilate();
-        if self.is_active() {
-            self.ctx
-                .emit_self(AssimilateResults {}, self.config.assimilator.interval);
-        }
+        self.ctx
+            .emit_self(AssimilateResults {}, self.config.assimilator.interval);
     }
 
     fn delete_files(&mut self) {
         self.file_deleter.delete_files();
-        if self.is_active() {
-            self.ctx
-                .emit_self(DeleteFiles {}, self.config.file_deleter.interval);
-        }
+        self.ctx
+            .emit_self(DeleteFiles {}, self.config.file_deleter.interval);
     }
 
     fn purge_db(&mut self) {
         self.db_purger.purge_database();
-        if self.is_active() {
-            self.ctx
-                .emit_self(PurgeDB {}, self.config.db_purger.interval);
+        if self.db.workunit.borrow().len() < WORKUNIT_BUFFER_LOWER_BOUND {
+            self.generate_jobs();
+        }
+        self.ctx
+            .emit_self(PurgeDB {}, self.config.db_purger.interval);
+    }
+
+    pub fn generate_jobs(&mut self) {
+        let new_jobs = self.job_generator.generate_jobs(WORKUNIT_BUFFER_BASE);
+        for job in new_jobs {
+            self.ctx.spawn(self.on_job_spec(job));
         }
     }
 
     // ******* utilities & statistics *********
-
-    fn is_active(&self) -> bool {
-        let is_active =
-            !BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
-                wu.canonical_resultid.is_none()
-            })
-            .is_empty();
-
-        if !is_active && self.received_all_jobs {
-            for (client_id, _) in self.db.clients.borrow().iter() {
-                self.ctx.emit_now(AllJobsSent {}, *client_id);
-            }
-        }
-        is_active
-    }
-
     fn report_status(&mut self) {
         log_info!(
             self.ctx,
@@ -323,23 +315,21 @@ impl Server {
             })
             .len()
         );
-        if self.is_active() {
-            self.ctx
-                .emit_self(ReportStatus {}, self.config.report_status_interval);
-            self.ctx.emit(
-                ReportStatus {},
-                self.data_server.borrow().id,
-                self.config.report_status_interval,
-            );
-        }
+        self.ctx
+            .emit_self(ReportStatus {}, self.config.report_status_interval);
+        self.ctx.emit(
+            ReportStatus {},
+            self.data_server.borrow().id,
+            self.config.report_status_interval,
+        );
     }
 }
 
 impl EventHandler for Server {
     fn on(&mut self, event: Event) {
         cast!(match event.data {
-            StartServer {} => {
-                self.on_started();
+            StartServer { finish_time } => {
+                self.on_started(finish_time);
             }
             ClientRegister {
                 speed,
@@ -349,55 +339,68 @@ impl EventHandler for Server {
             } => {
                 self.on_client_register(event.src, speed, cores, memory, reliability);
             }
-            NewJobs { jobs } => {
-                for job in jobs {
-                    self.ctx.spawn(self.on_job_spec(job, event.src));
-                }
-            }
             ResultCompleted {
                 result_id,
                 is_correct,
                 claimed_credit,
             } => {
-                self.on_result_completed(result_id, is_correct, claimed_credit);
+                if self.is_active {
+                    self.on_result_completed(result_id, is_correct, claimed_credit);
+                }
             }
             ReportStatus {} => {
-                self.report_status();
+                if self.is_active {
+                    self.report_status();
+                }
             }
             WorkFetchRequest {
                 req_secs,
                 req_instances,
                 estimated_delay,
             } => {
-                self.schedule_results(
-                    event.src,
-                    WorkFetchRequest {
-                        req_secs,
-                        req_instances,
-                        estimated_delay,
-                    },
-                );
+                if self.is_active {
+                    self.schedule_results(
+                        event.src,
+                        WorkFetchRequest {
+                            req_secs,
+                            req_instances,
+                            estimated_delay,
+                        },
+                    );
+                }
             }
             ValidateResults {} => {
-                self.validate_results();
+                if self.is_active {
+                    self.validate_results();
+                }
             }
             AssimilateResults {} => {
-                self.assimilate_results();
+                if self.is_active {
+                    self.assimilate_results();
+                }
             }
             EnvokeTransitioner {} => {
-                self.envoke_transitioner();
+                if self.is_active {
+                    self.envoke_transitioner();
+                }
             }
             EnvokeFeeder {} => {
-                self.envoke_feeder();
+                if self.is_active {
+                    self.envoke_feeder();
+                }
             }
             PurgeDB {} => {
-                self.purge_db();
+                if self.is_active {
+                    self.purge_db();
+                }
             }
             DeleteFiles {} => {
-                self.delete_files();
+                if self.is_active {
+                    self.delete_files();
+                }
             }
-            AllJobsSent {} => {
-                self.received_all_jobs = true;
+            Finish {} => {
+                self.is_active = false;
             }
         })
     }
