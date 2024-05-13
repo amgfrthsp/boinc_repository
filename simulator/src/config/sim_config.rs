@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::simulator::dist_params::DistributionConfig;
+
 /// Holds raw simulation config parsed from YAML file.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 struct RawSimulationConfig {
@@ -29,6 +31,9 @@ pub struct ClientConfig {
     pub local_latency: f64,
     pub local_bandwidth: f64,
     pub report_status_interval: f64,
+    pub reliability_distribution: Option<DistributionConfig>,
+    pub availability_distribution: Option<DistributionConfig>,
+    pub unavailability_distribution: Option<DistributionConfig>,
 }
 
 /// Holds configuration of the main server

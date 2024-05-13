@@ -1,16 +1,20 @@
 // Distributions for all random hosts
 
 use rand::{prelude::Distribution, Rng};
-use rand_distr::{LogNormal, Weibull};
+use rand_distr::{LogNormal, Uniform, Weibull};
+use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DistributionConfig {
     Weibull { scale: f64, shape: f64 },
     LogNormal { mu: f64, sigma: f64 },
+    Uniform { min: f64, max: f64 },
 }
 
 pub enum SimulationDistribution {
     Weibull { distr: Weibull<f64> },
     LogNormal { distr: LogNormal<f64> },
+    Uniform { distr: Uniform<f64> },
 }
 
 impl SimulationDistribution {
@@ -22,6 +26,9 @@ impl SimulationDistribution {
             DistributionConfig::Weibull { scale, shape } => Self::Weibull {
                 distr: Weibull::new(scale, shape).unwrap(),
             },
+            DistributionConfig::Uniform { min, max } => Self::Uniform {
+                distr: Uniform::new(min, max),
+            },
         }
     }
 }
@@ -31,6 +38,7 @@ impl Distribution<f64> for SimulationDistribution {
         match self {
             Self::Weibull { distr } => distr.sample(rng),
             Self::LogNormal { distr } => distr.sample(rng),
+            Self::Uniform { distr } => distr.sample(rng),
         }
     }
 }

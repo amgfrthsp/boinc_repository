@@ -30,7 +30,7 @@ use crate::{
     },
 };
 
-use super::dist_params::{SimulationDistribution, ALL_RANDOM_HOSTS};
+use super::dist_params::{DistributionConfig, SimulationDistribution, ALL_RANDOM_HOSTS};
 
 #[derive(Clone, Serialize)]
 pub struct StartServer {
@@ -84,8 +84,18 @@ impl Simulator {
         // Add hosts from config
         for host_config in sim.sim_config.clients.clone() {
             let count = host_config.count.unwrap_or(1);
+            let reliability_dist = SimulationDistribution::new(
+                host_config
+                    .reliability_distribution
+                    .clone()
+                    .unwrap_or(DistributionConfig::Uniform { min: 0.8, max: 1. }),
+            );
             for _ in 0..count {
-                sim.add_host(host_config.clone(), &server_node_name);
+                sim.add_host(
+                    host_config.clone(),
+                    &server_node_name,
+                    sim.ctx.sample_from_distribution(&reliability_dist),
+                );
             }
         }
 
@@ -328,7 +338,7 @@ impl Simulator {
         node_name.clone()
     }
 
-    pub fn add_host(&mut self, config: ClientConfig, server_node_name: &str) {
+    pub fn add_host(&mut self, config: ClientConfig, server_node_name: &str, reliability: f64) {
         let n = self.hosts.len();
         let node_name = &format!("host{}", n);
         self.network.borrow_mut().add_node(
@@ -407,11 +417,18 @@ impl Simulator {
             rr_simulator.clone(),
             file_storage.clone(),
             self.sim.borrow_mut().create_context(client_name),
-            config,
-            // Find better distribution for reliability
-            self.ctx.gen_range(0.8..1.),
-            SimulationDistribution::new(ALL_RANDOM_HOSTS.availability),
-            SimulationDistribution::new(ALL_RANDOM_HOSTS.unavailability),
+            config.clone(),
+            reliability,
+            SimulationDistribution::new(
+                config
+                    .availability_distribution
+                    .unwrap_or(ALL_RANDOM_HOSTS.availability),
+            ),
+            SimulationDistribution::new(
+                config
+                    .unavailability_distribution
+                    .unwrap_or(ALL_RANDOM_HOSTS.unavailability),
+            ),
         );
         let client_id = self
             .sim

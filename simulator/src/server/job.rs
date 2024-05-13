@@ -60,7 +60,6 @@ pub struct ResultRequest {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code)]
 pub enum ResultState {
     Unsent,
     InProgress,
@@ -68,7 +67,6 @@ pub enum ResultState {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code)]
 pub enum ResultOutcome {
     Undefined,
     Success,

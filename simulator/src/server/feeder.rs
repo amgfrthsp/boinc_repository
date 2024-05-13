@@ -2,7 +2,6 @@ use dslab_core::context::SimulationContext;
 use dslab_core::log_info;
 use serde::Serialize;
 use std::cell::RefCell;
-use std::collections::LinkedList;
 use std::rc::Rc;
 
 use crate::config::sim_config::FeederConfig;
