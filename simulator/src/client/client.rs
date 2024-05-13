@@ -28,19 +28,12 @@ use crate::server::data_server::{
     InputFileUploadCompleted, InputFilesInquiry, OutputFileDownloadCompleted, OutputFileFromClient,
 };
 use crate::server::job::{DataServerFile, JobSpec, ResultId, ResultRequest};
+use crate::simulator::dist_params::SimulationDistribution;
 use crate::simulator::simulator::StartClient;
-use rand_distr::LogNormal;
-use statrs::distribution::Weibull;
 
 // 1 credit is given for processing GFLOPS_CREDIT_RATIO GFLOPS
 pub const GFLOPS_CREDIT_RATIO: f64 = 24. * 60. * 60. / 200.;
 pub const GFLOPS: f64 = 1_000_000_000.;
-
-pub const AVAILABILITY_WEIBULL_SHAPE: f64 = 0.393;
-pub const AVAILABILITY_WEIBULL_SCALE: f64 = 2.964;
-
-pub const UNAVAILABILITY_LOGNORMAL_P: f64 = 2.844;
-pub const UNAVAILABILITY_LOGNORMAL_MU: f64 = -0.586;
 
 #[derive(Clone, Serialize, Debug)]
 pub struct WorkFetchRequest {
@@ -107,8 +100,8 @@ pub struct Client {
     pub ctx: SimulationContext,
     config: ClientConfig,
     reliability: f64,
-    av_distribution: Weibull,
-    unav_distribution: LogNormal<f64>,
+    av_distribution: SimulationDistribution,
+    unav_distribution: SimulationDistribution,
     is_active: bool,
 }
 
@@ -124,6 +117,8 @@ impl Client {
         ctx: SimulationContext,
         config: ClientConfig,
         reliability: f64,
+        av_distribution: SimulationDistribution,
+        unav_distribution: SimulationDistribution,
     ) -> Self {
         ctx.register_key_getter_for::<CompStarted>(|e| e.id);
         ctx.register_key_getter_for::<CompFinished>(|e| e.id);
@@ -145,13 +140,8 @@ impl Client {
             ctx,
             config,
             reliability,
-            av_distribution: Weibull::new(AVAILABILITY_WEIBULL_SHAPE, AVAILABILITY_WEIBULL_SCALE)
-                .unwrap(),
-            unav_distribution: LogNormal::new(
-                UNAVAILABILITY_LOGNORMAL_MU,
-                UNAVAILABILITY_LOGNORMAL_P,
-            )
-            .unwrap(),
+            av_distribution,
+            unav_distribution,
             is_active: true,
         }
     }

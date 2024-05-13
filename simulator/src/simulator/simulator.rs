@@ -7,7 +7,6 @@ use dslab_network::Link;
 use dslab_network::{models::SharedBandwidthNetworkModel, Network};
 use dslab_storage::disk::DiskBuilder;
 use serde::Serialize;
-use std::collections::LinkedList;
 use std::rc::Rc;
 use std::{cell::RefCell, time::Instant};
 use sugars::{rc, refcell};
@@ -30,6 +29,8 @@ use crate::{
         transitioner::Transitioner, validator::Validator,
     },
 };
+
+use super::dist_params::{SimulationDistribution, ALL_RANDOM_HOSTS};
 
 #[derive(Clone, Serialize)]
 pub struct StartServer {
@@ -409,6 +410,8 @@ impl Simulator {
             config,
             // Find better distribution for reliability
             self.ctx.gen_range(0.8..1.),
+            SimulationDistribution::new(ALL_RANDOM_HOSTS.availability),
+            SimulationDistribution::new(ALL_RANDOM_HOSTS.unavailability),
         );
         let client_id = self
             .sim
