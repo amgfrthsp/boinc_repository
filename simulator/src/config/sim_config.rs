@@ -56,9 +56,6 @@ pub struct ServerConfig {
 /// Holds configuration of a job generator
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct JobGeneratorConfig {
-    pub job_count: u64,
-    pub job_batch_size: u64,
-    pub job_generation_interval: f64,
     pub flops_lower_bound: f64,
     pub flops_upper_bound: f64,
     pub memory_lower_bound: u64,
