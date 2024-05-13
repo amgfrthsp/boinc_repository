@@ -68,7 +68,6 @@ pub struct ClientRegister {
     pub speed: f64,
     pub cores: u32,
     pub memory: u64,
-    pub reliability: f64,
 }
 
 #[derive(Clone, Serialize)]
@@ -166,7 +165,6 @@ impl Client {
                 speed: self.compute.borrow().speed(),
                 cores: self.compute.borrow().cores_total(),
                 memory: self.compute.borrow().memory_total(),
-                reliability: self.reliability,
             },
             self.server_id,
             0.5,

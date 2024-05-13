@@ -2,6 +2,7 @@ use dslab_core::context::SimulationContext;
 use dslab_core::log_info;
 use serde::Serialize;
 use std::cell::RefCell;
+use std::collections::LinkedList;
 use std::rc::Rc;
 
 use crate::config::sim_config::FeederConfig;
@@ -23,7 +24,7 @@ pub struct SharedMemoryItem {
 }
 
 pub struct Feeder {
-    shared_memory: Rc<RefCell<Vec<SharedMemoryItem>>>,
+    shared_memory: Rc<RefCell<Vec<ResultId>>>,
     db: Rc<BoincDatabase>,
     ctx: SimulationContext,
     #[allow(dead_code)]
@@ -32,7 +33,7 @@ pub struct Feeder {
 
 impl Feeder {
     pub fn new(
-        shared_memory: Rc<RefCell<Vec<SharedMemoryItem>>>,
+        shared_memory: Rc<RefCell<Vec<ResultId>>>,
         db: Rc<BoincDatabase>,
         ctx: SimulationContext,
         config: FeederConfig,
@@ -46,32 +47,35 @@ impl Feeder {
     }
 
     pub fn scan_work_array(&self) {
-        log_info!(self.ctx, "feeder scanning started");
-        let mut vacant_results =
+        log_info!(
+            self.ctx,
+            "feeder started. shared memory size is {}",
+            self.shared_memory.borrow().len()
+        );
+        let vacant_results =
             BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
                 result.server_state == ResultState::Unsent && !result.in_shared_mem
             });
 
         let mut db_result_mut = self.db.result.borrow_mut();
-        let n = self.shared_memory.as_ref().borrow().len();
 
-        for i in 0..n {
-            if vacant_results.is_empty() {
-                break;
-            }
-            if self.shared_memory.borrow()[i].state == SharedMemoryItemState::Present {
-                continue;
-            }
-            let result_id = vacant_results.pop().unwrap();
+        let mut i: usize = 0;
+
+        while i < vacant_results.len()
+            && self.shared_memory.borrow().len() < self.config.shared_memory_size
+        {
+            let result_id = vacant_results[i];
             let result = db_result_mut.get_mut(&result_id).unwrap();
-            self.shared_memory.borrow_mut()[i] = SharedMemoryItem {
-                state: SharedMemoryItemState::Present,
-                result_id,
-            };
+            self.shared_memory.borrow_mut().push(result_id);
             result.in_shared_mem = true;
 
             log_info!(self.ctx, "result {} added to shared memory", result_id);
+            i += 1;
         }
-        log_info!(self.ctx, "feeder scanning finished");
+        log_info!(
+            self.ctx,
+            "feeder finished. shared memory size is {}",
+            self.shared_memory.borrow().len()
+        );
     }
 }

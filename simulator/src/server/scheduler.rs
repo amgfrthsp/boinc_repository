@@ -8,18 +8,16 @@ use std::time::Instant;
 
 use crate::client::client::{WorkFetchReply, WorkFetchRequest};
 use crate::config::sim_config::SchedulerConfig;
-use crate::server::feeder::SharedMemoryItemState;
 use crate::server::job::{ResultRequest, ResultState};
 
 use super::database::{BoincDatabase, ClientInfo};
-use super::feeder::SharedMemoryItem;
-use super::job::JobSpec;
+use super::job::{JobSpec, ResultId};
 
 pub struct Scheduler {
     server_id: Id,
     net: Rc<RefCell<Network>>,
     db: Rc<BoincDatabase>,
-    shared_memory: Rc<RefCell<Vec<SharedMemoryItem>>>,
+    shared_memory: Rc<RefCell<Vec<ResultId>>>,
     ctx: SimulationContext,
     #[allow(dead_code)]
     config: SchedulerConfig,
@@ -29,7 +27,7 @@ impl Scheduler {
     pub fn new(
         net: Rc<RefCell<Network>>,
         db: Rc<BoincDatabase>,
-        shared_memory: Rc<RefCell<Vec<SharedMemoryItem>>>,
+        shared_memory: Rc<RefCell<Vec<ResultId>>>,
         ctx: SimulationContext,
         config: SchedulerConfig,
     ) -> Self {
@@ -48,7 +46,11 @@ impl Scheduler {
     }
 
     pub fn schedule(&mut self, client_info: &ClientInfo, mut req: WorkFetchRequest) {
-        log_info!(self.ctx, "scheduling started");
+        log_info!(
+            self.ctx,
+            "scheduling started. shared memory size is {}",
+            self.shared_memory.borrow().len()
+        );
 
         let t = Instant::now();
         let mut assigned_results = Vec::new();
@@ -56,31 +58,22 @@ impl Scheduler {
 
         let mut db_workunit_mut = self.db.workunit.borrow_mut();
         let mut db_result_mut = self.db.result.borrow_mut();
-        let mut shmem_mut = self.shared_memory.borrow_mut();
 
-        let shmem_size = shmem_mut.len();
-        let start_ind = self.ctx.gen_range(0..shmem_size);
-        let mut i = (start_ind + 1) % shmem_size;
+        let shmem_clone = self.shared_memory.borrow_mut().clone();
+        self.shared_memory.borrow_mut().clear();
 
-        log_debug!(self.ctx, "Starting from index {}", i);
-
-        while i != start_ind && !(req.req_secs < 0. && req.req_instances < 0) {
-            let item = shmem_mut.get_mut(i).unwrap();
-            i += 1;
-            i %= shmem_size;
-            if item.state == SharedMemoryItemState::Empty {
+        for result_id in shmem_clone {
+            if req.req_secs < 0. && req.req_instances < 0 {
+                self.shared_memory.borrow_mut().push(result_id);
                 continue;
             }
-            if !db_result_mut.contains_key(&item.result_id) {
-                item.state = SharedMemoryItemState::Empty;
+            if !db_result_mut.contains_key(&result_id) {
                 continue;
             }
-
-            let result = db_result_mut.get_mut(&item.result_id).unwrap();
+            let result = db_result_mut.get_mut(&result_id).unwrap();
             let workunit = db_workunit_mut.get_mut(&result.workunit_id).unwrap();
 
             if result.server_state != ResultState::Unsent {
-                item.state = SharedMemoryItemState::Empty;
                 result.in_shared_mem = false;
                 continue;
             }
@@ -107,8 +100,6 @@ impl Scheduler {
                     client_info.id
                 );
 
-                item.state = SharedMemoryItemState::Empty;
-
                 req.estimated_delay += est_runtime;
                 req.req_secs -= est_runtime;
                 req.req_instances -= workunit.spec.cores as i32;
@@ -132,9 +123,10 @@ impl Scheduler {
                     report_deadline: result.report_deadline,
                 });
             } else {
-                log_debug!(self.ctx, "Skipping result {}", result.id);
+                self.shared_memory.borrow_mut().push(result_id);
             }
         }
+
         if !assigned_results.is_empty() {
             self.net.borrow_mut().send_event(
                 WorkFetchReply {
@@ -148,10 +140,11 @@ impl Scheduler {
         let schedule_duration = t.elapsed();
         log_info!(
             self.ctx,
-            "scheduling finished: assigned {} results in {:.2?} for client {}",
+            "scheduling finished: assigned {} results in {:.2?} for client {}.shared memory size is {}",
             assigned_results_cnt,
             schedule_duration,
-            client_info.id
+            client_info.id,
+            self.shared_memory.borrow().len()
         );
     }
 

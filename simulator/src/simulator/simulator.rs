@@ -7,6 +7,7 @@ use dslab_network::Link;
 use dslab_network::{models::SharedBandwidthNetworkModel, Network};
 use dslab_storage::disk::DiskBuilder;
 use serde::Serialize;
+use std::collections::LinkedList;
 use std::rc::Rc;
 use std::{cell::RefCell, time::Instant};
 use sugars::{rc, refcell};
@@ -19,6 +20,7 @@ use crate::config::sim_config::{ClientConfig, ServerConfig, SimulationConfig};
 use crate::server::db_purger::DBPurger;
 use crate::server::feeder::{Feeder, SharedMemoryItem, SharedMemoryItemState};
 use crate::server::file_deleter::FileDeleter;
+use crate::server::job::ResultId;
 use crate::server::stats::ServerStats;
 use crate::{
     client::client::Client,
@@ -234,8 +236,7 @@ impl Simulator {
             state: SharedMemoryItemState::Empty,
             result_id: 0,
         };
-        let shared_memory: Rc<RefCell<Vec<SharedMemoryItem>>> =
-            rc!(refcell!(vec![empty_slot; config.shared_memory_size]));
+        let shared_memory: Rc<RefCell<Vec<ResultId>>> = rc!(refcell!(Vec::new()));
 
         let feeder_name = &format!("{}::feeder", server_name);
         let feeder: Feeder = Feeder::new(
@@ -347,7 +348,7 @@ impl Simulator {
         let compute = rc!(refcell!(Compute::new(
             config.speed,
             config.cpus,
-            config.memory * 1024,
+            config.memory * 1000,
             self.sim.borrow_mut().create_context(&compute_name),
         )));
         self.sim

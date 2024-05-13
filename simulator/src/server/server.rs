@@ -117,13 +117,12 @@ impl Server {
 
     fn on_started(&mut self, finish_time: f64) {
         log_debug!(self.ctx, "started");
-        self.ctx.emit_self(EnvokeTransitioner {}, 3.);
+        self.ctx.emit_self(EnvokeTransitioner {}, 10.);
         self.ctx
             .emit_self(ValidateResults {}, self.config.validator.interval);
         self.ctx
             .emit_self(AssimilateResults {}, self.config.assimilator.interval);
-        self.ctx
-            .emit_self(EnvokeFeeder {}, self.config.feeder.interval);
+        self.ctx.emit_self(EnvokeFeeder {}, 10.);
         self.ctx
             .emit_self(PurgeDB {}, self.config.db_purger.interval);
         self.ctx
@@ -140,20 +139,12 @@ impl Server {
         self.ctx.emit_self(Finish {}, finish_time);
     }
 
-    fn on_client_register(
-        &mut self,
-        client_id: Id,
-        speed: f64,
-        cores: u32,
-        memory: u64,
-        reliability: f64,
-    ) {
+    fn on_client_register(&mut self, client_id: Id, speed: f64, cores: u32, memory: u64) {
         let client = ClientInfo {
             id: client_id,
             speed,
             cores,
             memory,
-            reliability,
             credit: 0.,
         };
         log_debug!(self.ctx, "registered client {:?}", client);
@@ -335,9 +326,8 @@ impl EventHandler for Server {
                 speed,
                 cores,
                 memory,
-                reliability,
             } => {
-                self.on_client_register(event.src, speed, cores, memory, reliability);
+                self.on_client_register(event.src, speed, cores, memory);
             }
             ResultCompleted {
                 result_id,

@@ -34,7 +34,6 @@ pub struct ClientConfig {
 /// Holds configuration of the main server
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct ServerConfig {
-    pub shared_memory_size: usize,
     pub local_latency: f64,
     pub local_bandwidth: f64,
     pub report_status_interval: f64,
@@ -104,6 +103,7 @@ pub struct FileDeleterConfig {
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct FeederConfig {
+    pub shared_memory_size: usize,
     pub interval: f64,
 }
 
