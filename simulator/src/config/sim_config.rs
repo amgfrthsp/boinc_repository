@@ -13,17 +13,22 @@ struct RawSimulationConfig {
     pub clients: Option<Vec<ClientConfig>>,
 }
 
-/// Holds configuration of a single client or a set of identical clients.
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+pub struct ClientResources {
+    pub count: Option<u32>,
+    pub cores: u32,
+    pub speed: f64,
+    pub memory: u64,
+    pub disk_capacity: u64,
+}
+
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct ClientConfig {
-    pub count: Option<u32>,
-    pub speed: f64,
-    pub cpus: u32,
+    pub trace: Option<String>,
+    pub resources: Option<ClientResources>,
     pub work_fetch_interval: f64,
     pub buffered_work_lower_bound: f64,
     pub buffered_work_upper_bound: f64,
-    pub memory: u64,
-    pub disk_capacity: u64,
     pub disk_read_bandwidth: f64,
     pub disk_write_bandwidth: f64,
     pub network_latency: f64,

@@ -1,3 +1,4 @@
+use csv::ReaderBuilder;
 use dslab_compute::multicore::Compute;
 use dslab_core::context::SimulationContext;
 use dslab_core::Simulation;
@@ -7,6 +8,7 @@ use dslab_network::Link;
 use dslab_network::{models::SharedBandwidthNetworkModel, Network};
 use dslab_storage::disk::DiskBuilder;
 use serde::Serialize;
+use std::fs::File;
 use std::rc::Rc;
 use std::{cell::RefCell, time::Instant};
 use sugars::{rc, refcell};
@@ -15,7 +17,7 @@ use crate::client::rr_simulation::RRSimulation;
 use crate::client::scheduler::Scheduler as ClientScheduler;
 use crate::client::storage::FileStorage;
 use crate::client::utils::Utilities;
-use crate::config::sim_config::{ClientConfig, ServerConfig, SimulationConfig};
+use crate::config::sim_config::{ClientConfig, ClientResources, ServerConfig, SimulationConfig};
 use crate::server::db_purger::DBPurger;
 use crate::server::feeder::{Feeder, SharedMemoryItem, SharedMemoryItemState};
 use crate::server::file_deleter::FileDeleter;
@@ -82,20 +84,58 @@ impl Simulator {
 
         let server_node_name = sim.add_server(sim.sim_config.server.clone());
         // Add hosts from config
-        for host_config in sim.sim_config.clients.clone() {
-            let count = host_config.count.unwrap_or(1);
+        for host_group_config in sim.sim_config.clients.clone() {
+            if host_group_config.trace.is_none() && host_group_config.resources.is_none()
+                || host_group_config.trace.is_some() && host_group_config.resources.is_some()
+            {
+                panic!("Client group should be configered either with traces or manually");
+            }
             let reliability_dist = SimulationDistribution::new(
-                host_config
+                host_group_config
                     .reliability_distribution
                     .clone()
                     .unwrap_or(DistributionConfig::Uniform { min: 0.8, max: 1. }),
             );
-            for _ in 0..count {
-                sim.add_host(
-                    host_config.clone(),
-                    &server_node_name,
-                    sim.ctx.sample_from_distribution(&reliability_dist),
-                );
+            if host_group_config.resources.is_some() {
+                let count = host_group_config
+                    .resources
+                    .clone()
+                    .unwrap()
+                    .count
+                    .unwrap_or(1);
+                for _ in 0..count {
+                    sim.add_host(
+                        host_group_config.clone(),
+                        &server_node_name,
+                        sim.ctx.sample_from_distribution(&reliability_dist),
+                    );
+                }
+            } else {
+                let trace_path = host_group_config.trace.clone().unwrap();
+                let file = File::open(trace_path).unwrap();
+                let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
+
+                for result in reader.records() {
+                    // node id, cores, speed, memory, disk_capacity
+                    let record = result.unwrap();
+
+                    let resources = ClientResources {
+                        count: Some(1),
+                        cores: record.get(1).unwrap().parse::<u32>().unwrap(),
+                        speed: record.get(2).unwrap().parse::<f64>().unwrap(),
+                        memory: record.get(3).unwrap().parse::<u64>().unwrap(),
+                        disk_capacity: record.get(4).unwrap().parse::<u64>().unwrap(),
+                    };
+
+                    let mut host_config = host_group_config.clone();
+                    host_config.resources = Some(resources);
+
+                    sim.add_host(
+                        host_config,
+                        &server_node_name,
+                        sim.ctx.sample_from_distribution(&reliability_dist),
+                    );
+                }
             }
         }
 
@@ -355,11 +395,12 @@ impl Simulator {
         );
         self.hosts.push(node_name.to_string());
         // compute
+        let resources = config.resources.clone().unwrap();
         let compute_name = format!("{}::compute", node_name);
         let compute = rc!(refcell!(Compute::new(
-            config.speed,
-            config.cpus,
-            config.memory * 1000,
+            resources.speed,
+            resources.cores,
+            resources.memory * 1000,
             self.sim.borrow_mut().create_context(&compute_name),
         )));
         self.sim
@@ -368,7 +409,7 @@ impl Simulator {
         // disk
         let disk_name = format!("{}::disk", node_name);
         let disk = rc!(refcell!(DiskBuilder::simple(
-            config.disk_capacity,
+            resources.disk_capacity,
             config.disk_read_bandwidth,
             config.disk_write_bandwidth
         )

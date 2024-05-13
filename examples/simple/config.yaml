@@ -2,14 +2,38 @@ seed: 32
 sim_duration: 1.
 
 clients:
-  - count: 100
-    speed: 10.
-    cpus: 8
+  - resources:
+      count: 10
+      speed: 10.
+      cores: 8
+      memory: 4
+      disk_capacity: 5000
     work_fetch_interval: 1300.
     buffered_work_lower_bound: 1200.
     buffered_work_upper_bound: 2400.
-    memory: 4
-    disk_capacity: 5000
+    disk_read_bandwidth: 2000.
+    disk_write_bandwidth: 2000.
+    network_latency: 0.5
+    network_bandwidth: 1000
+    local_latency: 0.0
+    local_bandwidth: 10000
+    report_status_interval: 600.
+    reliability_distribution:
+      Uniform:
+        min: 0.8
+        max: 1.
+    availability_distribution:
+      Weibull:
+        scale: 2.964
+        shape: 0.393
+    unavailability_distribution:
+      LogNormal:
+        mu: -0.586
+        sigma: 2.844
+  - trace: trace.csv
+    work_fetch_interval: 1300.
+    buffered_work_lower_bound: 1200.
+    buffered_work_upper_bound: 2400.
     disk_read_bandwidth: 2000.
     disk_write_bandwidth: 2000.
     network_latency: 0.5
