@@ -196,8 +196,7 @@ impl Client {
     fn on_resume(&mut self) {
         self.suspended = false;
 
-        let delay = if self.ctx.time() < 5. * 60. { 200. } else { 0. };
-        self.ctx.emit_self(AskForWork {}, delay);
+        self.ctx.emit_self(AskForWork {}, 0.);
 
         let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
 
@@ -594,6 +593,7 @@ impl EventHandler for Client {
                     self.on_continue_result(result_id, comp_id);
                 }
             }
+            CompPreempted { .. } => {}
             ScheduleResults {} => {
                 if self.is_active {
                     self.schedule_results();

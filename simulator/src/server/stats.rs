@@ -28,3 +28,34 @@ impl ServerStats {
         }
     }
 }
+
+/*
+Total number of clients
+Average cores
+Average speed
+Average memory
+Average disk
+
+Average hosts availability time %
+Average hosts unavailability time %
+
+Average job flops
+Average job memory
+Average job cores, delay, target_nresults, input size, output size
+
+
+Workunits waiting for canonical result
+Workunits waiting for validation
+Workunits waiting for assimilation
+Workunits waiting for deletion
+Workunits fully processed
+
+Results In progress
+Results Over by status
+Results outcome %
+Results Valid, Invalid
+
+Calculated GFLOPS
+
+Total credit granted:
+*/

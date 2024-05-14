@@ -12,6 +12,7 @@ use crate::server::job::{ResultRequest, ResultState};
 
 use super::database::{BoincDatabase, ClientInfo};
 use super::job::{JobSpec, ResultId};
+use super::stats::ServerStats;
 
 pub struct Scheduler {
     server_id: Id,
@@ -21,6 +22,7 @@ pub struct Scheduler {
     ctx: SimulationContext,
     #[allow(dead_code)]
     config: SchedulerConfig,
+    stats: Rc<RefCell<ServerStats>>,
 }
 
 impl Scheduler {
@@ -30,6 +32,7 @@ impl Scheduler {
         shared_memory: Rc<RefCell<Vec<ResultId>>>,
         ctx: SimulationContext,
         config: SchedulerConfig,
+        stats: Rc<RefCell<ServerStats>>,
     ) -> Self {
         Self {
             server_id: 0,
@@ -38,6 +41,7 @@ impl Scheduler {
             shared_memory,
             ctx,
             config,
+            stats,
         }
     }
 
@@ -114,6 +118,7 @@ impl Scheduler {
                 workunit.client_ids.push(client_info.id);
 
                 assigned_results_cnt += 1;
+                self.stats.borrow_mut().n_results_total += 1;
 
                 let mut spec = workunit.spec.clone();
                 spec.id = result.id;

@@ -218,7 +218,6 @@ impl Server {
         }
 
         let processing_time = self.ctx.time() - result.time_sent;
-        self.stats.borrow_mut().n_results_total += 1;
         self.stats.borrow_mut().results_processing_time += processing_time;
 
         let min_processing_time = self.stats.borrow_mut().min_result_processing_time;

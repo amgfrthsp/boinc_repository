@@ -157,13 +157,14 @@ impl Simulator {
             self.server_id.unwrap(),
         );
         for client_id in &self.client_ids {
-            self.ctx.emit_now(
+            self.ctx.emit(
                 StartClient {
                     server_id: self.server_id.unwrap(),
                     data_server_id: self.data_server_id.unwrap(),
                     finish_time: self.sim_config.sim_duration * 3600.,
                 },
                 *client_id,
+                10. * 60.,
             );
         }
 
@@ -305,6 +306,7 @@ impl Simulator {
             shared_memory.clone(),
             self.sim.borrow_mut().create_context(scheduler_name),
             config.scheduler.clone(),
+            stats.clone(),
         )));
         let scheduler_id = self
             .sim
