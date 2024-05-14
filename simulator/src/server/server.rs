@@ -58,7 +58,7 @@ pub struct DeleteFiles {}
 
 pub struct Server {
     // db
-    db: Rc<BoincDatabase>,
+    pub db: Rc<BoincDatabase>,
     //job_generator
     job_generator: JobGenerator,
     //daemons
@@ -75,7 +75,7 @@ pub struct Server {
     //
     pub ctx: SimulationContext,
     config: ServerConfig,
-    stats: Rc<RefCell<ServerStats>>,
+    pub stats: Rc<RefCell<ServerStats>>,
     is_active: bool,
 }
 
@@ -219,6 +219,7 @@ impl Server {
 
         let processing_time = self.ctx.time() - result.time_sent;
         self.stats.borrow_mut().results_processing_time += processing_time;
+        self.stats.borrow_mut().n_results_completed += 1;
 
         let min_processing_time = self.stats.borrow_mut().min_result_processing_time;
         self.stats.borrow_mut().min_result_processing_time = if min_processing_time == 0. {

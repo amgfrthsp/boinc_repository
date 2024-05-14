@@ -1,11 +1,13 @@
 use dslab_core::context::SimulationContext;
 use dslab_core::{log_debug, log_info};
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::config::sim_config::DBPurgerConfig;
 
 use super::database::BoincDatabase;
 use super::job::FileDeleteState;
+use super::stats::ServerStats;
 
 // TODO:
 // 1. Calculate delay based on output files size
@@ -16,11 +18,22 @@ pub struct DBPurger {
     ctx: SimulationContext,
     #[allow(dead_code)]
     config: DBPurgerConfig,
+    stats: Rc<RefCell<ServerStats>>,
 }
 
 impl DBPurger {
-    pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext, config: DBPurgerConfig) -> Self {
-        Self { db, ctx, config }
+    pub fn new(
+        db: Rc<BoincDatabase>,
+        ctx: SimulationContext,
+        config: DBPurgerConfig,
+        stats: Rc<RefCell<ServerStats>>,
+    ) -> Self {
+        Self {
+            db,
+            ctx,
+            config,
+            stats,
+        }
     }
 
     pub fn purge_database(&self) {
@@ -33,6 +46,7 @@ impl DBPurger {
 
         let mut db_workunit_mut = self.db.workunit.borrow_mut();
         let mut db_result_mut = self.db.result.borrow_mut();
+        let mut db_processed_result_mut = self.db.processed_results.borrow_mut();
 
         for wu_id in workunits_to_delete {
             let workunit = db_workunit_mut.get_mut(&wu_id).unwrap();
@@ -45,12 +59,14 @@ impl DBPurger {
                 if result.file_delete_state != FileDeleteState::Done {
                     all_results_deleted = false;
                 } else {
+                    db_processed_result_mut.insert(*result_id, result.clone());
                     db_result_mut.remove(result_id);
                     log_debug!(self.ctx, "removed result {} from database", result_id);
                 }
             }
             if all_results_deleted {
                 db_workunit_mut.remove(&wu_id);
+                self.stats.borrow_mut().n_workunits_fully_processed += 1;
                 log_debug!(self.ctx, "removed workunit {} from database", wu_id);
             }
         }

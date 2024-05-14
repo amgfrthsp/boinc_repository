@@ -125,8 +125,6 @@ impl Transitioner {
                         result.server_state = ResultState::Over;
                         result.outcome = ResultOutcome::NoReply;
                         result.validate_state = ValidateState::Invalid;
-                        self.stats.borrow_mut().n_results_invalid += 1;
-                        self.stats.borrow_mut().n_miss_deadline += 1;
                     } else {
                         res_server_state_inprogress_cnt += 1;
                         *next_transition_time =

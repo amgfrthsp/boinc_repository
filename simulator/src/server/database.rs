@@ -15,6 +15,7 @@ pub struct ClientInfo {
 pub struct BoincDatabase {
     pub workunit: RefCell<HashMap<WorkunitId, WorkunitInfo>>,
     pub result: RefCell<HashMap<ResultId, ResultInfo>>,
+    pub processed_results: RefCell<HashMap<ResultId, ResultInfo>>,
     pub clients: RefCell<HashMap<Id, ClientInfo>>,
 }
 
@@ -23,6 +24,7 @@ impl BoincDatabase {
         Self {
             workunit: refcell!(HashMap::new()),
             result: refcell!(HashMap::new()),
+            processed_results: refcell!(HashMap::new()),
             clients: refcell!(HashMap::new()),
         }
     }

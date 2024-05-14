@@ -57,7 +57,6 @@ impl Assimilator {
             );
             workunit.assimilate_state = AssimilateState::Done;
             assimilated_cnt += 1;
-            self.stats.borrow_mut().n_workunits_total += 1;
         }
         log_info!(self.ctx, "assimilated {} workunits", assimilated_cnt);
     }

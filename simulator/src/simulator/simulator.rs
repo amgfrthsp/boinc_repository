@@ -25,7 +25,7 @@ use crate::config::sim_config::{
 use crate::server::db_purger::DBPurger;
 use crate::server::feeder::{Feeder, SharedMemoryItem, SharedMemoryItemState};
 use crate::server::file_deleter::FileDeleter;
-use crate::server::job::ResultId;
+use crate::server::job::{AssimilateState, ResultId, ResultOutcome, ResultState, ValidateState};
 use crate::server::stats::ServerStats;
 use crate::{
     client::client::Client,
@@ -54,6 +54,7 @@ pub struct Simulator {
     sim: Rc<RefCell<Simulation>>,
     network: Rc<RefCell<Network>>,
     hosts: Vec<String>,
+    server: Option<Rc<RefCell<Server>>>,
     server_id: Option<Id>,
     server_stats: Option<Rc<RefCell<ServerStats>>>,
     data_server_id: Option<Id>,
@@ -81,6 +82,7 @@ impl Simulator {
             sim: rc!(refcell!(sim)),
             network: network.clone(),
             hosts: Vec::new(),
+            server: None,
             server_id: None,
             server_stats: None,
             data_server_id: None,
@@ -173,42 +175,7 @@ impl Simulator {
         let duration = t.elapsed().as_secs_f64();
 
         println!("Simulation finished");
-
-        let stats_ref = self.server_stats.clone().unwrap();
-        let stats = stats_ref.borrow();
-
-        println!("Total number of clients: {}", self.client_ids.len());
-        println!("Jobs processed: {}", stats.n_workunits_total);
-        println!("Results processed: {}", stats.n_results_total);
-        println!("Calculated {:.3} GFLOPS", stats.flops_total / GFLOPS);
-        println!(
-            "Average result processing time: {:.2}",
-            stats.results_processing_time / stats.n_results_total as f64
-        );
-        println!(
-            "Min result processing time: {:.2}",
-            stats.min_result_processing_time
-        );
-        println!(
-            "Max result processing time: {:.2}",
-            stats.max_result_processing_time
-        );
-        println!(
-            "Results missed deadline: {}, {:.2}%",
-            stats.n_miss_deadline,
-            stats.n_miss_deadline as f64 / stats.n_results_total as f64 * 100.
-        );
-        println!(
-            "Valid results: {:.2}%",
-            stats.n_results_valid as f64 / stats.n_results_total as f64 * 100.
-        );
-        println!(
-            "Invalid results: {:.2}%",
-            stats.n_results_invalid as f64 / stats.n_results_total as f64 * 100.
-        );
-        println!("Total credit granted: {:.3}", stats.total_credit_granted);
         println!("Elapsed time: {:.2}s", duration);
-        //println!("Scheduling time: {:.2}s", server.borrow().scheduling_time);
         println!(
             "Simulation speedup: {:.2}",
             self.sim.borrow_mut().time() / duration
@@ -220,6 +187,8 @@ impl Simulator {
             duration,
             event_count as f64 / duration
         );
+
+        self.print_stats();
     }
 
     pub fn add_server(&mut self, config: ServerConfig) -> String {
@@ -281,6 +250,7 @@ impl Simulator {
             database.clone(),
             self.sim.borrow_mut().create_context(db_purger_name),
             config.db_purger.clone(),
+            stats.clone(),
         );
 
         // Feeder
@@ -367,6 +337,7 @@ impl Simulator {
             config,
             stats.clone()
         )));
+        self.server = Some(server.clone());
         self.server_stats = Some(stats.clone());
         let server_id = self
             .sim
@@ -485,4 +456,200 @@ impl Simulator {
         self.network.borrow_mut().set_location(client_id, node_name);
         self.client_ids.push(client_id);
     }
+
+    pub fn print_stats(&self) {
+        let stats_ref = self.server_stats.clone().unwrap();
+        let stats = stats_ref.borrow();
+
+        println!("******** Simulation Stats **********");
+        println!("Calculated {:.3} GFLOPS", stats.flops_total / GFLOPS);
+        println!("Total credit granted: {:.3}", stats.total_credit_granted);
+        println!("");
+
+        println!("******** Clients Stats **********");
+        println!("Total number of clients: {}", self.client_ids.len());
+        println!("");
+        self.print_server_stats();
+    }
+
+    pub fn print_server_stats(&self) {
+        let server_clone = self.server.clone().unwrap();
+        let server = server_clone.borrow();
+        let stats = server.stats.borrow();
+        let workunits = server.db.workunit.borrow();
+        let results = server.db.result.borrow();
+
+        let mut n_wus_inprogress = 0;
+        let mut n_wus_stage_canonical = 0;
+        let mut n_wus_stage_assimilation = 0;
+        let mut n_wus_stage_deletion = 0;
+
+        for wu_item in workunits.iter() {
+            let wu = wu_item.1;
+            let mut at_least_one_result_sent = false;
+            for result_id in &wu.result_ids {
+                let res_opt = results.get(result_id);
+                if res_opt.is_none() {
+                    at_least_one_result_sent = true;
+                } else {
+                    let res = res_opt.unwrap();
+                    if res.server_state != ResultState::Unsent {
+                        at_least_one_result_sent = true;
+                    }
+                }
+            }
+            if !at_least_one_result_sent {
+                continue;
+            }
+            n_wus_inprogress += 1;
+
+            if wu.canonical_resultid.is_none() {
+                n_wus_stage_canonical += 1;
+                continue;
+            }
+            if wu.assimilate_state != AssimilateState::Done {
+                n_wus_stage_assimilation += 1;
+                continue;
+            }
+            n_wus_stage_deletion += 1;
+        }
+        let n_wus_total = n_wus_inprogress + stats.n_workunits_fully_processed;
+
+        println!("******** Workunit Stats **********");
+        println!("Workunits total: {}", n_wus_total);
+        println!(
+            "- Workunits waiting for canonical result: {:.2}%",
+            n_wus_stage_canonical as f64 / n_wus_total as f64 * 100.
+        );
+        println!(
+            "- Workunits waiting for assimilation: {:.2}%",
+            n_wus_stage_assimilation as f64 / n_wus_total as f64 * 100.
+        );
+        println!(
+            "- Workunits waiting for deletion: {:.2}%",
+            n_wus_stage_deletion as f64 / n_wus_total as f64 * 100.
+        );
+        println!(
+            "- Workunits fully processed: {:.2}%",
+            stats.n_workunits_fully_processed as f64 / n_wus_total as f64 * 100.
+        );
+        println!("");
+
+        println!("******** Results Stats **********");
+
+        let processed_results = server.db.processed_results.borrow();
+        let mut all_results = results.clone();
+        all_results.extend(processed_results.clone());
+
+        let mut n_res_in_progress = 0;
+        let mut n_res_over = 0;
+        let mut n_res_success = 0;
+        let mut n_res_init = 0;
+        let mut n_res_valid = 0;
+        let mut n_res_invalid = 0;
+        let mut n_res_noreply = 0;
+        let mut n_res_didntneed = 0;
+        let mut n_res_validateerror = 0;
+
+        for item in all_results.iter() {
+            let result = item.1;
+            if result.server_state == ResultState::InProgress {
+                n_res_in_progress += 1;
+                continue;
+            }
+            if result.server_state == ResultState::Over {
+                match result.outcome {
+                    ResultOutcome::Undefined => {
+                        continue;
+                    }
+                    ResultOutcome::Success => {
+                        n_res_success += 1;
+                        match result.validate_state {
+                            ValidateState::Valid => {
+                                n_res_valid += 1;
+                            }
+                            ValidateState::Invalid => {
+                                n_res_invalid += 1;
+                            }
+                            ValidateState::Init => {
+                                n_res_init += 1;
+                            }
+                        }
+                    }
+                    ResultOutcome::NoReply => {
+                        n_res_noreply += 1;
+                    }
+                    ResultOutcome::DidntNeed => {
+                        n_res_didntneed += 1;
+                    }
+                    ResultOutcome::ValidateError => {
+                        n_res_over += 1;
+                    }
+                }
+                n_res_over += 1;
+            }
+        }
+        println!("- Results in progress: {}", n_res_in_progress);
+        println!("- Results over: {}", n_res_over);
+        println!(
+            "-- Success: {:.2}%",
+            n_res_success as f64 / n_res_over as f64 * 100.
+        );
+        println!(
+            "--- Validate State = Init: {:.2}%",
+            n_res_init as f64 / n_res_success as f64 * 100.
+        );
+        println!(
+            "--- Validate State = Valid: {:.2}%, {:.2}%",
+            n_res_valid as f64 / n_res_success as f64 * 100.,
+            n_res_valid as f64 / (n_res_valid + n_res_invalid) as f64 * 100.
+        );
+        println!(
+            "--- Validate State = Invalid: {:.2}%, {:.2}%",
+            n_res_invalid as f64 / n_res_success as f64 * 100.,
+            n_res_invalid as f64 / (n_res_valid + n_res_invalid) as f64 * 100.
+        );
+        println!(
+            "-- Missed Deadline: {:.2}%",
+            n_res_noreply as f64 / n_res_over as f64 * 100.
+        );
+        println!(
+            "-- Sent to client, but server didn't need it: {:.2}%",
+            n_res_didntneed as f64 / n_res_over as f64 * 100.
+        );
+        println!(
+            "-- Validate Error: {:.2}%",
+            n_res_validateerror as f64 / n_res_over as f64 * 100.
+        );
+        println!(
+            "Average result processing time: {:.2}",
+            stats.results_processing_time / stats.n_results_completed as f64
+        );
+        println!(
+            "Min result processing time: {:.2}",
+            stats.min_result_processing_time
+        );
+        println!(
+            "Max result processing time: {:.2}",
+            stats.max_result_processing_time
+        );
+        println!("");
+    }
 }
+
+/*
+Workunits with at least one sent jobs waiting for canonical result
+Workunits waiting for assimilation
+Workunits waiting for deletion
+Workunits fully processed
+
+Results Total =
+Results In progress
+Results Over by status
+Results outcome %
+Results Valid, Invalid
+
+Calculated GFLOPS
+
+Total credit granted:
+ */

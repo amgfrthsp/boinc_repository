@@ -118,7 +118,6 @@ impl Scheduler {
                 workunit.client_ids.push(client_info.id);
 
                 assigned_results_cnt += 1;
-                self.stats.borrow_mut().n_results_total += 1;
 
                 let mut spec = workunit.spec.clone();
                 spec.id = result.id;

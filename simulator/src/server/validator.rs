@@ -88,7 +88,6 @@ impl Validator {
                         );
                         result.outcome = ResultOutcome::ValidateError;
                         result.validate_state = ValidateState::Invalid;
-                        self.stats.borrow_mut().n_results_invalid += 1;
                     } else {
                         self.validate_result(result);
                     }
@@ -154,10 +153,8 @@ impl Validator {
         if result.is_correct {
             new_state = ValidateState::Valid;
             self.grant_credit(client, result.claimed_credit);
-            self.stats.borrow_mut().n_results_valid += 1;
         } else {
             new_state = ValidateState::Invalid;
-            self.stats.borrow_mut().n_results_invalid += 1;
         }
         log_debug!(
             self.ctx,
