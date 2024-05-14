@@ -2,22 +2,22 @@ seed: 32
 sim_duration: 24.
 
 clients:
-  - count: 100000
+  - count: 100
     cpu:
-      speed: 10.
-      cores: 8
-    work_fetch_interval: 1300.
-    buffered_work_min: 1200.
-    buffered_work_max: 2400.
-    memory: 4
-    disk_capacity: 5000
-    disk_read_bandwidth: 2000.
-    disk_write_bandwidth: 2000.
-    network_latency: 0.5
-    network_bandwidth: 1000
+      speed: 5.5
+      cores: 4
+    work_fetch_interval: 3600.
+    buffered_work_min: 10800.
+    buffered_work_max: 21600.
+    memory: 8
+    disk_capacity: 128
+    disk_read_bandwidth: 400.
+    disk_write_bandwidth: 200.
+    network_latency: 40
+    network_bandwidth: 70
     local_latency: 0.0
     local_bandwidth: 10000
-    report_status_interval: 600.
+    report_status_interval: 1800.
     reliability_distribution:
       Uniform:
         min: 0.8
@@ -30,70 +30,70 @@ clients:
       LogNormal:
         mu: -0.586
         sigma: 2.844
-  - trace: trace.csv
-    work_fetch_interval: 1300.
-    buffered_work_min: 1200.
-    buffered_work_max: 2400.
-    memory: 4
-    disk_capacity: 5000
-    disk_read_bandwidth: 2000.
-    disk_write_bandwidth: 2000.
-    network_latency: 0.5
-    network_bandwidth: 1000
-    local_latency: 0.0
-    local_bandwidth: 10000
-    report_status_interval: 600.
-    reliability_distribution:
-      Uniform:
-        min: 0.8
-        max: 1.
-    availability_distribution:
-      Weibull:
-        scale: 2.964
-        shape: 0.393
-    unavailability_distribution:
-      LogNormal:
-        mu: -0.586
-        sigma: 2.844
+  # - trace: trace.csv
+  #   work_fetch_interval: 3600.
+  #   buffered_work_min: 10800.
+  #   buffered_work_max: 21600.
+  #   memory: 8
+  #   disk_capacity: 256
+  #   disk_read_bandwidth: 400.
+  #   disk_write_bandwidth: 200.
+  #   network_latency: 40
+  #   network_bandwidth: 70
+  #   local_latency: 0.0
+  #   local_bandwidth: 10000
+  #   report_status_interval: 1800.
+  #   reliability_distribution:
+  #     Uniform:
+  #       min: 0.8
+  #       max: 1.
+  #   availability_distribution:
+  #     Weibull:
+  #       scale: 2.964
+  #       shape: 0.393
+  #   unavailability_distribution:
+  #     LogNormal:
+  #       mu: -0.586
+  #       sigma: 2.844
 
 server:
   local_latency: 0.0
   local_bandwidth: 10000
-  report_status_interval: 600.
+  report_status_interval: 1800.
   assimilator:
-    interval: 600.
+    interval: 1900.
   validator:
-    interval: 300.
+    interval: 3600.
   transitioner:
-    interval: 270.
+    interval: 1800.
   db_purger:
-    interval: 1200.
+    interval: 18000.
   file_deleter:
-    interval: 1200.
+    interval: 15000.
   feeder:
     shared_memory_size: 20000
-    interval: 600.
+    interval: 1800.
   scheduler:
     interval: 0.
 
   data_server:
-    disk_capacity: 5000000
-    disk_read_bandwidth: 10000.
-    disk_write_bandwidth: 10000.
+    disk_capacity: 1000
+    disk_read_bandwidth: 700.
+    disk_write_bandwidth: 500.
   
   job_generator:
-    flops_min: 200000.
-    flops_max: 200000.
-    memory_min: 1
-    memory_max: 8
+    flops_min: 35000.
+    flops_max: 45000.
+    memory_min: 10
+    memory_max: 30
     cores_min: 1
-    cores_max: 2
-    delay_min: 36000.
-    delay_max: 36000.
+    cores_max: 1
+    delay_min: 86400.
+    delay_max: 86400.
     min_quorum_min: 1
     min_quorum_max: 3
     target_nresults_redundancy: 2
-    input_size_min: 50
-    input_size_max: 200
-    output_size_min: 50
-    output_size_max: 200
+    input_size_min: 5
+    input_size_max: 20
+    output_size_min: 5
+    output_size_max: 20

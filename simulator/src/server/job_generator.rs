@@ -34,8 +34,7 @@ impl JobGenerator {
                     .gen_range(self.config.flops_min..=self.config.flops_max),
                 memory: self
                     .ctx
-                    .gen_range(self.config.memory_min..=self.config.memory_max)
-                    * 128,
+                    .gen_range(self.config.memory_min..=self.config.memory_max),
                 cores: self
                     .ctx
                     .gen_range(self.config.cores_min..=self.config.cores_max),

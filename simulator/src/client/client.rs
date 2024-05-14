@@ -33,7 +33,6 @@ use crate::simulator::simulator::StartClient;
 
 // 1 credit is given for processing GFLOPS_CREDIT_RATIO GFLOPS
 pub const GFLOPS_CREDIT_RATIO: f64 = 24. * 60. * 60. / 200.;
-pub const GFLOPS: f64 = 1_000_000_000.;
 
 #[derive(Clone, Serialize, Debug)]
 pub struct WorkFetchRequest {
@@ -157,11 +156,11 @@ impl Client {
                 memory: self.compute.borrow().memory_total(),
             },
             self.server_id,
-            0.5,
+            0.,
         );
         self.ctx
             .emit_self(ReportStatus {}, self.config.report_status_interval);
-        self.ctx.emit_self(AskForWork {}, 10.);
+        self.ctx.emit_self(AskForWork {}, 200.);
 
         let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
 
@@ -197,7 +196,8 @@ impl Client {
     fn on_resume(&mut self) {
         self.suspended = false;
 
-        self.ctx.emit_self_now(AskForWork {});
+        let delay = if self.ctx.time() < 5. * 60. { 200. } else { 0. };
+        self.ctx.emit_self(AskForWork {}, delay);
 
         let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
 
@@ -358,7 +358,7 @@ impl Client {
 
         self.change_result(result_id, Some(ResultState::Notifying), None);
 
-        let claimed_credit = result.spec.flops / GFLOPS / GFLOPS_CREDIT_RATIO;
+        let claimed_credit = result.spec.flops / GFLOPS_CREDIT_RATIO;
         self.net.borrow_mut().send_event(
             ResultCompleted {
                 result_id,

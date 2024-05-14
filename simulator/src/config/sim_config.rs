@@ -17,7 +17,7 @@ struct RawSimulationConfig {
 pub struct ClientCpuPower {
     // number of cores
     pub cores: u32,
-    // core speed (GFLOPS/core)
+    // core speed (GFLOPs/core)
     pub speed: f64,
 }
 
@@ -43,11 +43,11 @@ pub struct ClientGroupConfig {
     pub disk_read_bandwidth: f64,
     // disk write bandwidth (MB/s)
     pub disk_write_bandwidth: f64,
-    // network latency (s)
+    // network latency (ms)
     pub network_latency: f64,
     // network bandwidth (MB/s)
     pub network_bandwidth: f64,
-    // latency within a machine (s)
+    // latency within a machine (ms)
     pub local_latency: f64,
     // bandwidth within a machine (MB/s)
     pub local_bandwidth: f64,
@@ -61,7 +61,7 @@ pub struct ClientGroupConfig {
 /// Holds configuration of the main server
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct ServerConfig {
-    // latency within a machine (s)
+    // latency within a machine (ms)
     pub local_latency: f64,
     // bandwidth within a machine (MB/s)
     pub local_bandwidth: f64,
@@ -81,7 +81,7 @@ pub struct ServerConfig {
 /// Holds configuration of a job generator
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct JobGeneratorConfig {
-    // wu flops in [flops_min; flops_max]
+    // wu flops in [flops_min; flops_max] (GFLOPs)
     pub flops_min: f64,
     pub flops_max: f64,
     // wu memory size in memory_min; memory_max] (MB)

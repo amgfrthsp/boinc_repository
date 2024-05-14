@@ -2,6 +2,8 @@ use std::cmp::Ordering;
 
 use serde::Serialize;
 
+pub const GFLOPS: f64 = 1_000_000_000.;
+
 #[derive(Clone, Serialize)]
 pub struct Finish {}
 

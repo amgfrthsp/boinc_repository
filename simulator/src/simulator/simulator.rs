@@ -18,6 +18,7 @@ use crate::client::rr_simulation::RRSimulation;
 use crate::client::scheduler::Scheduler as ClientScheduler;
 use crate::client::storage::FileStorage;
 use crate::client::utils::Utilities;
+use crate::common::GFLOPS;
 use crate::config::sim_config::{
     ClientCpuPower, ClientGroupConfig, ServerConfig, SimulationConfig,
 };
@@ -137,12 +138,8 @@ impl Simulator {
             }
         }
 
-        println!("All clients added");
-
         sim.network.borrow_mut().init_topology();
         sim.sim.borrow_mut().add_handler("net", network.clone());
-
-        println!("Network topology is inited");
 
         sim
     }
@@ -152,7 +149,7 @@ impl Simulator {
             println!("Server is not added");
             return;
         }
-        log_info!(self.ctx, "Simulation started");
+        println!("Simulation started");
         self.ctx.emit_now(
             StartServer {
                 finish_time: self.sim_config.sim_duration * 3600.,
@@ -174,14 +171,15 @@ impl Simulator {
         self.sim.borrow_mut().step_until_no_events();
         let duration = t.elapsed().as_secs_f64();
 
-        log_info!(self.ctx, "Simulation finished");
+        println!("Simulation finished");
 
         let stats_ref = self.server_stats.clone().unwrap();
         let stats = stats_ref.borrow();
 
+        println!("Total number of clients: {}", self.client_ids.len());
         println!("Jobs processed: {}", stats.n_workunits_total);
         println!("Results processed: {}", stats.n_results_total);
-        println!("Calculated {} FLOPS", stats.flops_total);
+        println!("Calculated {:.3} GFLOPS", stats.flops_total / GFLOPS);
         println!(
             "Average result processing time: {:.2}",
             stats.results_processing_time / stats.n_results_total as f64
@@ -207,7 +205,7 @@ impl Simulator {
             "Invalid results: {:.2}%",
             stats.n_results_invalid as f64 / stats.n_results_total as f64 * 100.
         );
-        println!("Total credit granted: {:.8}", stats.total_credit_granted);
+        println!("Total credit granted: {:.3}", stats.total_credit_granted);
         println!("Elapsed time: {:.2}s", duration);
         //println!("Scheduling time: {:.2}s", server.borrow().scheduling_time);
         println!(
@@ -230,7 +228,7 @@ impl Simulator {
             node_name,
             Box::new(SharedBandwidthNetworkModel::new(
                 config.local_bandwidth,
-                config.local_latency,
+                config.local_latency / 1000.,
             )),
         );
         self.hosts.push(node_name.to_string());
@@ -321,7 +319,7 @@ impl Simulator {
         // file storage
         let disk_name = format!("{}::disk", data_server_name);
         let disk = rc!(refcell!(DiskBuilder::simple(
-            config.data_server.disk_capacity,
+            config.data_server.disk_capacity * 1000,
             config.data_server.disk_read_bandwidth,
             config.data_server.disk_write_bandwidth
         )
@@ -392,13 +390,13 @@ impl Simulator {
             node_name,
             Box::new(SharedBandwidthNetworkModel::new(
                 config.local_bandwidth,
-                config.local_latency,
+                config.local_latency / 1000.,
             )),
         );
         self.network.borrow_mut().add_link(
             &node_name,
             server_node_name,
-            Link::shared(config.network_bandwidth, config.network_latency),
+            Link::shared(config.network_bandwidth, config.network_latency / 1000.),
         );
         self.hosts.push(node_name.to_string());
         // compute
@@ -416,7 +414,7 @@ impl Simulator {
         // disk
         let disk_name = format!("{}::disk", node_name);
         let disk = rc!(refcell!(DiskBuilder::simple(
-            config.disk_capacity,
+            config.disk_capacity * 1000,
             config.disk_read_bandwidth,
             config.disk_write_bandwidth
         )
