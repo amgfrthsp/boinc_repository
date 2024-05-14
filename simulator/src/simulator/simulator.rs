@@ -4,6 +4,7 @@ use dslab_core::context::SimulationContext;
 use dslab_core::Simulation;
 use dslab_core::{component::Id, log_info};
 use dslab_network::models::TopologyAwareNetworkModel;
+use dslab_network::routing::ShortestPathStarTopology;
 use dslab_network::Link;
 use dslab_network::{models::SharedBandwidthNetworkModel, Network};
 use dslab_storage::disk::DiskBuilder;
@@ -17,7 +18,9 @@ use crate::client::rr_simulation::RRSimulation;
 use crate::client::scheduler::Scheduler as ClientScheduler;
 use crate::client::storage::FileStorage;
 use crate::client::utils::Utilities;
-use crate::config::sim_config::{ClientConfig, ClientResources, ServerConfig, SimulationConfig};
+use crate::config::sim_config::{
+    ClientCpuPower, ClientGroupConfig, ServerConfig, SimulationConfig,
+};
 use crate::server::db_purger::DBPurger;
 use crate::server::feeder::{Feeder, SharedMemoryItem, SharedMemoryItemState};
 use crate::server::file_deleter::FileDeleter;
@@ -63,7 +66,10 @@ impl Simulator {
         let mut sim = Simulation::new(sim_config.seed);
 
         let network = rc!(refcell!(Network::new(
-            Box::new(TopologyAwareNetworkModel::new()),
+            Box::new(
+                TopologyAwareNetworkModel::new()
+                    .with_routing(Box::<ShortestPathStarTopology>::default())
+            ),
             sim.create_context("net"),
         )));
 
@@ -85,8 +91,8 @@ impl Simulator {
         let server_node_name = sim.add_server(sim.sim_config.server.clone());
         // Add hosts from config
         for host_group_config in sim.sim_config.clients.clone() {
-            if host_group_config.trace.is_none() && host_group_config.resources.is_none()
-                || host_group_config.trace.is_some() && host_group_config.resources.is_some()
+            if host_group_config.trace.is_none() && host_group_config.cpu.is_none()
+                || host_group_config.trace.is_some() && host_group_config.cpu.is_some()
             {
                 panic!("Client group should be configered either with traces or manually");
             }
@@ -96,13 +102,8 @@ impl Simulator {
                     .clone()
                     .unwrap_or(DistributionConfig::Uniform { min: 0.8, max: 1. }),
             );
-            if host_group_config.resources.is_some() {
-                let count = host_group_config
-                    .resources
-                    .clone()
-                    .unwrap()
-                    .count
-                    .unwrap_or(1);
+            if host_group_config.cpu.is_some() {
+                let count = host_group_config.count.clone().unwrap_or(1);
                 for _ in 0..count {
                     sim.add_host(
                         host_group_config.clone(),
@@ -116,19 +117,16 @@ impl Simulator {
                 let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
 
                 for result in reader.records() {
-                    // node id, cores, speed, memory, disk_capacity
+                    // cores, speed
                     let record = result.unwrap();
 
-                    let resources = ClientResources {
-                        count: Some(1),
-                        cores: record.get(1).unwrap().parse::<u32>().unwrap(),
-                        speed: record.get(2).unwrap().parse::<f64>().unwrap(),
-                        memory: record.get(3).unwrap().parse::<u64>().unwrap(),
-                        disk_capacity: record.get(4).unwrap().parse::<u64>().unwrap(),
+                    let resources = ClientCpuPower {
+                        cores: record.get(0).unwrap().parse::<u32>().unwrap(),
+                        speed: record.get(1).unwrap().parse::<f64>().unwrap(),
                     };
 
                     let mut host_config = host_group_config.clone();
-                    host_config.resources = Some(resources);
+                    host_config.cpu = Some(resources);
 
                     sim.add_host(
                         host_config,
@@ -139,8 +137,12 @@ impl Simulator {
             }
         }
 
+        println!("All clients added");
+
         sim.network.borrow_mut().init_topology();
         sim.sim.borrow_mut().add_handler("net", network.clone());
+
+        println!("Network topology is inited");
 
         sim
     }
@@ -378,7 +380,12 @@ impl Simulator {
         node_name.clone()
     }
 
-    pub fn add_host(&mut self, config: ClientConfig, server_node_name: &str, reliability: f64) {
+    pub fn add_host(
+        &mut self,
+        config: ClientGroupConfig,
+        server_node_name: &str,
+        reliability: f64,
+    ) {
         let n = self.hosts.len();
         let node_name = &format!("host{}", n);
         self.network.borrow_mut().add_node(
@@ -395,12 +402,12 @@ impl Simulator {
         );
         self.hosts.push(node_name.to_string());
         // compute
-        let resources = config.resources.clone().unwrap();
+        let resources = config.cpu.clone().unwrap();
         let compute_name = format!("{}::compute", node_name);
         let compute = rc!(refcell!(Compute::new(
             resources.speed,
             resources.cores,
-            resources.memory * 1000,
+            config.memory * 1000,
             self.sim.borrow_mut().create_context(&compute_name),
         )));
         self.sim
@@ -409,7 +416,7 @@ impl Simulator {
         // disk
         let disk_name = format!("{}::disk", node_name);
         let disk = rc!(refcell!(DiskBuilder::simple(
-            resources.disk_capacity,
+            config.disk_capacity,
             config.disk_read_bandwidth,
             config.disk_write_bandwidth
         )
@@ -431,8 +438,8 @@ impl Simulator {
         // RR Simulator
         let rr_simulator_name = &format!("{}::rr_simulator", client_name);
         let rr_simulator = rc!(refcell!(RRSimulation::new(
-            config.buffered_work_lower_bound,
-            config.buffered_work_upper_bound,
+            config.buffered_work_min,
+            config.buffered_work_max,
             file_storage.clone(),
             compute.clone(),
             utilities.clone(),

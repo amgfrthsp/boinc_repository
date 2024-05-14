@@ -23,7 +23,7 @@ use super::storage::FileStorage;
 use super::task::{ResultInfo, ResultState};
 use super::utils::Utilities;
 use crate::common::{Finish, ReportStatus};
-use crate::config::sim_config::ClientConfig;
+use crate::config::sim_config::ClientGroupConfig;
 use crate::server::data_server::{
     InputFileUploadCompleted, InputFilesInquiry, OutputFileDownloadCompleted, OutputFileFromClient,
 };
@@ -98,7 +98,7 @@ pub struct Client {
     scheduling_event: RefCell<Option<EventId>>,
     suspended: bool,
     pub ctx: SimulationContext,
-    config: ClientConfig,
+    config: ClientGroupConfig,
     reliability: f64,
     av_distribution: SimulationDistribution,
     unav_distribution: SimulationDistribution,
@@ -115,7 +115,7 @@ impl Client {
         rr_sim: Rc<RefCell<RRSimulation>>,
         file_storage: Rc<FileStorage>,
         ctx: SimulationContext,
-        config: ClientConfig,
+        config: ClientGroupConfig,
         reliability: f64,
         av_distribution: SimulationDistribution,
         unav_distribution: SimulationDistribution,
@@ -516,7 +516,7 @@ impl Client {
         }
         let sim_result = self.rr_sim.borrow().simulate(false);
 
-        if sim_result.work_fetch_req.estimated_delay < self.config.buffered_work_lower_bound {
+        if sim_result.work_fetch_req.estimated_delay < self.config.buffered_work_min {
             self.net.borrow_mut().send_event(
                 sim_result.work_fetch_req,
                 self.ctx.id(),

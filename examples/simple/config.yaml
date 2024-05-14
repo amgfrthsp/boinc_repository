@@ -1,16 +1,16 @@
 seed: 32
-sim_duration: 1.
+sim_duration: 24.
 
 clients:
-  - resources:
-      count: 10
+  - count: 100000
+    cpu:
       speed: 10.
       cores: 8
-      memory: 4
-      disk_capacity: 5000
     work_fetch_interval: 1300.
-    buffered_work_lower_bound: 1200.
-    buffered_work_upper_bound: 2400.
+    buffered_work_min: 1200.
+    buffered_work_max: 2400.
+    memory: 4
+    disk_capacity: 5000
     disk_read_bandwidth: 2000.
     disk_write_bandwidth: 2000.
     network_latency: 0.5
@@ -32,8 +32,10 @@ clients:
         sigma: 2.844
   - trace: trace.csv
     work_fetch_interval: 1300.
-    buffered_work_lower_bound: 1200.
-    buffered_work_upper_bound: 2400.
+    buffered_work_min: 1200.
+    buffered_work_max: 2400.
+    memory: 4
+    disk_capacity: 5000
     disk_read_bandwidth: 2000.
     disk_write_bandwidth: 2000.
     network_latency: 0.5
@@ -80,23 +82,18 @@ server:
     disk_write_bandwidth: 10000.
   
   job_generator:
-    flops_lower_bound: 20000.
-    flops_upper_bound: 20000.
-    memory_lower_bound: 1
-    memory_upper_bound: 8
-    cores_lower_bound: 1
-    cores_upper_bound: 2
-    delay_lower_bound: 36000.
-    delay_upper_bound: 36000.
-    min_quorum_lower_bound: 1
-    min_quorum_upper_bound: 3
+    flops_min: 200000.
+    flops_max: 200000.
+    memory_min: 1
+    memory_max: 8
+    cores_min: 1
+    cores_max: 2
+    delay_min: 36000.
+    delay_max: 36000.
+    min_quorum_min: 1
+    min_quorum_max: 3
     target_nresults_redundancy: 2
-    input_size_lower_bound: 50
-    input_size_upper_bound: 200
-    output_size_lower_bound: 50
-    output_size_upper_bound: 200
-    network_latency: 0.5
-    network_bandwidth: 1000
-    local_latency: 0.0
-    local_bandwidth: 10000
-    report_status_interval: 600.
+    input_size_min: 50
+    input_size_max: 200
+    output_size_min: 50
+    output_size_max: 200

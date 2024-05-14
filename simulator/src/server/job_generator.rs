@@ -26,23 +26,23 @@ impl JobGenerator {
             let job_id = (self.jobs_generated + i as u64) as JobSpecId;
             let min_quorum = self
                 .ctx
-                .gen_range(self.config.min_quorum_lower_bound..=self.config.min_quorum_upper_bound);
+                .gen_range(self.config.min_quorum_min..=self.config.min_quorum_max);
             let job = JobSpec {
                 id: job_id,
                 flops: self
                     .ctx
-                    .gen_range(self.config.flops_lower_bound..=self.config.flops_upper_bound),
+                    .gen_range(self.config.flops_min..=self.config.flops_max),
                 memory: self
                     .ctx
-                    .gen_range(self.config.memory_lower_bound..=self.config.memory_upper_bound)
+                    .gen_range(self.config.memory_min..=self.config.memory_max)
                     * 128,
                 cores: self
                     .ctx
-                    .gen_range(self.config.cores_lower_bound..=self.config.cores_upper_bound),
+                    .gen_range(self.config.cores_min..=self.config.cores_max),
                 cores_dependency: CoresDependency::Linear,
                 delay_bound: self
                     .ctx
-                    .gen_range(self.config.delay_lower_bound..=self.config.delay_upper_bound),
+                    .gen_range(self.config.delay_min..=self.config.delay_max),
                 min_quorum,
                 target_nresults: min_quorum
                     + self
@@ -50,15 +50,15 @@ impl JobGenerator {
                         .gen_range(0..=self.config.target_nresults_redundancy),
                 input_file: InputFileMetadata {
                     workunit_id: job_id, // when workunit is created on server, its id equals to job_id
-                    size: self.ctx.gen_range(
-                        self.config.input_size_lower_bound..=self.config.input_size_upper_bound,
-                    ),
+                    size: self
+                        .ctx
+                        .gen_range(self.config.input_size_min..=self.config.input_size_max),
                 },
                 output_file: OutputFileMetadata {
                     result_id: 0, // set in scheduler
-                    size: self.ctx.gen_range(
-                        self.config.output_size_lower_bound..=self.config.output_size_upper_bound,
-                    ),
+                    size: self
+                        .ctx
+                        .gen_range(self.config.output_size_min..=self.config.output_size_max),
                 },
             };
             generated_jobs.push(job);

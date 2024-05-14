@@ -10,31 +10,48 @@ struct RawSimulationConfig {
     pub seed: Option<u64>,
     pub sim_duration: Option<f64>,
     pub server: Option<ServerConfig>,
-    pub clients: Option<Vec<ClientConfig>>,
+    pub clients: Option<Vec<ClientGroupConfig>>,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
-pub struct ClientResources {
-    pub count: Option<u32>,
+pub struct ClientCpuPower {
+    // number of cores
     pub cores: u32,
+    // core speed (GFLOPS/core)
     pub speed: f64,
-    pub memory: u64,
-    pub disk_capacity: u64,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
-pub struct ClientConfig {
+pub struct ClientGroupConfig {
+    // trace file with CPU power of hosts
     pub trace: Option<String>,
-    pub resources: Option<ClientResources>,
+    // if trace is None, client group size
+    pub count: Option<u32>,
+    // if trace is None, CPU power of hosts
+    pub cpu: Option<ClientCpuPower>,
+    // work fetch interval (s)
     pub work_fetch_interval: f64,
-    pub buffered_work_lower_bound: f64,
-    pub buffered_work_upper_bound: f64,
+    // min queued jobs runtime (s)
+    pub buffered_work_min: f64,
+    // max queued jobs runtime (s)
+    pub buffered_work_max: f64,
+    // memory (GB)
+    pub memory: u64,
+    // disk capacity (GB)
+    pub disk_capacity: u64,
+    // disk read bandwidth (MB/s)
     pub disk_read_bandwidth: f64,
+    // disk write bandwidth (MB/s)
     pub disk_write_bandwidth: f64,
+    // network latency (s)
     pub network_latency: f64,
+    // network bandwidth (MB/s)
     pub network_bandwidth: f64,
+    // latency within a machine (s)
     pub local_latency: f64,
+    // bandwidth within a machine (MB/s)
     pub local_bandwidth: f64,
+    // client's statistics report interval (s)
     pub report_status_interval: f64,
     pub reliability_distribution: Option<DistributionConfig>,
     pub availability_distribution: Option<DistributionConfig>,
@@ -44,8 +61,11 @@ pub struct ClientConfig {
 /// Holds configuration of the main server
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct ServerConfig {
+    // latency within a machine (s)
     pub local_latency: f64,
+    // bandwidth within a machine (MB/s)
     pub local_bandwidth: f64,
+    // server's statistics report interval (s)
     pub report_status_interval: f64,
     pub job_generator: JobGeneratorConfig,
     pub data_server: DataServerConfig,
@@ -61,69 +81,83 @@ pub struct ServerConfig {
 /// Holds configuration of a job generator
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct JobGeneratorConfig {
-    pub flops_lower_bound: f64,
-    pub flops_upper_bound: f64,
-    pub memory_lower_bound: u64,
-    pub memory_upper_bound: u64,
-    pub cores_lower_bound: u32,
-    pub cores_upper_bound: u32,
-    pub delay_lower_bound: f64,
-    pub delay_upper_bound: f64,
-    pub min_quorum_lower_bound: u64,
-    pub min_quorum_upper_bound: u64,
+    // wu flops in [flops_min; flops_max]
+    pub flops_min: f64,
+    pub flops_max: f64,
+    // wu memory size in memory_min; memory_max] (MB)
+    pub memory_min: u64,
+    pub memory_max: u64,
+    // wu cores amount in [cores_min; cores_max]
+    pub cores_min: u32,
+    pub cores_max: u32,
+    // wu delay time in [delay_min; delay_max] (s)
+    pub delay_min: f64,
+    pub delay_max: f64,
+    // wu min_quorum value in [min_quorum_min; min_quorum_max]
+    pub min_quorum_min: u64,
+    pub min_quorum_max: u64,
+    // target_nresults = min_quorum + [0..=target_nresults_redundancy]
     pub target_nresults_redundancy: u64,
-    pub input_size_lower_bound: u64,
-    pub input_size_upper_bound: u64,
-    pub output_size_lower_bound: u64,
-    pub output_size_upper_bound: u64,
-    pub network_latency: f64,
-    pub network_bandwidth: f64,
-    pub local_latency: f64,
-    pub local_bandwidth: f64,
-    pub report_status_interval: f64,
+    // wu input size in [input_size_min; input_size_max] (MB)
+    pub input_size_min: u64,
+    pub input_size_max: u64,
+    // wu output size in [output_size_min; output_size_max] (MB)
+    pub output_size_min: u64,
+    pub output_size_max: u64,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct AssimilatorConfig {
+    // invokation interval
     pub interval: f64,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct ValidatorConfig {
+    // invokation interval (s)
     pub interval: f64,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct TransitionerConfig {
+    // invokation interval (s)
     pub interval: f64,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct DBPurgerConfig {
+    // invokation interval (s)
     pub interval: f64,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct FileDeleterConfig {
+    // invokation interval (s)
     pub interval: f64,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct FeederConfig {
+    // results shared memory size (units)
     pub shared_memory_size: usize,
+    // invokation interval (s)
     pub interval: f64,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct SchedulerConfig {
+    // invokation interval (s)
     pub interval: f64,
 }
 
 /// Holds configuration of a single data server or a set of identical data servers.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct DataServerConfig {
+    // disk capacity (GB)
     pub disk_capacity: u64,
+    // disk read bandwidth (MB/s)
     pub disk_read_bandwidth: f64,
+    // disk write bandwidth (MB/s)
     pub disk_write_bandwidth: f64,
 }
 
@@ -131,8 +165,9 @@ pub struct DataServerConfig {
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct SimulationConfig {
     pub seed: u64,
+    // Simulation duration in hours
     pub sim_duration: f64,
-    pub clients: Vec<ClientConfig>,
+    pub clients: Vec<ClientGroupConfig>,
     pub server: ServerConfig,
 }
 
