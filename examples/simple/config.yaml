@@ -1,14 +1,14 @@
-seed: 32
-sim_duration: 24.
+seed: 322
+sim_duration: 100.
 
 clients:
   - count: 5000
     cpu:
-      speed: 4.5
+      speed: 5.5
       cores: 4
-    work_fetch_interval: 3600.
-    buffered_work_min: 5800.
-    buffered_work_max: 10600.
+    work_fetch_interval: 1.
+    buffered_work_min: 2.1
+    buffered_work_max: 6.
     memory: 8
     disk_capacity: 128
     disk_read_bandwidth: 400.
@@ -17,7 +17,7 @@ clients:
     network_bandwidth: 70
     local_latency: 0.0
     local_bandwidth: 10000
-    report_status_interval: 1800.
+    report_status_interval: 1.
     reliability_distribution:
       Uniform:
         min: 0.8
@@ -59,40 +59,38 @@ clients:
 server:
   local_latency: 0.0
   local_bandwidth: 10000
-  report_status_interval: 1800.
+  report_status_interval: 0.5
   assimilator:
-    interval: 1900.
+    interval: 3.
   validator:
-    interval: 1800.
+    interval: 1.
   transitioner:
-    interval: 600.
+    interval: 0.25
   db_purger:
-    interval: 5000.
+    interval: 3.
   file_deleter:
-    interval: 5000.
+    interval: 4.
   feeder:
     shared_memory_size: 20000
-    interval: 1000.
-  scheduler:
-    interval: 0.
+    interval: 0.2
 
   data_server:
-    disk_capacity: 1000
+    disk_capacity: 1000000
     disk_read_bandwidth: 700.
     disk_write_bandwidth: 500.
   
   job_generator:
     gflops_min: 35000.
-    gflops_max: 55000.
+    gflops_max: 35000.
     memory_min: 10
     memory_max: 30
     cores_min: 1
     cores_max: 1
-    delay_min: 186400.
-    delay_max: 186400.
-    min_quorum_min: 3
-    min_quorum_max: 3
-    target_nresults_redundancy: 2
+    delay_min: 100.
+    delay_max: 100.
+    min_quorum_min: 1
+    min_quorum_max: 1
+    target_nresults_redundancy: 0
     input_size_min: 5
     input_size_max: 20
     output_size_min: 5

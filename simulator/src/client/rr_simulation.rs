@@ -76,9 +76,6 @@ impl RRSimulation {
             {
                 continue;
             }
-            if is_scheduling {
-                log_debug!(self.ctx, "Result to schedule: {:?}", result);
-            }
             if self.deadline_missed(result) {
                 result.sim_miss_deadline = true;
             }

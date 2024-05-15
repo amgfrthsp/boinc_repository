@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use dslab_compute::multicore::CoresDependency;
 
-use dslab_core::{context::SimulationContext, log_debug};
+use dslab_core::{context::SimulationContext, log_debug, log_info};
 
 use super::job::{InputFileMetadata, JobSpec, JobSpecId, OutputFileMetadata};
 use crate::config::sim_config::JobGeneratorConfig;
@@ -67,7 +67,7 @@ impl JobGenerator {
             *self.jobs_generated.borrow_mut() += generated_jobs.len() as u64;
         }
 
-        log_debug!(self.ctx, "Generated {} new workunits", generated_jobs.len());
+        log_info!(self.ctx, "Generated {} new workunits", generated_jobs.len());
 
         generated_jobs
     }

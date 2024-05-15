@@ -28,9 +28,7 @@ use crate::server::db_purger::DBPurger;
 use crate::server::feeder::{Feeder, SharedMemoryItem, SharedMemoryItemState};
 use crate::server::file_deleter::FileDeleter;
 use crate::server::job::{AssimilateState, ResultId, ResultOutcome, ResultState, ValidateState};
-use crate::server::server::{
-    EnvokeFeeder, EnvokeTransitioner, GenerateJobs, JobsGenerationCompleted,
-};
+use crate::server::server::{GenerateJobs, JobsGenerationCompleted};
 use crate::server::stats::ServerStats;
 use crate::{
     client::client::Client,
@@ -101,7 +99,7 @@ impl Simulator {
 
         let server_node_name = sim.add_server(sim.sim_config.server.clone());
         // Add hosts from config
-        for host_group_config in sim.sim_config.clients.clone() {
+        for mut host_group_config in sim.sim_config.clients.clone() {
             if host_group_config.trace.is_none() && host_group_config.cpu.is_none()
                 || host_group_config.trace.is_some() && host_group_config.cpu.is_some()
             {
@@ -114,6 +112,7 @@ impl Simulator {
                     .unwrap_or(DistributionConfig::Uniform { min: 0.8, max: 1. }),
             );
             if host_group_config.cpu.is_some() {
+                host_group_config.from_h_to_sec();
                 let count = host_group_config.count.clone().unwrap_or(1);
                 for _ in 0..count {
                     sim.add_host(
@@ -138,6 +137,7 @@ impl Simulator {
 
                     let mut host_config = host_group_config.clone();
                     host_config.cpu = Some(resources);
+                    host_config.from_h_to_sec();
 
                     sim.add_host(
                         host_config,
@@ -164,7 +164,7 @@ impl Simulator {
         self.ctx.spawn(async {
             self.ctx.emit_now(
                 GenerateJobs {
-                    cnt: self.clients.len() * 2,
+                    cnt: (self.clients.len() * 5).max(5000),
                 },
                 self.server_id.unwrap(),
             );
@@ -213,7 +213,8 @@ impl Simulator {
         self.print_stats();
     }
 
-    pub fn add_server(&mut self, config: ServerConfig) -> String {
+    pub fn add_server(&mut self, mut config: ServerConfig) -> String {
+        config.from_h_to_sec();
         let n = self.hosts.len();
         let node_name = &format!("host{}", n);
         self.network.borrow_mut().add_node(
@@ -297,7 +298,6 @@ impl Simulator {
             database.clone(),
             shared_memory.clone(),
             self.sim.borrow_mut().create_context(scheduler_name),
-            config.scheduler.clone(),
             stats.clone(),
         )));
         let scheduler_id = self

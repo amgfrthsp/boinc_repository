@@ -286,7 +286,9 @@ impl Server {
     }
 
     pub fn generate_jobs(&mut self) {
-        let new_jobs = self.job_generator.generate_jobs(WORKUNIT_BUFFER_BASE);
+        let new_jobs = self
+            .job_generator
+            .generate_jobs(self.db.clients.borrow().len());
         for job in new_jobs {
             self.ctx.spawn(self.on_job_spec(job));
         }

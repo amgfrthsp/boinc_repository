@@ -189,7 +189,7 @@ impl Transitioner {
         }
 
         if cnt > 0 {
-            log_info!(
+            log_debug!(
                 self.ctx,
                 "workunit {}: generated {} new results",
                 workunit.id,

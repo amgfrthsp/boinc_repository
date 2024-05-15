@@ -20,8 +20,6 @@ pub struct Scheduler {
     db: Rc<BoincDatabase>,
     shared_memory: Rc<RefCell<Vec<ResultId>>>,
     ctx: SimulationContext,
-    #[allow(dead_code)]
-    config: SchedulerConfig,
     stats: Rc<RefCell<ServerStats>>,
 }
 
@@ -31,7 +29,6 @@ impl Scheduler {
         db: Rc<BoincDatabase>,
         shared_memory: Rc<RefCell<Vec<ResultId>>>,
         ctx: SimulationContext,
-        config: SchedulerConfig,
         stats: Rc<RefCell<ServerStats>>,
     ) -> Self {
         Self {
@@ -40,7 +37,6 @@ impl Scheduler {
             db,
             shared_memory,
             ctx,
-            config,
             stats,
         }
     }
@@ -55,6 +51,7 @@ impl Scheduler {
             "scheduling started. shared memory size is {}",
             self.shared_memory.borrow().len()
         );
+        log_debug!(self.ctx, "work fetch request is {:?}", req);
 
         let clients_ref = self.db.clients.borrow();
         let client_info = clients_ref.get(&client_id).unwrap();
@@ -85,18 +82,10 @@ impl Scheduler {
                 continue;
             }
 
-            log_debug!(
-                self.ctx,
-                "Req secs {}; req_instances {}; estimated delay {}",
-                req.req_secs,
-                req.req_instances,
-                req.estimated_delay
-            );
-
             let est_runtime = self.get_est_runtime(&workunit.spec, client_info.speed);
 
-            if !workunit.client_ids.contains(&client_info.id)
-                && workunit.spec.cores <= client_info.cores
+            // !workunit.client_ids.contains(&client_info.id) &&
+            if workunit.spec.cores <= client_info.cores
                 && workunit.spec.memory <= client_info.memory
                 && req.estimated_delay + est_runtime < workunit.spec.delay_bound
             {

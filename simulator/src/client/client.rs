@@ -589,10 +589,6 @@ impl Client {
                 / self.compute.borrow().memory_total() as f64,
             self.disk.borrow().used_space() as f64 / self.disk.borrow().capacity() as f64
         );
-        let fs_ref = self.file_storage.results.borrow();
-        for result in fs_ref.values() {
-            log_info!(self.ctx, "Result {}: {:?}", result.spec.id, result.state);
-        }
         if self.is_active {
             self.ctx
                 .emit_self(ReportStatus {}, self.config.report_status_interval);

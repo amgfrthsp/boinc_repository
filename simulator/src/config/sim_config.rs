@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::simulator::dist_params::DistributionConfig;
+use crate::{common::HOUR, simulator::dist_params::DistributionConfig};
 
 /// Holds raw simulation config parsed from YAML file.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
@@ -58,6 +58,15 @@ pub struct ClientGroupConfig {
     pub unavailability_distribution: Option<DistributionConfig>,
 }
 
+impl ClientGroupConfig {
+    pub fn from_h_to_sec(&mut self) {
+        self.work_fetch_interval *= HOUR;
+        self.buffered_work_min *= HOUR;
+        self.buffered_work_max *= HOUR;
+        self.report_status_interval *= HOUR;
+    }
+}
+
 /// Holds configuration of the main server
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct ServerConfig {
@@ -75,7 +84,21 @@ pub struct ServerConfig {
     pub db_purger: DBPurgerConfig,
     pub file_deleter: FileDeleterConfig,
     pub feeder: FeederConfig,
-    pub scheduler: SchedulerConfig,
+}
+
+impl ServerConfig {
+    pub fn from_h_to_sec(&mut self) {
+        self.assimilator.interval *= HOUR;
+        self.feeder.interval *= HOUR;
+        self.validator.interval *= HOUR;
+        self.file_deleter.interval *= HOUR;
+        self.db_purger.interval *= HOUR;
+        self.transitioner.interval *= HOUR;
+
+        self.report_status_interval *= HOUR;
+        self.job_generator.delay_min *= HOUR;
+        self.job_generator.delay_max *= HOUR;
+    }
 }
 
 /// Holds configuration of a job generator
@@ -145,10 +168,7 @@ pub struct FeederConfig {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
-pub struct SchedulerConfig {
-    // invokation interval (s)
-    pub interval: f64,
-}
+pub struct SchedulerConfig {}
 
 /// Holds configuration of a single data server or a set of identical data servers.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
