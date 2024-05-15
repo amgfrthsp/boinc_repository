@@ -1,6 +1,6 @@
 use dslab_compute::multicore::Compute;
 use dslab_core::context::SimulationContext;
-use dslab_core::log_debug;
+use dslab_core::{log_debug, log_info};
 use serde::Serialize;
 use std::cell::RefCell;
 use std::cmp::Ordering;
@@ -113,6 +113,17 @@ impl RRSimulation {
         let mut shortfall = 0.;
         let mut busy_time = cores_release_time.peek().unwrap().0;
 
+        if !is_scheduling {
+            log_info!(
+                self.ctx,
+                "All results: {}; ready to schedule: {}; running: {}",
+                fs_results.len(),
+                results_to_schedule.len(),
+                self.file_storage.running_results.borrow().len()
+            );
+            log_info!(self.ctx, "Cores release time: {:?}", cores_release_time);
+        }
+
         for _ in 0..self.compute.borrow().cores_total() {
             let core_released = cores_release_time.pop().unwrap().0;
             busy_time = busy_time.min(core_released);
@@ -128,7 +139,7 @@ impl RRSimulation {
         };
 
         if !is_scheduling {
-            log_debug!(self.ctx, "WorkFetchRequest: {:?}", work_fetch_req);
+            log_info!(self.ctx, "WorkFetchRequest: {:?}", work_fetch_req);
         }
 
         RRSimulationResult {
@@ -167,7 +178,7 @@ impl RRSimulation {
 
         (1. - fraction_done)
             * self.compute.borrow().est_compute_time(
-                result.spec.flops,
+                result.spec.gflops,
                 result.spec.cores,
                 result.spec.cores_dependency,
             )

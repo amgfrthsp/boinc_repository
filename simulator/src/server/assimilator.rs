@@ -1,5 +1,5 @@
 use dslab_core::context::SimulationContext;
-use dslab_core::{log_debug, log_info};
+use dslab_core::log_info;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -48,7 +48,7 @@ impl Assimilator {
 
         for wu_id in workunits_to_assimilate {
             let workunit = db_workunit_mut.get_mut(&wu_id).unwrap();
-            log_debug!(
+            log_info!(
                 self.ctx,
                 "workunit {} assimilate_state {:?} -> {:?}",
                 workunit.id,
@@ -56,6 +56,7 @@ impl Assimilator {
                 AssimilateState::Done
             );
             workunit.assimilate_state = AssimilateState::Done;
+            workunit.transition_time = self.ctx.time();
             assimilated_cnt += 1;
         }
         log_info!(self.ctx, "assimilated {} workunits", assimilated_cnt);

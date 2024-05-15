@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use dslab_compute::multicore::CoresDependency;
 
-use dslab_core::{context::SimulationContext, log_debug, log_info};
+use dslab_core::{context::SimulationContext, log_info};
 
 use super::job::{InputFileMetadata, JobSpec, JobSpecId, OutputFileMetadata};
 use crate::config::sim_config::JobGeneratorConfig;
@@ -31,7 +31,7 @@ impl JobGenerator {
                 .gen_range(self.config.min_quorum_min..=self.config.min_quorum_max);
             let job = JobSpec {
                 id: job_id,
-                flops: self
+                gflops: self
                     .ctx
                     .gen_range(self.config.gflops_min..=self.config.gflops_max),
                 memory: self
@@ -50,7 +50,7 @@ impl JobGenerator {
                         .ctx
                         .gen_range(0..=self.config.target_nresults_redundancy),
                 input_file: InputFileMetadata {
-                    workunit_id: job_id, // when workunit is created on server, its id equals to job_id
+                    workunit_id: job_id,
                     size: self
                         .ctx
                         .gen_range(self.config.input_size_min..=self.config.input_size_max),

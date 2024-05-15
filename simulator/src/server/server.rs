@@ -27,7 +27,6 @@ use crate::server::data_server::InputFileDownloadCompleted;
 use crate::server::database::ClientInfo;
 use crate::simulator::simulator::StartServer;
 
-const WORKUNIT_BUFFER_BASE: usize = 1000;
 const UNSENT_RESULT_BUFFER_LOWER_BOUND: usize = 200;
 
 #[derive(Clone, Serialize)]
@@ -82,7 +81,7 @@ pub struct Server {
     // scheduler
     scheduler: Rc<RefCell<Scheduler>>,
     // data server
-    data_server: Rc<RefCell<DataServer>>,
+    pub data_server: Rc<RefCell<DataServer>>,
     //
     pub ctx: SimulationContext,
     config: ServerConfig,
@@ -127,7 +126,7 @@ impl Server {
     }
 
     pub fn on_started(&self, finish_time: f64) {
-        log_debug!(self.ctx, "started");
+        log_info!(self.ctx, "started");
         self.ctx.emit_self_now(EnvokeTransitioner {});
         self.ctx
             .emit_self(ValidateResults {}, self.config.validator.interval);
@@ -213,7 +212,7 @@ impl Server {
             return;
         }
 
-        log_debug!(self.ctx, "completed result {:?}", result_id);
+        log_info!(self.ctx, "completed result {:?}", result_id);
 
         let mut db_workunit_mut = self.db.workunit.borrow_mut();
         let mut db_result_mut = self.db.result.borrow_mut();
@@ -240,7 +239,7 @@ impl Server {
         self.stats.borrow_mut().max_result_processing_time =
             max_processing_time.max(processing_time);
 
-        self.stats.borrow_mut().flops_total += workunit.spec.flops;
+        self.stats.borrow_mut().gflops_total += workunit.spec.gflops;
     }
 
     // ******* daemons **********
@@ -304,7 +303,7 @@ impl Server {
         if self.feeder.get_shared_memory_size() < UNSENT_RESULT_BUFFER_LOWER_BOUND {
             log_debug!(
                 self.ctx,
-                "Shared memory buffer is small: {}. Generated new workunits",
+                "Shared memory size: {}. Generated new workunits",
                 self.feeder.get_shared_memory_size()
             );
             self.generate_jobs();
@@ -418,6 +417,10 @@ impl EventHandler for Server {
             }
             Finish {} => {
                 self.is_active = false;
+                log_info!(
+                    self.ctx,
+                    "Simulation finished. No new events will be processed"
+                );
             }
             CheckWorkunitBuffer {} => {
                 if self.is_active {

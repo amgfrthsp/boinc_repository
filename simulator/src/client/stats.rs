@@ -3,7 +3,7 @@ use std::ops::AddAssign;
 #[derive(Debug, Clone)]
 pub struct ClientStats {
     pub n_results_processed: u64,
-    pub flops_processed: f64,
+    pub gflops_processed: f64,
     pub results_processing_time: f64,
     pub max_result_processing_time: f64,
     pub min_result_processing_time: f64,
@@ -18,7 +18,7 @@ impl ClientStats {
     pub fn new() -> Self {
         Self {
             n_results_processed: 0,
-            flops_processed: 0.,
+            gflops_processed: 0.,
             results_processing_time: 0.,
             max_result_processing_time: 0.,
             min_result_processing_time: f64::MAX,
@@ -34,7 +34,7 @@ impl ClientStats {
 impl AddAssign for ClientStats {
     fn add_assign(&mut self, other: Self) {
         self.n_results_processed += other.n_results_processed;
-        self.flops_processed += other.flops_processed;
+        self.gflops_processed += other.gflops_processed;
         self.results_processing_time += other.results_processing_time;
         self.max_result_processing_time = self
             .max_result_processing_time

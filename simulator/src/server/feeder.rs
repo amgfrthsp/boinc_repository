@@ -72,7 +72,7 @@ impl Feeder {
             self.shared_memory.borrow_mut().push(result_id);
             result.in_shared_mem = true;
 
-            log_info!(self.ctx, "result {} added to shared memory", result_id);
+            //log_info!(self.ctx, "result {} added to shared memory", result_id);
             i += 1;
         }
         log_info!(

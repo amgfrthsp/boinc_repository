@@ -42,7 +42,7 @@ pub type JobSpecId = u64;
 #[derive(Serialize, Debug, Clone)]
 pub struct JobSpec {
     pub id: JobSpecId,
-    pub flops: f64,
+    pub gflops: f64,
     pub memory: u64,
     pub cores: u32,
     pub cores_dependency: CoresDependency,

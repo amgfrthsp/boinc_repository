@@ -1,6 +1,6 @@
 use dslab_compute::multicore::Compute;
 use dslab_core::context::SimulationContext;
-use dslab_core::{log_debug, log_info, Id};
+use dslab_core::{log_info, Id};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -51,6 +51,14 @@ impl Scheduler {
         let results_to_schedule = sim_result.results_to_schedule;
         let n_results_to_schedule = results_to_schedule.len();
 
+        log_info!(
+            self.ctx,
+            "All results: {}; ready to schedule: {}; running: {}",
+            self.file_storage.results.borrow().len(),
+            results_to_schedule.len(),
+            self.file_storage.running_results.borrow().len()
+        );
+
         let mut cores_available = self.compute.borrow().cores_total();
         let mut memory_available = self.compute.borrow().memory_total();
 
@@ -58,10 +66,16 @@ impl Scheduler {
 
         let mut fs_results = self.file_storage.results.borrow_mut();
 
+        let mut skip = 0;
+        let mut cont = 0;
+        let mut start = 0;
+        let mut preempt = 0;
+
         for result_id in results_to_schedule {
             let result = fs_results.get_mut(&result_id).unwrap();
             if result.spec.cores > cores_available || result.spec.memory > memory_available {
-                log_debug!(self.ctx, "Skip result {}", result_id);
+                //log_info!(self.ctx, "Skip result {}", result_id);
+                skip += 1;
                 continue;
             }
             cores_available -= result.spec.cores;
@@ -71,14 +85,16 @@ impl Scheduler {
                 self.ctx
                     .emit_now(ContinueResult { result_id, comp_id }, self.client_id);
 
-                log_debug!(self.ctx, "Continue result {}", result_id);
+                //log_info!(self.ctx, "Continue result {}", result_id);
+                cont += 1;
             } else if result.state == ResultState::Unstarted {
                 self.ctx
                     .emit_now(ExecuteResult { result_id }, self.client_id);
 
-                log_debug!(self.ctx, "Start result {}", result_id);
+                //log_info!(self.ctx, "Start result {}", result_id);
+                start += 1;
             } else {
-                log_debug!(
+                log_info!(
                     self.ctx,
                     "Keep result {} with state {:?} running",
                     result_id,
@@ -97,10 +113,18 @@ impl Scheduler {
                     && self.utilities.borrow().is_running_finished(result))
             {
                 self.utilities.borrow().preempt_result(result);
+                preempt += 1;
             }
         }
 
-        log_info!(self.ctx, "scheduling finished");
+        log_info!(
+            self.ctx,
+            "scheduling finished. skip {} continue {} start {} preempt {}",
+            skip,
+            cont,
+            start,
+            preempt
+        );
 
         n_results_to_schedule - scheduled_results.len() > 0
     }

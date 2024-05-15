@@ -152,7 +152,7 @@ impl Client {
     }
 
     fn on_start(&mut self, server_id: Id, data_server_id: Id, finish_time: f64) {
-        log_debug!(self.ctx, "started");
+        log_info!(self.ctx, "started");
         self.finish_time = finish_time;
         self.ctx.emit_self(Finish {}, finish_time);
 
@@ -216,6 +216,7 @@ impl Client {
         self.suspended = false;
 
         self.ctx.emit_self(AskForWork {}, 0.);
+        self.ctx.emit_self(ScheduleResults {}, 0.);
 
         let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
 
@@ -383,7 +384,7 @@ impl Client {
 
         self.change_result(result_id, Some(ResultState::Notifying), None);
 
-        let claimed_credit = result.spec.flops / GFLOPS_CREDIT_RATIO;
+        let claimed_credit = result.spec.gflops / GFLOPS_CREDIT_RATIO;
         self.net.borrow_mut().send_event(
             ResultCompleted {
                 result_id,
@@ -422,7 +423,7 @@ impl Client {
             max_processing_time.max(processing_time);
 
         self.stats.borrow_mut().n_results_processed += 1;
-        self.stats.borrow_mut().flops_processed += result.spec.flops;
+        self.stats.borrow_mut().gflops_processed += result.spec.gflops;
         if self.ctx.time() > result.report_deadline {
             self.stats.borrow_mut().n_miss_deadline += 1;
         }
@@ -436,7 +437,7 @@ impl Client {
     ) {
         let mut fs_results = self.file_storage.results.borrow_mut();
         let result = fs_results.get_mut(&result_id).unwrap();
-        log_debug!(
+        log_info!(
             self.ctx,
             "Result {} state: {:?} -> {:?}",
             result_id,
@@ -512,7 +513,7 @@ impl Client {
 
     async fn process_compute(&self, result_id: ResultId, spec: JobSpec) {
         let comp_id = self.compute.borrow_mut().run(
-            spec.flops,
+            spec.gflops,
             spec.memory,
             spec.cores,
             spec.cores,
@@ -650,6 +651,10 @@ impl EventHandler for Client {
             }
             Finish {} => {
                 self.is_active = false;
+                log_info!(
+                    self.ctx,
+                    "Simulation finished. No new events will be processed"
+                );
             }
         })
     }

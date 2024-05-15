@@ -20,7 +20,7 @@ use crate::client::scheduler::Scheduler as ClientScheduler;
 use crate::client::stats::ClientStats;
 use crate::client::storage::FileStorage;
 use crate::client::utils::Utilities;
-use crate::common::GFLOPS;
+use crate::common::{GFLOPS, HOUR};
 use crate::config::sim_config::{
     ClientCpuPower, ClientGroupConfig, ServerConfig, SimulationConfig,
 };
@@ -59,10 +59,6 @@ pub struct Simulator {
     hosts: Vec<String>,
     server: Option<Rc<RefCell<Server>>>,
     clients: Vec<Rc<RefCell<Client>>>,
-    server_id: Option<Id>,
-    server_stats: Option<Rc<RefCell<ServerStats>>>,
-    data_server_id: Option<Id>,
-    client_ids: Vec<Id>,
     ctx: SimulationContext,
     sim_config: SimulationConfig,
 }
@@ -89,10 +85,6 @@ impl Simulator {
             hosts: Vec::new(),
             server: None,
             clients: Vec::new(),
-            server_id: None,
-            server_stats: None,
-            data_server_id: None,
-            client_ids: Vec::new(),
             ctx,
             sim_config,
         };
@@ -155,19 +147,17 @@ impl Simulator {
     }
 
     pub fn run(&mut self) {
-        if self.server_id.is_none() {
+        if self.server.is_none() {
             println!("Server is not added");
             return;
         }
         println!("Simulation started");
 
+        let server = self.server.clone().unwrap();
+
         self.ctx.spawn(async {
-            self.ctx.emit_now(
-                GenerateJobs {
-                    cnt: (self.clients.len() * 5).max(5000),
-                },
-                self.server_id.unwrap(),
-            );
+            self.ctx
+                .emit_now(GenerateJobs { cnt: 100000 }, server.borrow().ctx.id());
 
             self.ctx.recv_event::<JobsGenerationCompleted>().await;
 
@@ -177,17 +167,17 @@ impl Simulator {
                 StartServer {
                     finish_time: self.sim_config.sim_duration * 3600.,
                 },
-                self.server_id.unwrap(),
+                server.borrow().ctx.id(),
             );
 
-            for client_id in &self.client_ids {
+            for client in &self.clients {
                 self.ctx.emit_now(
                     StartClient {
-                        server_id: self.server_id.unwrap(),
-                        data_server_id: self.data_server_id.unwrap(),
+                        server_id: server.borrow().ctx.id(),
+                        data_server_id: server.borrow().data_server.borrow().ctx.id(),
                         finish_time: self.sim_config.sim_duration * 3600.,
                     },
-                    *client_id,
+                    client.borrow().ctx.id(),
                 );
             }
         });
@@ -330,7 +320,6 @@ impl Simulator {
             .sim
             .borrow_mut()
             .add_handler(data_server_name, data_server.clone());
-        self.data_server_id = Some(data_server_id);
         self.network
             .borrow_mut()
             .set_location(data_server_id, node_name);
@@ -360,12 +349,10 @@ impl Simulator {
             stats.clone()
         )));
         self.server = Some(server.clone());
-        self.server_stats = Some(stats.clone());
         let server_id = self
             .sim
             .borrow_mut()
             .add_handler(server_name, server.clone());
-        self.server_id = Some(server_id);
         self.network.borrow_mut().set_location(server_id, node_name);
 
         node_name.clone()
@@ -479,16 +466,16 @@ impl Simulator {
             .add_handler(client_name, client.clone());
         self.network.borrow_mut().set_location(client_id, node_name);
         self.clients.push(client.clone());
-        self.client_ids.push(client_id);
     }
 
     pub fn print_stats(&self) {
-        let stats_ref = self.server_stats.clone().unwrap();
-        let stats = stats_ref.borrow();
+        let server_clone = self.server.clone().unwrap();
+        let server = server_clone.borrow();
+        let stats = server.stats.borrow();
 
         println!("");
         println!("******** Simulation Stats **********");
-        println!("Calculated {:.3} GFLOPS", stats.flops_total / GFLOPS);
+        println!("Calculated {:.3} PFLOPS", stats.gflops_total / 1_000_000.);
         println!("Total credit granted: {:.3}", stats.total_credit_granted);
         println!("");
 
@@ -648,16 +635,16 @@ impl Simulator {
             n_res_validateerror as f64 / n_res_over as f64 * 100.
         );
         println!(
-            "Average result processing time: {:.2}",
-            stats.results_processing_time / stats.n_results_completed as f64
+            "Average result processing time: {:.2} h",
+            stats.results_processing_time / stats.n_results_completed as f64 / HOUR
         );
         println!(
-            "Min result processing time: {:.2}",
-            stats.min_result_processing_time
+            "Min result processing time: {:.2} h",
+            stats.min_result_processing_time / HOUR
         );
         println!(
-            "Max result processing time: {:.2}",
-            stats.max_result_processing_time
+            "Max result processing time: {:.2} h",
+            stats.max_result_processing_time / HOUR
         );
         println!("");
     }
@@ -714,7 +701,7 @@ impl Simulator {
         );
         println!(
             "- Average GFLOPs processed: {:.2}",
-            (total_stats.flops_processed as f64 / n_clients as f64) / GFLOPS
+            (total_stats.gflops_processed as f64 / n_clients as f64) / GFLOPS
         );
         println!(
             "- Average results processed: {:.2}",

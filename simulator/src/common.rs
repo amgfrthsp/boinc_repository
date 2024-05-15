@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::cmp::{Ordering, Reverse};
 
 use serde::Serialize;
 
@@ -39,7 +39,10 @@ impl Ord for FloatWrapper {
         } else if other.0.is_nan() {
             Ordering::Less
         } else {
-            self.0.partial_cmp(&other.0).unwrap_or(Ordering::Equal)
+            self.0
+                .partial_cmp(&other.0)
+                .unwrap_or(Ordering::Equal)
+                .reverse()
         }
     }
 }

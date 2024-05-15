@@ -80,7 +80,7 @@ impl Validator {
                         continue;
                     }
                     if canonical_result_delete_state == FileDeleteState::Done {
-                        log_debug!(
+                        log_info!(
                             self.ctx,
                             "result {} (outcome {:?}, validate_state {:?}) -> ({:?}, {:?})",
                             result.id,
@@ -114,7 +114,7 @@ impl Validator {
                 log_debug!(self.ctx, "found {} valid results", n_valid_results);
                 if n_valid_results >= (workunit.spec.min_quorum / 2 + 1) as usize {
                     if potential_canonical_result_id.is_some() {
-                        log_debug!(
+                        log_info!(
                             self.ctx,
                             "found canonical result {} for workunit {}",
                             potential_canonical_result_id.unwrap(),
@@ -125,7 +125,7 @@ impl Validator {
                         for result_id in &workunit.result_ids {
                             let result = db_result_mut.get_mut(result_id).unwrap();
                             if result.server_state == ResultState::Unsent {
-                                log_debug!(
+                                log_info!(
                                     self.ctx,
                                     "result {} (server_state {:?}, outcome {:?}) -> ({:?}, {:?})",
                                     result.id,
@@ -160,7 +160,7 @@ impl Validator {
         } else {
             new_state = ValidateState::Invalid;
         }
-        log_debug!(
+        log_info!(
             self.ctx,
             "result {} validate_state {:?} -> {:?}",
             result.id,
@@ -171,7 +171,7 @@ impl Validator {
     }
 
     pub fn grant_credit(&self, client: &mut ClientInfo, credit: f64) {
-        log_debug!(
+        log_info!(
             self.ctx,
             "Client {} credit update: {} + {} = {}",
             client.id,

@@ -7,7 +7,6 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use crate::client::client::{WorkFetchReply, WorkFetchRequest};
-use crate::config::sim_config::SchedulerConfig;
 use crate::server::job::{ResultRequest, ResultState};
 
 use super::database::BoincDatabase;
@@ -20,6 +19,7 @@ pub struct Scheduler {
     db: Rc<BoincDatabase>,
     shared_memory: Rc<RefCell<Vec<ResultId>>>,
     ctx: SimulationContext,
+    #[allow(dead_code)]
     stats: Rc<RefCell<ServerStats>>,
 }
 
@@ -146,7 +146,7 @@ impl Scheduler {
 
     // FIX: take into account I/O
     pub fn get_est_runtime(&self, spec: &JobSpec, client_speed: f64) -> f64 {
-        spec.flops / client_speed / spec.cores_dependency.speedup(spec.cores)
+        spec.gflops / client_speed / spec.cores_dependency.speedup(spec.cores)
     }
 }
 

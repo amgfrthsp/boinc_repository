@@ -51,7 +51,7 @@ pub struct DataServer {
     input_files: RefCell<HashMap<WorkunitId, InputFileMetadata>>, // workunit_id -> input files
     output_files: RefCell<HashMap<ResultId, OutputFileMetadata>>, // result_id -> output files
     is_active: bool,
-    ctx: SimulationContext,
+    pub ctx: SimulationContext,
     #[allow(dead_code)]
     config: DataServerConfig,
     #[allow(dead_code)]
@@ -169,22 +169,11 @@ impl DataServer {
             self.process_disk_read(file.clone())
         );
 
-        // log_debug!(self.ctx, "file upload finished {:?}", file);
-
-        // if retry.contains(file_id) {retry in x} else:
-
         match file {
-            DataServerFile::Input(input_file) => {
+            DataServerFile::Input(..) => {
                 self.ctx.emit_now(InputFileUploadCompleted { ref_id }, to);
-
-                // log_debug!(
-                //     self.ctx,
-                //     "uploaded input file for workunit {} to client {}",
-                //     input_file.workunit_id,
-                //     to,
-                // );
             }
-            DataServerFile::Output(_output_file) => {}
+            DataServerFile::Output(..) => {}
         }
     }
 

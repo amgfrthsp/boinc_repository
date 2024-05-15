@@ -23,6 +23,7 @@ pub struct Transitioner {
     ctx: SimulationContext,
     #[allow(dead_code)]
     config: TransitionerConfig,
+    #[allow(dead_code)]
     stats: Rc<RefCell<ServerStats>>,
 }
 
@@ -113,7 +114,7 @@ impl Transitioner {
                 }
                 ResultState::InProgress => {
                     if current_time >= result.report_deadline {
-                        log_debug!(
+                        log_info!(
                             self.ctx,
                             "result {} server state {:?}, outcome {:?} -> ({:?}, {:?})",
                             result.id,
@@ -235,7 +236,7 @@ impl Transitioner {
                 && delete_output_files
                 && result.file_delete_state == FileDeleteState::Init
             {
-                log_debug!(
+                log_info!(
                     self.ctx,
                     "result {} file delete state {:?} -> {:?}; wu assimilate_state {:?}",
                     result.id,
@@ -256,7 +257,7 @@ impl Transitioner {
                 .unwrap();
 
             if canonical_result.file_delete_state == FileDeleteState::Init {
-                log_debug!(
+                log_info!(
                     self.ctx,
                     "canonical result {} file delete state {:?} -> {:?}; wu assimilate_state {:?}",
                     canonical_result.id,
@@ -272,7 +273,7 @@ impl Transitioner {
             && workunit.assimilate_state == AssimilateState::Done
             && workunit.file_delete_state == FileDeleteState::Init
         {
-            log_debug!(
+            log_info!(
                 self.ctx,
                 "workunit {} file delete state {:?} -> {:?}",
                 workunit.id,
@@ -285,14 +286,14 @@ impl Transitioner {
 
     fn print_statistics_for_workunit(&self, workunit: &WorkunitInfo) {
         let db_result_mut = self.db.result.borrow_mut();
-        log_debug!(
+        log_info!(
             self.ctx,
             "workunit {}: need_validate: {}; canonical_result_id: {:?}",
             workunit.id,
             workunit.need_validate,
             workunit.canonical_resultid
         );
-        log_debug!(
+        log_info!(
             self.ctx,
             "workunit {}: file_delete_state: {:?}; assimilate_state: {:?}",
             workunit.id,
@@ -301,7 +302,7 @@ impl Transitioner {
         );
         for result_id in &workunit.result_ids {
             if !db_result_mut.contains_key(result_id) {
-                log_debug!(
+                log_info!(
                     self.ctx,
                     "workunit {} result {}: deleted from database",
                     workunit.id,
@@ -309,7 +310,7 @@ impl Transitioner {
                 );
             } else {
                 let result = db_result_mut.borrow().get(result_id).unwrap();
-                log_debug!(
+                log_info!(
                     self.ctx,
                     "workunit {} result {} {:?}: {:?}",
                     workunit.id,
