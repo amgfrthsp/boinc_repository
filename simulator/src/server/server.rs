@@ -27,8 +27,8 @@ use crate::server::data_server::InputFileDownloadCompleted;
 use crate::server::database::ClientInfo;
 use crate::simulator::simulator::StartServer;
 
-const WORKUNIT_BUFFER_BASE: usize = 5000;
-const WORKUNIT_BUFFER_LOWER_BOUND: usize = 100;
+const WORKUNIT_BUFFER_BASE: usize = 1000;
+const UNSENT_RESULT_BUFFER_LOWER_BOUND: usize = 200;
 
 #[derive(Clone, Serialize)]
 pub struct ServerRegister {}
@@ -55,6 +55,17 @@ pub struct PurgeDB {}
 
 #[derive(Clone, Serialize)]
 pub struct DeleteFiles {}
+
+#[derive(Clone, Serialize)]
+pub struct CheckWorkunitBuffer {}
+
+#[derive(Clone, Serialize)]
+pub struct GenerateJobs {
+    pub cnt: usize,
+}
+
+#[derive(Clone, Serialize)]
+pub struct JobsGenerationCompleted {}
 
 pub struct Server {
     // db
@@ -115,14 +126,14 @@ impl Server {
         }
     }
 
-    fn on_started(&mut self, finish_time: f64) {
+    pub fn on_started(&self, finish_time: f64) {
         log_debug!(self.ctx, "started");
-        self.ctx.emit_self(EnvokeTransitioner {}, 10.);
+        self.ctx.emit_self_now(EnvokeTransitioner {});
         self.ctx
             .emit_self(ValidateResults {}, self.config.validator.interval);
         self.ctx
             .emit_self(AssimilateResults {}, self.config.assimilator.interval);
-        self.ctx.emit_self(EnvokeFeeder {}, 10.);
+        self.ctx.emit_self_now(EnvokeFeeder {});
         self.ctx
             .emit_self(PurgeDB {}, self.config.db_purger.interval);
         self.ctx
@@ -134,6 +145,7 @@ impl Server {
             self.data_server.borrow().id,
             self.config.report_status_interval,
         );
+        self.ctx.emit_self(CheckWorkunitBuffer {}, 1500.);
         self.ctx
             .emit(Finish {}, self.data_server.borrow().id, finish_time);
         self.ctx.emit_self(Finish {}, finish_time);
@@ -222,11 +234,8 @@ impl Server {
         self.stats.borrow_mut().n_results_completed += 1;
 
         let min_processing_time = self.stats.borrow_mut().min_result_processing_time;
-        self.stats.borrow_mut().min_result_processing_time = if min_processing_time == 0. {
-            processing_time
-        } else {
-            min_processing_time.min(processing_time)
-        };
+        self.stats.borrow_mut().min_result_processing_time =
+            min_processing_time.min(processing_time);
         let max_processing_time = self.stats.borrow_mut().max_result_processing_time;
         self.stats.borrow_mut().max_result_processing_time =
             max_processing_time.max(processing_time);
@@ -243,9 +252,7 @@ impl Server {
     }
 
     fn schedule_results(&mut self, client_id: Id, req: WorkFetchRequest) {
-        let clients_ref = self.db.clients.borrow();
-        let client_info = clients_ref.get(&client_id).unwrap();
-        self.scheduler.borrow_mut().schedule(client_info, req);
+        self.scheduler.borrow_mut().schedule(client_id, req);
     }
 
     fn envoke_transitioner(&mut self) {
@@ -274,9 +281,6 @@ impl Server {
 
     fn purge_db(&mut self) {
         self.db_purger.purge_database();
-        if self.db.workunit.borrow().len() < WORKUNIT_BUFFER_LOWER_BOUND {
-            self.generate_jobs();
-        }
         self.ctx
             .emit_self(PurgeDB {}, self.config.db_purger.interval);
     }
@@ -286,6 +290,24 @@ impl Server {
         for job in new_jobs {
             self.ctx.spawn(self.on_job_spec(job));
         }
+    }
+
+    pub async fn generate_jobs_and_wait(&self, cnt: usize, simulation_id: Id) {
+        let new_jobs = self.job_generator.generate_jobs(cnt);
+        futures::future::join_all(new_jobs.into_iter().map(|j| self.on_job_spec(j))).await;
+        self.ctx.emit_now(JobsGenerationCompleted {}, simulation_id);
+    }
+
+    pub fn check_wu_buffer(&mut self) {
+        if self.feeder.get_shared_memory_size() < UNSENT_RESULT_BUFFER_LOWER_BOUND {
+            log_debug!(
+                self.ctx,
+                "Shared memory buffer is small: {}. Generated new workunits",
+                self.feeder.get_shared_memory_size()
+            );
+            self.generate_jobs();
+        }
+        self.ctx.emit_self(CheckWorkunitBuffer {}, 1500.);
     }
 
     // ******* utilities & statistics *********
@@ -319,6 +341,9 @@ impl Server {
 impl EventHandler for Server {
     fn on(&mut self, event: Event) {
         cast!(match event.data {
+            GenerateJobs { cnt } => {
+                self.ctx.spawn(self.generate_jobs_and_wait(cnt, event.src));
+            }
             StartServer { finish_time } => {
                 self.on_started(finish_time);
             }
@@ -391,6 +416,11 @@ impl EventHandler for Server {
             }
             Finish {} => {
                 self.is_active = false;
+            }
+            CheckWorkunitBuffer {} => {
+                if self.is_active {
+                    self.check_wu_buffer();
+                }
             }
         })
     }

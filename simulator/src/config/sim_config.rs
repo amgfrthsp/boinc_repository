@@ -81,9 +81,9 @@ pub struct ServerConfig {
 /// Holds configuration of a job generator
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct JobGeneratorConfig {
-    // wu flops in [flops_min; flops_max] (GFLOPs)
-    pub flops_min: f64,
-    pub flops_max: f64,
+    // wu size in [gflops_min; gflops_max] (GFLOPs)
+    pub gflops_min: f64,
+    pub gflops_max: f64,
     // wu memory size in memory_min; memory_max] (MB)
     pub memory_min: u64,
     pub memory_max: u64,

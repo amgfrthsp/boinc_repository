@@ -1,13 +1,14 @@
 use csv::ReaderBuilder;
 use dslab_compute::multicore::Compute;
+use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
-use dslab_core::Simulation;
-use dslab_core::{component::Id, log_info};
+use dslab_core::{log_info, Event, EventHandler, Simulation};
 use dslab_network::models::TopologyAwareNetworkModel;
 use dslab_network::routing::ShortestPathStarTopology;
 use dslab_network::Link;
 use dslab_network::{models::SharedBandwidthNetworkModel, Network};
 use dslab_storage::disk::DiskBuilder;
+use dslab_storage::storage::Storage;
 use serde::Serialize;
 use std::fs::File;
 use std::rc::Rc;
@@ -16,6 +17,7 @@ use sugars::{rc, refcell};
 
 use crate::client::rr_simulation::RRSimulation;
 use crate::client::scheduler::Scheduler as ClientScheduler;
+use crate::client::stats::ClientStats;
 use crate::client::storage::FileStorage;
 use crate::client::utils::Utilities;
 use crate::common::GFLOPS;
@@ -26,6 +28,9 @@ use crate::server::db_purger::DBPurger;
 use crate::server::feeder::{Feeder, SharedMemoryItem, SharedMemoryItemState};
 use crate::server::file_deleter::FileDeleter;
 use crate::server::job::{AssimilateState, ResultId, ResultOutcome, ResultState, ValidateState};
+use crate::server::server::{
+    EnvokeFeeder, EnvokeTransitioner, GenerateJobs, JobsGenerationCompleted,
+};
 use crate::server::stats::ServerStats;
 use crate::{
     client::client::Client,
@@ -55,6 +60,7 @@ pub struct Simulator {
     network: Rc<RefCell<Network>>,
     hosts: Vec<String>,
     server: Option<Rc<RefCell<Server>>>,
+    clients: Vec<Rc<RefCell<Client>>>,
     server_id: Option<Id>,
     server_stats: Option<Rc<RefCell<ServerStats>>>,
     data_server_id: Option<Id>,
@@ -77,12 +83,14 @@ impl Simulator {
 
         // context for starting server and clients
         let ctx = sim.create_context("ctx");
+        sim.add_handler("ctx", rc!(refcell!(EmptyEventHandler {})));
 
         let mut sim = Self {
             sim: rc!(refcell!(sim)),
             network: network.clone(),
             hosts: Vec::new(),
             server: None,
+            clients: Vec::new(),
             server_id: None,
             server_stats: None,
             data_server_id: None,
@@ -152,23 +160,37 @@ impl Simulator {
             return;
         }
         println!("Simulation started");
-        self.ctx.emit_now(
-            StartServer {
-                finish_time: self.sim_config.sim_duration * 3600.,
-            },
-            self.server_id.unwrap(),
-        );
-        for client_id in &self.client_ids {
-            self.ctx.emit(
-                StartClient {
-                    server_id: self.server_id.unwrap(),
-                    data_server_id: self.data_server_id.unwrap(),
+
+        self.ctx.spawn(async {
+            self.ctx.emit_now(
+                GenerateJobs {
+                    cnt: self.clients.len() * 2,
+                },
+                self.server_id.unwrap(),
+            );
+
+            self.ctx.recv_event::<JobsGenerationCompleted>().await;
+
+            log_info!(self.ctx, "Initial workunits added to server");
+
+            self.ctx.emit_now(
+                StartServer {
                     finish_time: self.sim_config.sim_duration * 3600.,
                 },
-                *client_id,
-                10. * 60.,
+                self.server_id.unwrap(),
             );
-        }
+
+            for client_id in &self.client_ids {
+                self.ctx.emit_now(
+                    StartClient {
+                        server_id: self.server_id.unwrap(),
+                        data_server_id: self.data_server_id.unwrap(),
+                        finish_time: self.sim_config.sim_duration * 3600.,
+                    },
+                    *client_id,
+                );
+            }
+        });
 
         let t = Instant::now();
         self.sim.borrow_mut().step_until_no_events();
@@ -346,8 +368,6 @@ impl Simulator {
         self.server_id = Some(server_id);
         self.network.borrow_mut().set_location(server_id, node_name);
 
-        server.borrow_mut().generate_jobs();
-
         node_name.clone()
     }
 
@@ -372,6 +392,9 @@ impl Simulator {
             Link::shared(config.network_bandwidth, config.network_latency / 1000.),
         );
         self.hosts.push(node_name.to_string());
+
+        //stats
+        let stats = rc!(refcell!(ClientStats::new()));
         // compute
         let resources = config.cpu.clone().unwrap();
         let compute_name = format!("{}::compute", node_name);
@@ -427,7 +450,7 @@ impl Simulator {
             self.sim.borrow_mut().create_context(scheduler_name),
         );
 
-        let client = Client::new(
+        let client = rc!(refcell!(Client::new(
             compute,
             disk,
             self.network.clone(),
@@ -448,12 +471,14 @@ impl Simulator {
                     .unavailability_distribution
                     .unwrap_or(ALL_RANDOM_HOSTS.unavailability),
             ),
-        );
+            stats.clone(),
+        )));
         let client_id = self
             .sim
             .borrow_mut()
-            .add_handler(client_name, rc!(refcell!(client)));
+            .add_handler(client_name, client.clone());
         self.network.borrow_mut().set_location(client_id, node_name);
+        self.clients.push(client.clone());
         self.client_ids.push(client_id);
     }
 
@@ -461,15 +486,14 @@ impl Simulator {
         let stats_ref = self.server_stats.clone().unwrap();
         let stats = stats_ref.borrow();
 
+        println!("");
         println!("******** Simulation Stats **********");
         println!("Calculated {:.3} GFLOPS", stats.flops_total / GFLOPS);
         println!("Total credit granted: {:.3}", stats.total_credit_granted);
         println!("");
 
-        println!("******** Clients Stats **********");
-        println!("Total number of clients: {}", self.client_ids.len());
-        println!("");
         self.print_server_stats();
+        self.print_client_stats();
     }
 
     pub fn print_server_stats(&self) {
@@ -526,11 +550,13 @@ impl Simulator {
             n_wus_stage_assimilation as f64 / n_wus_total as f64 * 100.
         );
         println!(
-            "- Workunits waiting for deletion: {:.2}%",
+            "- Workunits waiting for deletion: {} = {:.2}%",
+            n_wus_stage_deletion,
             n_wus_stage_deletion as f64 / n_wus_total as f64 * 100.
         );
         println!(
-            "- Workunits fully processed: {:.2}%",
+            "- Workunits fully processed: {} = {:.2}%",
+            stats.n_workunits_fully_processed,
             stats.n_workunits_fully_processed as f64 / n_wus_total as f64 * 100.
         );
         println!("");
@@ -635,21 +661,71 @@ impl Simulator {
         );
         println!("");
     }
+
+    pub fn print_client_stats(&self) {
+        let mut total_stats = ClientStats::new();
+
+        let mut cores_sum = 0;
+        let mut speed_sum = 0.;
+        let mut memory_sum = 0;
+        let mut disk_sum = 0;
+
+        for client_ref in &self.clients {
+            let client = client_ref.borrow();
+            total_stats += client.stats.borrow().clone();
+
+            cores_sum += client.compute.borrow().cores_total();
+            memory_sum += client.compute.borrow().memory_total();
+            speed_sum += client.compute.borrow().speed();
+            disk_sum += client.disk.borrow().capacity();
+        }
+
+        let n_clients = self.clients.len();
+
+        println!("******** Clients Stats **********");
+        println!("Total number of clients: {}", self.clients.len());
+        println!(
+            "- Average cores: {:.2}",
+            cores_sum as f64 / n_clients as f64
+        );
+        println!(
+            "- Average core speed: {:.2} GFLOPS/core",
+            speed_sum as f64 / n_clients as f64
+        );
+        println!(
+            "- Average memory: {:.2} GB",
+            memory_sum as f64 / n_clients as f64 / 1000.
+        );
+        println!(
+            "- Average disk capacity: {:.2} GB",
+            disk_sum as f64 / n_clients as f64 / 1000.
+        );
+        println!(
+            "- Average host availability: {:.2}%",
+            (total_stats.time_available as f64 / (self.sim_config.sim_duration * 3600.))
+                / n_clients as f64
+                * 100.
+        );
+        println!(
+            "- Average host unavailability: {:.2}%",
+            (total_stats.time_unavailable as f64 / (self.sim_config.sim_duration * 3600.))
+                / n_clients as f64
+                * 100.
+        );
+        println!(
+            "- Average GFLOPs processed: {:.2}",
+            (total_stats.flops_processed as f64 / n_clients as f64) / GFLOPS
+        );
+        println!(
+            "- Average results processed: {:.2}",
+            total_stats.n_results_processed as f64 / n_clients as f64
+        );
+        println!("");
+    }
 }
 
-/*
-Workunits with at least one sent jobs waiting for canonical result
-Workunits waiting for assimilation
-Workunits waiting for deletion
-Workunits fully processed
+struct EmptyEventHandler {}
 
-Results Total =
-Results In progress
-Results Over by status
-Results outcome %
-Results Valid, Invalid
-
-Calculated GFLOPS
-
-Total credit granted:
- */
+impl EventHandler for EmptyEventHandler {
+    fn on(&mut self, _event: Event) {}
+}

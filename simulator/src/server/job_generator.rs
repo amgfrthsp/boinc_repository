@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use dslab_compute::multicore::CoresDependency;
 
 use dslab_core::{context::SimulationContext, log_debug};
@@ -6,7 +8,7 @@ use super::job::{InputFileMetadata, JobSpec, JobSpecId, OutputFileMetadata};
 use crate::config::sim_config::JobGeneratorConfig;
 
 pub struct JobGenerator {
-    jobs_generated: u64,
+    jobs_generated: RefCell<u64>,
     ctx: SimulationContext,
     config: JobGeneratorConfig,
 }
@@ -15,15 +17,15 @@ impl JobGenerator {
     pub fn new(ctx: SimulationContext, config: JobGeneratorConfig) -> Self {
         Self {
             config,
-            jobs_generated: 0,
+            jobs_generated: RefCell::new(0),
             ctx,
         }
     }
 
-    pub fn generate_jobs(&mut self, cnt: usize) -> Vec<JobSpec> {
+    pub fn generate_jobs(&self, cnt: usize) -> Vec<JobSpec> {
         let mut generated_jobs = Vec::new();
         for i in 0..cnt {
-            let job_id = (self.jobs_generated + i as u64) as JobSpecId;
+            let job_id = (*self.jobs_generated.borrow() + i as u64) as JobSpecId;
             let min_quorum = self
                 .ctx
                 .gen_range(self.config.min_quorum_min..=self.config.min_quorum_max);
@@ -31,7 +33,7 @@ impl JobGenerator {
                 id: job_id,
                 flops: self
                     .ctx
-                    .gen_range(self.config.flops_min..=self.config.flops_max),
+                    .gen_range(self.config.gflops_min..=self.config.gflops_max),
                 memory: self
                     .ctx
                     .gen_range(self.config.memory_min..=self.config.memory_max),
@@ -61,11 +63,11 @@ impl JobGenerator {
                 },
             };
             generated_jobs.push(job);
+
+            *self.jobs_generated.borrow_mut() += generated_jobs.len() as u64;
         }
 
         log_debug!(self.ctx, "Generated {} new workunits", generated_jobs.len());
-
-        self.jobs_generated += generated_jobs.len() as u64;
 
         generated_jobs
     }

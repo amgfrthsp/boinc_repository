@@ -59,7 +59,7 @@ impl DBPurger {
                 if result.file_delete_state != FileDeleteState::Done {
                     all_results_deleted = false;
                 } else {
-                    db_processed_result_mut.insert(*result_id, result.clone());
+                    //db_processed_result_mut.insert(*result_id, result.clone());
                     db_result_mut.remove(result_id);
                     log_debug!(self.ctx, "removed result {} from database", result_id);
                 }

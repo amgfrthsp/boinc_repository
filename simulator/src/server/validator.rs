@@ -69,6 +69,9 @@ impl Validator {
                     .unwrap()
                     .file_delete_state;
                 for result_id in &workunit.result_ids {
+                    if !db_result_mut.contains_key(result_id) {
+                        continue;
+                    }
                     let result = db_result_mut.get_mut(result_id).unwrap();
                     if !(result.server_state == ResultState::Over
                         && result.outcome == ResultOutcome::Success
@@ -133,6 +136,7 @@ impl Validator {
                                 );
                                 result.server_state = ResultState::Over;
                                 result.outcome = ResultOutcome::DidntNeed;
+                                result.file_delete_state = FileDeleteState::Done;
                             }
                         }
                     }

@@ -10,7 +10,7 @@ use crate::client::client::{WorkFetchReply, WorkFetchRequest};
 use crate::config::sim_config::SchedulerConfig;
 use crate::server::job::{ResultRequest, ResultState};
 
-use super::database::{BoincDatabase, ClientInfo};
+use super::database::BoincDatabase;
 use super::job::{JobSpec, ResultId};
 use super::stats::ServerStats;
 
@@ -49,12 +49,15 @@ impl Scheduler {
         self.server_id = server_id;
     }
 
-    pub fn schedule(&mut self, client_info: &ClientInfo, mut req: WorkFetchRequest) {
+    pub fn schedule(&mut self, client_id: Id, mut req: WorkFetchRequest) {
         log_info!(
             self.ctx,
             "scheduling started. shared memory size is {}",
             self.shared_memory.borrow().len()
         );
+
+        let clients_ref = self.db.clients.borrow();
+        let client_info = clients_ref.get(&client_id).unwrap();
 
         let t = Instant::now();
         let mut assigned_results = Vec::new();

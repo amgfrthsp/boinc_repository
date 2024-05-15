@@ -17,7 +17,7 @@ impl ServerStats {
             flops_total: 0.,
             results_processing_time: 0.,
             max_result_processing_time: 0.,
-            min_result_processing_time: 0.,
+            min_result_processing_time: f64::MAX,
             total_credit_granted: 0.,
         }
     }

@@ -1,10 +1,10 @@
 seed: 32
-sim_duration: 48.
+sim_duration: 24.
 
 clients:
-  - count: 5
+  - count: 5000
     cpu:
-      speed: 5.5
+      speed: 4.5
       cores: 4
     work_fetch_interval: 3600.
     buffered_work_min: 5800.
@@ -63,16 +63,16 @@ server:
   assimilator:
     interval: 1900.
   validator:
-    interval: 3600.
-  transitioner:
     interval: 1800.
+  transitioner:
+    interval: 600.
   db_purger:
-    interval: 180.
+    interval: 5000.
   file_deleter:
-    interval: 150.
+    interval: 5000.
   feeder:
     shared_memory_size: 20000
-    interval: 1800.
+    interval: 1000.
   scheduler:
     interval: 0.
 
@@ -82,17 +82,17 @@ server:
     disk_write_bandwidth: 500.
   
   job_generator:
-    flops_min: 35000.
-    flops_max: 45000.
+    gflops_min: 35000.
+    gflops_max: 55000.
     memory_min: 10
     memory_max: 30
     cores_min: 1
     cores_max: 1
     delay_min: 186400.
     delay_max: 186400.
-    min_quorum_min: 1
-    min_quorum_max: 1
-    target_nresults_redundancy: 0
+    min_quorum_min: 3
+    min_quorum_max: 3
+    target_nresults_redundancy: 2
     input_size_min: 5
     input_size_max: 20
     output_size_min: 5

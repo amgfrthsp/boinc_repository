@@ -45,6 +45,10 @@ impl Feeder {
         }
     }
 
+    pub fn get_shared_memory_size(&self) -> usize {
+        self.shared_memory.borrow().len()
+    }
+
     pub fn scan_work_array(&self) {
         log_info!(
             self.ctx,

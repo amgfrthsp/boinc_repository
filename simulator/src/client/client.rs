@@ -19,6 +19,7 @@ use futures::{select, FutureExt};
 
 use super::rr_simulation::RRSimulation;
 use super::scheduler::Scheduler;
+use super::stats::ClientStats;
 use super::storage::FileStorage;
 use super::task::{ResultInfo, ResultState};
 use super::utils::Utilities;
@@ -84,8 +85,8 @@ pub struct ContinueResult {
 pub struct ScheduleResults {}
 
 pub struct Client {
-    compute: Rc<RefCell<Compute>>,
-    disk: Rc<RefCell<Disk>>,
+    pub compute: Rc<RefCell<Compute>>,
+    pub disk: Rc<RefCell<Disk>>,
     net: Rc<RefCell<Network>>,
     utilities: Rc<RefCell<Utilities>>,
     server_id: Id,
@@ -102,6 +103,8 @@ pub struct Client {
     av_distribution: SimulationDistribution,
     unav_distribution: SimulationDistribution,
     is_active: bool,
+    finish_time: f64,
+    pub stats: Rc<RefCell<ClientStats>>,
 }
 
 impl Client {
@@ -118,6 +121,7 @@ impl Client {
         reliability: f64,
         av_distribution: SimulationDistribution,
         unav_distribution: SimulationDistribution,
+        stats: Rc<RefCell<ClientStats>>,
     ) -> Self {
         ctx.register_key_getter_for::<CompStarted>(|e| e.id);
         ctx.register_key_getter_for::<CompFinished>(|e| e.id);
@@ -142,11 +146,16 @@ impl Client {
             av_distribution,
             unav_distribution,
             is_active: true,
+            finish_time: 0.,
+            stats,
         }
     }
 
     fn on_start(&mut self, server_id: Id, data_server_id: Id, finish_time: f64) {
         log_debug!(self.ctx, "started");
+        self.finish_time = finish_time;
+        self.ctx.emit_self(Finish {}, finish_time);
+
         self.server_id = server_id;
         self.data_server_id = data_server_id;
         self.ctx.emit(
@@ -163,16 +172,21 @@ impl Client {
         self.ctx.emit_self(AskForWork {}, 200.);
 
         let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
+        self.ctx.emit_self(Suspend {}, resume_dur);
 
-        self.ctx.emit_self(Suspend {}, self.ctx.time() + resume_dur);
+        self.stats.borrow_mut().time_unavailable += self.ctx.time();
+        self.stats.borrow_mut().time_available += if self.ctx.time() + resume_dur > self.finish_time
+        {
+            self.finish_time - self.ctx.time()
+        } else {
+            resume_dur
+        };
 
         log_info!(
             self.ctx,
             "Client is started and is active for {}",
             resume_dur
         );
-
-        self.ctx.emit_self(Finish {}, finish_time);
     }
 
     fn on_suspend(&mut self) {
@@ -186,9 +200,14 @@ impl Client {
         }
 
         let suspencion_dur = self.ctx.sample_from_distribution(&self.unav_distribution) * 3600.;
+        self.ctx.emit_self(Resume {}, suspencion_dur);
 
-        self.ctx
-            .emit_self(Resume {}, self.ctx.time() + suspencion_dur);
+        self.stats.borrow_mut().time_unavailable +=
+            if self.ctx.time() + suspencion_dur > self.finish_time {
+                self.finish_time - self.ctx.time()
+            } else {
+                suspencion_dur
+            };
 
         log_info!(self.ctx, "Client suspended for {}s", suspencion_dur);
     }
@@ -200,7 +219,14 @@ impl Client {
 
         let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
 
-        self.ctx.emit_self(Suspend {}, self.ctx.time() + resume_dur);
+        self.ctx.emit_self(Suspend {}, resume_dur);
+
+        self.stats.borrow_mut().time_available += if self.ctx.time() + resume_dur > self.finish_time
+        {
+            self.finish_time - self.ctx.time()
+        } else {
+            resume_dur
+        };
 
         log_info!(self.ctx, "Client resumed for {}", resume_dur);
     }
@@ -384,6 +410,22 @@ impl Client {
             result_id
         );
         self.change_result(result_id, Some(ResultState::Deleted), None);
+
+        let processing_time = self.ctx.time() - result.time_added;
+        self.stats.borrow_mut().results_processing_time += processing_time;
+
+        let min_processing_time = self.stats.borrow_mut().min_result_processing_time;
+        self.stats.borrow_mut().min_result_processing_time =
+            min_processing_time.min(processing_time);
+        let max_processing_time = self.stats.borrow_mut().max_result_processing_time;
+        self.stats.borrow_mut().max_result_processing_time =
+            max_processing_time.max(processing_time);
+
+        self.stats.borrow_mut().n_results_processed += 1;
+        self.stats.borrow_mut().flops_processed += result.spec.flops;
+        if self.ctx.time() > result.report_deadline {
+            self.stats.borrow_mut().n_miss_deadline += 1;
+        }
     }
 
     pub fn change_result(
@@ -594,6 +636,7 @@ impl EventHandler for Client {
                 }
             }
             CompPreempted { .. } => {}
+            CompContinued { .. } => {}
             ScheduleResults {} => {
                 if self.is_active {
                     self.schedule_results();
