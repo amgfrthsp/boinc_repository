@@ -46,7 +46,7 @@ impl Scheduler {
     pub fn schedule(&self) -> bool {
         log_info!(self.ctx, "scheduling started");
 
-        let sim_result = self.rr_sim.borrow().simulate(true);
+        let sim_result = self.rr_sim.borrow_mut().simulate(true);
 
         let results_to_schedule = sim_result.results_to_schedule;
         let n_results_to_schedule = results_to_schedule.len();

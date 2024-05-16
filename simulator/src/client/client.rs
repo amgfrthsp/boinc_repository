@@ -92,7 +92,7 @@ pub struct Client {
     server_id: Id,
     data_server_id: Id,
     scheduler: Scheduler,
-    rr_sim: Rc<RefCell<RRSimulation>>,
+    pub rr_sim: Rc<RefCell<RRSimulation>>,
     file_storage: Rc<FileStorage>,
     next_scheduling_time: RefCell<f64>,
     scheduling_event: RefCell<Option<EventId>>,
@@ -172,11 +172,9 @@ impl Client {
         self.ctx.emit_self(AskForWork {}, 200.);
 
         let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
+        let resume_dur = self.finish_time;
         self.ctx.emit_self(Suspend {}, resume_dur);
 
-        let resume_dur = self.finish_time;
-
-        self.stats.borrow_mut().time_unavailable += self.ctx.time();
         self.stats.borrow_mut().time_available += if self.ctx.time() + resume_dur > self.finish_time
         {
             self.finish_time - self.ctx.time()
@@ -203,6 +201,13 @@ impl Client {
 
         let suspencion_dur = self.ctx.sample_from_distribution(&self.unav_distribution) * 3600.;
         self.ctx.emit_self(Resume {}, suspencion_dur);
+
+        self.stats.borrow_mut().time_unavailable +=
+            if self.ctx.time() + suspencion_dur > self.finish_time {
+                self.finish_time - self.ctx.time()
+            } else {
+                suspencion_dur
+            };
 
         log_info!(self.ctx, "Client suspended for {}s", suspencion_dur);
     }
@@ -551,7 +556,7 @@ impl Client {
         if self.suspended {
             return;
         }
-        let sim_result = self.rr_sim.borrow().simulate(false);
+        let sim_result = self.rr_sim.borrow_mut().simulate(false);
 
         if sim_result.work_fetch_req.estimated_delay < self.config.buffered_work_min {
             self.net.borrow_mut().send_event(

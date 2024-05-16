@@ -2,6 +2,7 @@ use dslab_core::context::SimulationContext;
 use dslab_core::log_info;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Instant;
 
 use crate::config::sim_config::AssimilatorConfig;
 use crate::server::job::AssimilateState;
@@ -19,6 +20,8 @@ pub struct Assimilator {
     #[allow(dead_code)]
     config: AssimilatorConfig,
     stats: Rc<RefCell<ServerStats>>,
+    pub dur_sum: f64,
+    dur_samples: usize,
 }
 
 impl Assimilator {
@@ -33,10 +36,13 @@ impl Assimilator {
             ctx,
             config,
             stats,
+            dur_samples: 0,
+            dur_sum: 0.,
         }
     }
 
-    pub fn assimilate(&self) {
+    pub fn assimilate(&mut self) {
+        let t = Instant::now();
         let workunits_to_assimilate =
             BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
                 wu.assimilate_state == AssimilateState::Ready
@@ -59,6 +65,14 @@ impl Assimilator {
             self.db.update_wu_transition_time(workunit, self.ctx.time());
             assimilated_cnt += 1;
         }
+        let duration = t.elapsed().as_secs_f64();
         log_info!(self.ctx, "assimilated {} workunits", assimilated_cnt);
+        self.dur_sum += duration;
+        self.dur_samples += 1;
+        // println!(
+        //     "Assimilator average duration {:.4}",
+        //     self.dur_sum / self.dur_samples as f64
+        // );
+        // println!("Assimilator sum duration {:.2}", self.dur_sum);
     }
 }

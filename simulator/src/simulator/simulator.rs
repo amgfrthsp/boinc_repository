@@ -157,7 +157,7 @@ impl Simulator {
 
         self.ctx.spawn(async {
             self.ctx
-                .emit_now(GenerateJobs { cnt: 100000 }, server.borrow().ctx.id());
+                .emit_now(GenerateJobs { cnt: 300000 }, server.borrow().ctx.id());
 
             self.ctx.recv_event::<JobsGenerationCompleted>().await;
 
@@ -491,6 +491,21 @@ impl Simulator {
         let workunits = server.db.workunit.borrow();
         let results = server.db.result.borrow();
 
+        println!("******** Server Stats **********");
+        println!("Assimilator sum dur: {:.2} s", server.assimilator.dur_sum);
+        println!("Validator sum dur: {:.2} s", server.validator.dur_sum);
+        println!("Transitioner sum dur: {:.2} s", server.transitioner.dur_sum);
+        println!("Feeder sum dur: {:.2} s", server.feeder.dur_sum);
+        println!("Check buffer sum dur: {:.2} s", server.check_dur);
+        println!(
+            "Scheduler sum dur: {:.2} s",
+            server.scheduler.borrow().dur_sum
+        );
+        println!("File deleter sum dur: {:.2} s", server.file_deleter.dur_sum);
+        println!("DB purger sum dur: {:.2} s", server.db_purger.dur_sum);
+        println!("Report status sum dur: {:.2} s", server.rs_dur_sum);
+        println!("");
+
         let mut n_wus_inprogress = 0;
         let mut n_wus_stage_canonical = 0;
         let mut n_wus_stage_assimilation = 0;
@@ -658,6 +673,8 @@ impl Simulator {
         let mut memory_sum = 0;
         let mut disk_sum = 0;
 
+        let mut rr_sim_dur = 0.;
+
         for client_ref in &self.clients {
             let client = client_ref.borrow();
             total_stats += client.stats.borrow().clone();
@@ -666,12 +683,19 @@ impl Simulator {
             memory_sum += client.compute.borrow().memory_total();
             speed_sum += client.compute.borrow().speed();
             disk_sum += client.disk.borrow().capacity();
+
+            rr_sim_dur += client.rr_sim.borrow().dur_sum;
         }
 
         let n_clients = self.clients.len();
 
         println!("******** Clients Stats **********");
         println!("Total number of clients: {}", self.clients.len());
+        println!("RR sim sum dur: {:.2} s", rr_sim_dur);
+        println!(
+            "RR sim average dur: {:.2} s",
+            rr_sim_dur / self.clients.len() as f64
+        );
         println!(
             "- Average cores: {:.2}",
             cores_sum as f64 / n_clients as f64

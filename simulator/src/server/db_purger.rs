@@ -2,6 +2,7 @@ use dslab_core::context::SimulationContext;
 use dslab_core::{log_debug, log_info};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Instant;
 
 use crate::config::sim_config::DBPurgerConfig;
 
@@ -19,6 +20,8 @@ pub struct DBPurger {
     #[allow(dead_code)]
     config: DBPurgerConfig,
     stats: Rc<RefCell<ServerStats>>,
+    pub dur_sum: f64,
+    dur_samples: usize,
 }
 
 impl DBPurger {
@@ -33,10 +36,13 @@ impl DBPurger {
             ctx,
             config,
             stats,
+            dur_samples: 0,
+            dur_sum: 0.,
         }
     }
 
-    pub fn purge_database(&self) {
+    pub fn purge_database(&mut self) {
+        let t = Instant::now();
         log_info!(self.ctx, "database purging started");
 
         let workunits_to_delete =
@@ -72,5 +78,9 @@ impl DBPurger {
             }
         }
         log_info!(self.ctx, "database purging finished");
+
+        let duration = t.elapsed().as_secs_f64();
+        self.dur_sum += duration;
+        self.dur_samples += 1;
     }
 }

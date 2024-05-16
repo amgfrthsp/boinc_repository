@@ -1,7 +1,7 @@
 use crate::common::FloatWrapper;
 
 use super::job::{ResultId, ResultInfo, WorkunitId, WorkunitInfo};
-use dslab_core::Id;
+use dslab_core::{log_info, Id, SimulationContext};
 use std::{
     cell::RefCell,
     collections::{BTreeSet, HashMap},

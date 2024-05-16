@@ -1,8 +1,8 @@
-seed: 94
+seed: 95
 sim_duration: 500.
 
 clients:
-  - count: 100
+  - count: 1
     cpu:
       speed: 5.5
       cores: 1

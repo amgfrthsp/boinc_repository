@@ -39,10 +39,7 @@ impl Ord for FloatWrapper {
         } else if other.0.is_nan() {
             Ordering::Less
         } else {
-            self.0
-                .partial_cmp(&other.0)
-                .unwrap_or(Ordering::Equal)
-                .reverse()
+            self.0.partial_cmp(&other.0).unwrap_or(Ordering::Equal)
         }
     }
 }

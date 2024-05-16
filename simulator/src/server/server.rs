@@ -1,6 +1,7 @@
 use serde::Serialize;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Instant;
 
 use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
@@ -72,14 +73,14 @@ pub struct Server {
     //job_generator
     job_generator: JobGenerator,
     //daemons
-    validator: Validator,
-    assimilator: Assimilator,
-    transitioner: Transitioner,
-    feeder: Feeder,
-    file_deleter: FileDeleter,
-    db_purger: DBPurger,
+    pub validator: Validator,
+    pub assimilator: Assimilator,
+    pub transitioner: Transitioner,
+    pub feeder: Feeder,
+    pub file_deleter: FileDeleter,
+    pub db_purger: DBPurger,
     // scheduler
-    scheduler: Rc<RefCell<Scheduler>>,
+    pub scheduler: Rc<RefCell<Scheduler>>,
     // data server
     pub data_server: Rc<RefCell<DataServer>>,
     //
@@ -87,6 +88,8 @@ pub struct Server {
     config: ServerConfig,
     pub stats: Rc<RefCell<ServerStats>>,
     is_active: bool,
+    pub rs_dur_sum: f64,
+    pub check_dur: f64,
 }
 
 impl Server {
@@ -122,6 +125,8 @@ impl Server {
             config,
             stats,
             is_active: true,
+            rs_dur_sum: 0.,
+            check_dur: 0.,
         }
     }
 
@@ -165,12 +170,12 @@ impl Server {
     async fn on_job_spec(&self, mut spec: JobSpec) {
         // log_debug!(self.ctx, "job spec {:?}", spec.clone());
 
-        let workunit = WorkunitInfo {
+        let mut workunit = WorkunitInfo {
             id: spec.id,
             spec: spec.clone(),
             result_ids: Vec::new(),
             client_ids: Vec::new(),
-            transition_time: self.ctx.time(),
+            transition_time: f64::MAX,
             need_validate: false,
             file_delete_state: FileDeleteState::Init,
             canonical_resultid: None,
@@ -192,6 +197,28 @@ impl Server {
         self.ctx
             .recv_event_by_key::<InputFileDownloadCompleted>(workunit.id)
             .await;
+
+        let mut db_result_mut = self.db.result.borrow_mut();
+
+        for i in 0..workunit.spec.target_nresults {
+            let result = ResultInfo {
+                id: *self.transitioner.next_result_id.borrow() + i,
+                workunit_id: workunit.id,
+                report_deadline: 0.,
+                server_state: ResultState::Unsent,
+                outcome: ResultOutcome::Undefined,
+                validate_state: ValidateState::Init,
+                file_delete_state: FileDeleteState::Init,
+                in_shared_mem: false,
+                time_sent: 0.,
+                client_id: 0,
+                is_correct: false,
+                claimed_credit: 0.,
+            };
+            workunit.result_ids.push(result.id);
+            db_result_mut.insert(result.id, result);
+        }
+        *self.transitioner.next_result_id.borrow_mut() += workunit.spec.target_nresults;
 
         // log_debug!(
         //     self.ctx,
@@ -285,9 +312,7 @@ impl Server {
     }
 
     pub fn generate_jobs(&mut self) {
-        let new_jobs = self
-            .job_generator
-            .generate_jobs(self.db.clients.borrow().len());
+        let new_jobs = self.job_generator.generate_jobs(10000);
         for job in new_jobs {
             self.ctx.spawn(self.on_job_spec(job));
         }
@@ -300,6 +325,7 @@ impl Server {
     }
 
     pub fn check_wu_buffer(&mut self) {
+        let t = Instant::now();
         if self.feeder.get_shared_memory_size() < UNSENT_RESULT_BUFFER_LOWER_BOUND {
             log_debug!(
                 self.ctx,
@@ -309,10 +335,13 @@ impl Server {
             self.generate_jobs();
         }
         self.ctx.emit_self(CheckWorkunitBuffer {}, 1500.);
+        let duration = t.elapsed().as_secs_f64();
+        self.check_dur += duration;
     }
 
     // ******* utilities & statistics *********
     fn report_status(&mut self) {
+        let t = Instant::now();
         log_info!(
             self.ctx,
             "UNSENT RESULTS: {} / IN PROGRESS RESULTS: {} / COMPLETED RESULTS: {}",
@@ -336,6 +365,8 @@ impl Server {
             self.data_server.borrow().id,
             self.config.report_status_interval,
         );
+        let duration = t.elapsed().as_secs_f64();
+        self.rs_dur_sum += duration;
     }
 }
 

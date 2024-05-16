@@ -21,6 +21,8 @@ pub struct Scheduler {
     ctx: SimulationContext,
     #[allow(dead_code)]
     stats: Rc<RefCell<ServerStats>>,
+    pub dur_sum: f64,
+    dur_samples: usize,
 }
 
 impl Scheduler {
@@ -38,6 +40,8 @@ impl Scheduler {
             shared_memory,
             ctx,
             stats,
+            dur_samples: 0,
+            dur_sum: 0.,
         }
     }
 
@@ -133,7 +137,15 @@ impl Scheduler {
             );
         }
 
-        let schedule_duration = t.elapsed();
+        let schedule_duration = t.elapsed().as_secs_f64();
+        self.dur_sum += schedule_duration;
+        self.dur_samples += 1;
+        // println!(self.ctx, "Scheduler duration {}", schedule_duration);
+        // println!(
+        //     "Scheduler average duration {:.4}",
+        //     self.dur_sum / self.dur_samples as f64
+        // );
+        // println!("Scheduler sum duration {:.2}", self.dur_sum);
         log_info!(
             self.ctx,
             "scheduling finished: assigned {} results in {:.2?} for client {}.shared memory size is {}",

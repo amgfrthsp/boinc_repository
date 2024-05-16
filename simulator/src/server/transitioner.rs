@@ -4,6 +4,7 @@ use dslab_core::log_info;
 use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Instant;
 
 use crate::config::sim_config::TransitionerConfig;
 use crate::server::job::{
@@ -19,12 +20,14 @@ use super::{
 
 pub struct Transitioner {
     db: Rc<BoincDatabase>,
-    next_result_id: ResultId,
+    pub next_result_id: RefCell<ResultId>,
     ctx: SimulationContext,
     #[allow(dead_code)]
     config: TransitionerConfig,
     #[allow(dead_code)]
     stats: Rc<RefCell<ServerStats>>,
+    pub dur_sum: f64,
+    dur_samples: usize,
 }
 
 impl Transitioner {
@@ -36,20 +39,18 @@ impl Transitioner {
     ) -> Self {
         Self {
             db,
-            next_result_id: 0,
+            next_result_id: RefCell::new(0),
             ctx,
             config,
             stats,
+            dur_samples: 0,
+            dur_sum: 0.,
         }
     }
 
     pub fn transit(&mut self, current_time: f64) {
+        let t = Instant::now();
         let workunits_to_transit = self.db.get_wus_for_transitioner(self.ctx.time());
-        BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
-            self.ctx.time() >= wu.transition_time
-                && wu.file_delete_state != FileDeleteState::Done
-                && wu.file_delete_state != FileDeleteState::Ready
-        });
         log_info!(self.ctx, "transitioning started");
 
         let mut db_workunit_mut = self.db.workunit.borrow_mut();
@@ -57,19 +58,29 @@ impl Transitioner {
         for wu_id in workunits_to_transit {
             let workunit = db_workunit_mut.get_mut(&wu_id).unwrap();
 
+            if workunit.transition_time != 0. {
+                log_info!(
+                    self.ctx,
+                    "Current time {}, wu tt {}",
+                    self.ctx.time(),
+                    workunit.transition_time
+                );
+            }
+
             if workunit.file_delete_state != FileDeleteState::Init {
                 self.db.no_transition_needed(workunit);
                 continue;
             }
 
-            log_debug!(
+            log_info!(
                 self.ctx,
-                "transitioning workunit {}: {:?}",
+                "transitioning workunit {}: {:?} {}",
                 workunit.id,
-                workunit
+                workunit,
+                workunit.transition_time
             );
 
-            let mut next_transition_time = current_time + workunit.spec.delay_bound;
+            let mut next_transition_time = f64::MAX; //current_time + workunit.spec.delay_bound;
             let mut new_results_needed_cnt: u64 = 0;
 
             self.check_timed_out_and_validation(
@@ -90,9 +101,18 @@ impl Transitioner {
 
             self.print_statistics_for_workunit(workunit);
 
-            self.next_result_id += new_results_needed_cnt;
+            *self.next_result_id.borrow_mut() += new_results_needed_cnt;
         }
         log_info!(self.ctx, "transitioning finished");
+        let duration = t.elapsed().as_secs_f64();
+        self.dur_sum += duration;
+        self.dur_samples += 1;
+        // println!("Transitioner duration {}", duration);
+        // println!(
+        //     "Transitioner average duration {:.4}",
+        //     self.dur_sum / self.dur_samples as f64
+        // );
+        // println!("Transitioner sum duration {:.2}", self.dur_sum);
     }
 
     fn check_timed_out_and_validation(
@@ -109,7 +129,6 @@ impl Transitioner {
         let mut res_outcome_success_cnt = 0;
 
         let mut need_validate = false;
-        *next_transition_time = current_time + workunit.spec.delay_bound;
 
         for result_id in &workunit.result_ids {
             let result = db_result_mut.get_mut(result_id).unwrap();
@@ -177,7 +196,7 @@ impl Transitioner {
 
         for i in 0..cnt {
             let result = ResultInfo {
-                id: self.next_result_id + i,
+                id: *self.next_result_id.borrow() + i,
                 workunit_id: workunit.id,
                 report_deadline: 0.,
                 server_state: ResultState::Unsent,
