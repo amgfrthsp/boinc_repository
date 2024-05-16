@@ -174,6 +174,8 @@ impl Client {
         let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
         self.ctx.emit_self(Suspend {}, resume_dur);
 
+        let resume_dur = self.finish_time;
+
         self.stats.borrow_mut().time_unavailable += self.ctx.time();
         self.stats.borrow_mut().time_available += if self.ctx.time() + resume_dur > self.finish_time
         {
@@ -201,13 +203,6 @@ impl Client {
 
         let suspencion_dur = self.ctx.sample_from_distribution(&self.unav_distribution) * 3600.;
         self.ctx.emit_self(Resume {}, suspencion_dur);
-
-        self.stats.borrow_mut().time_unavailable +=
-            if self.ctx.time() + suspencion_dur > self.finish_time {
-                self.finish_time - self.ctx.time()
-            } else {
-                suspencion_dur
-            };
 
         log_info!(self.ctx, "Client suspended for {}s", suspencion_dur);
     }

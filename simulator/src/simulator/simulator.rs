@@ -20,7 +20,7 @@ use crate::client::scheduler::Scheduler as ClientScheduler;
 use crate::client::stats::ClientStats;
 use crate::client::storage::FileStorage;
 use crate::client::utils::Utilities;
-use crate::common::{GFLOPS, HOUR};
+use crate::common::HOUR;
 use crate::config::sim_config::{
     ClientCpuPower, ClientGroupConfig, ServerConfig, SimulationConfig,
 };
@@ -165,7 +165,7 @@ impl Simulator {
 
             self.ctx.emit_now(
                 StartServer {
-                    finish_time: self.sim_config.sim_duration * 3600.,
+                    finish_time: self.ctx.time() + self.sim_config.sim_duration * 3600.,
                 },
                 server.borrow().ctx.id(),
             );
@@ -175,7 +175,7 @@ impl Simulator {
                     StartClient {
                         server_id: server.borrow().ctx.id(),
                         data_server_id: server.borrow().data_server.borrow().ctx.id(),
-                        finish_time: self.sim_config.sim_duration * 3600.,
+                        finish_time: self.ctx.time() + self.sim_config.sim_duration * 3600.,
                     },
                     client.borrow().ctx.id(),
                 );
@@ -475,6 +475,7 @@ impl Simulator {
 
         println!("");
         println!("******** Simulation Stats **********");
+        println!("Time period simulated: {} h", self.sim_config.sim_duration);
         println!("Calculated {:.3} PFLOPS", stats.gflops_total / 1_000_000.);
         println!("Total credit granted: {:.3}", stats.total_credit_granted);
         println!("");
@@ -701,7 +702,7 @@ impl Simulator {
         );
         println!(
             "- Average GFLOPs processed: {:.2}",
-            (total_stats.gflops_processed as f64 / n_clients as f64) / GFLOPS
+            (total_stats.gflops_processed as f64 / n_clients as f64)
         );
         println!(
             "- Average results processed: {:.2}",

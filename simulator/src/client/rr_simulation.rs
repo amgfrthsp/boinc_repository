@@ -99,6 +99,7 @@ impl RRSimulation {
 
         for result in &results_to_schedule {
             let est_runtime = self.est_result_runtime(*result);
+            log_info!(self.ctx, "Est runtime {} {:?}", est_runtime, *result);
             // We do not simulate fractional number of cores
             let mut start_time: f64 = 0.;
             for _ in 0..result.spec.cores {
