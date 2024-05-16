@@ -69,10 +69,5 @@ impl Assimilator {
         log_info!(self.ctx, "assimilated {} workunits", assimilated_cnt);
         self.dur_sum += duration;
         self.dur_samples += 1;
-        // println!(
-        //     "Assimilator average duration {:.4}",
-        //     self.dur_sum / self.dur_samples as f64
-        // );
-        // println!("Assimilator sum duration {:.2}", self.dur_sum);
     }
 }

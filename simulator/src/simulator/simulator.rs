@@ -10,6 +10,7 @@ use dslab_network::{models::SharedBandwidthNetworkModel, Network};
 use dslab_storage::disk::DiskBuilder;
 use dslab_storage::storage::Storage;
 use serde::Serialize;
+use std::collections::VecDeque;
 use std::fs::File;
 use std::rc::Rc;
 use std::{cell::RefCell, time::Instant};
@@ -271,7 +272,7 @@ impl Simulator {
             state: SharedMemoryItemState::Empty,
             result_id: 0,
         };
-        let shared_memory: Rc<RefCell<Vec<ResultId>>> = rc!(refcell!(Vec::new()));
+        let shared_memory: Rc<RefCell<VecDeque<ResultId>>> = rc!(refcell!(VecDeque::new()));
 
         let feeder_name = &format!("{}::feeder", server_name);
         let feeder: Feeder = Feeder::new(
@@ -543,6 +544,7 @@ impl Simulator {
         let n_wus_total = n_wus_inprogress + stats.n_workunits_fully_processed;
 
         println!("******** Workunit Stats **********");
+        println!("Workunits in db: {}", workunits.len());
         println!("Workunits total: {}", n_wus_total);
         println!(
             "- Workunits waiting for canonical result: {:.2}%",

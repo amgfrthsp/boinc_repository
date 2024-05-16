@@ -127,7 +127,6 @@ impl RRSimulation {
                 results_to_schedule.len(),
                 self.file_storage.running_results.borrow().len()
             );
-            log_info!(self.ctx, "Cores release time: {:?}", cores_release_time);
         }
 
         for _ in 0..self.compute.borrow().cores_total() {

@@ -1,7 +1,6 @@
 use dslab_core::context::SimulationContext;
 use dslab_core::log_debug;
 use dslab_core::log_info;
-use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
@@ -107,12 +106,6 @@ impl Transitioner {
         let duration = t.elapsed().as_secs_f64();
         self.dur_sum += duration;
         self.dur_samples += 1;
-        // println!("Transitioner duration {}", duration);
-        // println!(
-        //     "Transitioner average duration {:.4}",
-        //     self.dur_sum / self.dur_samples as f64
-        // );
-        // println!("Transitioner sum duration {:.2}", self.dur_sum);
     }
 
     fn check_timed_out_and_validation(
@@ -210,6 +203,7 @@ impl Transitioner {
                 claimed_credit: 0.,
             };
             workunit.result_ids.push(result.id);
+            self.db.feeder_result_ids.borrow_mut().push_back(result.id);
             db_result_mut.insert(result.id, result);
         }
 
@@ -333,7 +327,7 @@ impl Transitioner {
                     result_id
                 );
             } else {
-                let result = db_result_mut.borrow().get(result_id).unwrap();
+                let result = db_result_mut.get(result_id).unwrap();
                 log_info!(
                     self.ctx,
                     "workunit {} result {} {:?}: {:?}",

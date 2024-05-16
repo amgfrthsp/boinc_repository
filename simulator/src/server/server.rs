@@ -22,13 +22,13 @@ use super::stats::ServerStats;
 use super::transitioner::Transitioner;
 use super::validator::Validator;
 use crate::client::client::{ClientRegister, ResultCompleted, WorkFetchRequest};
-use crate::common::{Finish, ReportStatus};
+use crate::common::Finish;
 use crate::config::sim_config::ServerConfig;
 use crate::server::data_server::InputFileDownloadCompleted;
 use crate::server::database::ClientInfo;
 use crate::simulator::simulator::StartServer;
 
-const UNSENT_RESULT_BUFFER_LOWER_BOUND: usize = 200;
+const UNSENT_RESULT_BUFFER_LOWER_BOUND: usize = 2000;
 
 #[derive(Clone, Serialize)]
 pub struct ServerRegister {}
@@ -142,13 +142,6 @@ impl Server {
             .emit_self(PurgeDB {}, self.config.db_purger.interval);
         self.ctx
             .emit_self(DeleteFiles {}, self.config.file_deleter.interval);
-        self.ctx
-            .emit_self(ReportStatus {}, self.config.report_status_interval);
-        self.ctx.emit(
-            ReportStatus {},
-            self.data_server.borrow().id,
-            self.config.report_status_interval,
-        );
         self.ctx.emit_self(CheckWorkunitBuffer {}, 1500.);
         self.ctx
             .emit(Finish {}, self.data_server.borrow().id, finish_time);
@@ -215,6 +208,7 @@ impl Server {
                 is_correct: false,
                 claimed_credit: 0.,
             };
+            self.db.feeder_result_ids.borrow_mut().push_back(result.id);
             workunit.result_ids.push(result.id);
             db_result_mut.insert(result.id, result);
         }
@@ -311,8 +305,8 @@ impl Server {
             .emit_self(PurgeDB {}, self.config.db_purger.interval);
     }
 
-    pub fn generate_jobs(&mut self) {
-        let new_jobs = self.job_generator.generate_jobs(10000);
+    pub fn generate_jobs(&self) {
+        let new_jobs = self.job_generator.generate_jobs(100000);
         for job in new_jobs {
             self.ctx.spawn(self.on_job_spec(job));
         }
@@ -337,36 +331,6 @@ impl Server {
         self.ctx.emit_self(CheckWorkunitBuffer {}, 1500.);
         let duration = t.elapsed().as_secs_f64();
         self.check_dur += duration;
-    }
-
-    // ******* utilities & statistics *********
-    fn report_status(&mut self) {
-        let t = Instant::now();
-        log_info!(
-            self.ctx,
-            "UNSENT RESULTS: {} / IN PROGRESS RESULTS: {} / COMPLETED RESULTS: {}",
-            BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
-                result.server_state == ResultState::Unsent
-            })
-            .len(),
-            BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
-                result.server_state == ResultState::InProgress
-            })
-            .len(),
-            BoincDatabase::get_map_keys_by_predicate(&self.db.result.borrow(), |result| {
-                result.server_state == ResultState::Over
-            })
-            .len()
-        );
-        self.ctx
-            .emit_self(ReportStatus {}, self.config.report_status_interval);
-        self.ctx.emit(
-            ReportStatus {},
-            self.data_server.borrow().id,
-            self.config.report_status_interval,
-        );
-        let duration = t.elapsed().as_secs_f64();
-        self.rs_dur_sum += duration;
     }
 }
 
@@ -393,11 +357,6 @@ impl EventHandler for Server {
             } => {
                 if self.is_active {
                     self.on_result_completed(result_id, is_correct, claimed_credit);
-                }
-            }
-            ReportStatus {} => {
-                if self.is_active {
-                    self.report_status();
                 }
             }
             WorkFetchRequest {

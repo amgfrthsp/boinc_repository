@@ -3,6 +3,7 @@ use dslab_core::context::SimulationContext;
 use dslab_core::{log_debug, log_info, Event, EventHandler};
 use dslab_network::Network;
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::rc::Rc;
 use std::time::Instant;
 
@@ -17,7 +18,7 @@ pub struct Scheduler {
     server_id: Id,
     net: Rc<RefCell<Network>>,
     db: Rc<BoincDatabase>,
-    shared_memory: Rc<RefCell<Vec<ResultId>>>,
+    shared_memory: Rc<RefCell<VecDeque<ResultId>>>,
     ctx: SimulationContext,
     #[allow(dead_code)]
     stats: Rc<RefCell<ServerStats>>,
@@ -29,7 +30,7 @@ impl Scheduler {
     pub fn new(
         net: Rc<RefCell<Network>>,
         db: Rc<BoincDatabase>,
-        shared_memory: Rc<RefCell<Vec<ResultId>>>,
+        shared_memory: Rc<RefCell<VecDeque<ResultId>>>,
         ctx: SimulationContext,
         stats: Rc<RefCell<ServerStats>>,
     ) -> Self {
@@ -67,21 +68,17 @@ impl Scheduler {
         let mut db_workunit_mut = self.db.workunit.borrow_mut();
         let mut db_result_mut = self.db.result.borrow_mut();
 
-        let shmem_clone = self.shared_memory.borrow_mut().clone();
-        self.shared_memory.borrow_mut().clear();
+        let mut shmem = self.shared_memory.borrow_mut();
 
-        for result_id in shmem_clone {
-            if req.req_secs < 0. && req.req_instances < 0 {
-                self.shared_memory.borrow_mut().push(result_id);
-                continue;
-            }
+        while !shmem.is_empty() && !(req.req_secs < 0. && req.req_instances < 0) {
+            let result_id = shmem.pop_front().unwrap();
             if !db_result_mut.contains_key(&result_id) {
                 continue;
             }
             let result = db_result_mut.get_mut(&result_id).unwrap();
             let workunit = db_workunit_mut.get_mut(&result.workunit_id).unwrap();
 
-            if result.server_state != ResultState::Unsent {
+            if result.server_state != ResultState::Unsent || !result.in_shared_mem {
                 result.in_shared_mem = false;
                 continue;
             }
@@ -123,7 +120,7 @@ impl Scheduler {
                     report_deadline: result.report_deadline,
                 });
             } else {
-                self.shared_memory.borrow_mut().push(result_id);
+                shmem.push_back(result_id);
             }
         }
 
@@ -140,19 +137,13 @@ impl Scheduler {
         let schedule_duration = t.elapsed().as_secs_f64();
         self.dur_sum += schedule_duration;
         self.dur_samples += 1;
-        // println!(self.ctx, "Scheduler duration {}", schedule_duration);
-        // println!(
-        //     "Scheduler average duration {:.4}",
-        //     self.dur_sum / self.dur_samples as f64
-        // );
-        // println!("Scheduler sum duration {:.2}", self.dur_sum);
         log_info!(
             self.ctx,
             "scheduling finished: assigned {} results in {:.2?} for client {}.shared memory size is {}",
             assigned_results_cnt,
             schedule_duration,
             client_info.id,
-            self.shared_memory.borrow().len()
+            shmem.len()
         );
     }
 

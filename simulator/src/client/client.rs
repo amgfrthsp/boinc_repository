@@ -172,7 +172,6 @@ impl Client {
         self.ctx.emit_self(AskForWork {}, 200.);
 
         let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
-        let resume_dur = self.finish_time;
         self.ctx.emit_self(Suspend {}, resume_dur);
 
         self.stats.borrow_mut().time_available += if self.ctx.time() + resume_dur > self.finish_time

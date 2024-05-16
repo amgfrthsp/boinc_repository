@@ -94,12 +94,12 @@ impl Scheduler {
                 //log_info!(self.ctx, "Start result {}", result_id);
                 start += 1;
             } else {
-                log_info!(
-                    self.ctx,
-                    "Keep result {} with state {:?} running",
-                    result_id,
-                    result.state
-                );
+                // log_info!(
+                //     self.ctx,
+                //     "Keep result {} with state {:?} running",
+                //     result_id,
+                //     result.state
+                // );
             }
             scheduled_results.push(result_id);
         }

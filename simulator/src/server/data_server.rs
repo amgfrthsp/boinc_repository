@@ -1,5 +1,5 @@
 use dslab_core::context::SimulationContext;
-use dslab_core::{cast, log_info, Event, EventHandler, EventId};
+use dslab_core::{cast, Event, EventHandler, EventId};
 use dslab_core::{component::Id, log_debug};
 use dslab_network::{DataTransferCompleted, Network};
 use dslab_storage::disk::Disk;
@@ -11,7 +11,7 @@ use futures::{select, FutureExt};
 use serde::Serialize;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::common::{Finish, ReportStatus};
+use crate::common::Finish;
 use crate::config::sim_config::DataServerConfig;
 
 use super::job::{DataServerFile, InputFileMetadata, OutputFileMetadata, ResultId, WorkunitId};
@@ -108,7 +108,7 @@ impl DataServer {
 
         futures::join!(
             self.process_network_download(file.clone(), from),
-            self.process_disk_write(file.clone())
+            //self.process_disk_write(file.clone())
         );
 
         // log_debug!(self.ctx, "file download finished {:?}", file);
@@ -166,7 +166,7 @@ impl DataServer {
 
         futures::join!(
             self.process_network_upload(file.clone(), to),
-            self.process_disk_read(file.clone())
+            //self.process_disk_read(file.clone())
         );
 
         match file {
@@ -242,10 +242,10 @@ impl DataServer {
             return 0;
         }
 
-        self.disk
-            .borrow_mut()
-            .mark_free(input_file.unwrap().size)
-            .expect("Failed to free disk space");
+        // self.disk
+        //     .borrow_mut()
+        //     .mark_free(input_file.unwrap().size)
+        //     .expect("Failed to free disk space");
 
         // process error
 
@@ -263,26 +263,16 @@ impl DataServer {
             return 0;
         }
 
-        self.disk
-            .borrow_mut()
-            .mark_free(output_file.unwrap().size)
-            .expect("Failed to free disk space");
+        // self.disk
+        //     .borrow_mut()
+        //     .mark_free(output_file.unwrap().size)
+        //     .expect("Failed to free disk space");
 
         // process error
 
         // log_debug!(self.ctx, "deleted output files for result {}", result_id,);
 
         return 0;
-    }
-
-    fn report_status(&self) {
-        log_info!(
-            self.ctx,
-            "DISK: {:.2}",
-            self.disk.borrow().used_space() as f64 / self.disk.borrow().capacity() as f64
-        );
-        // log_info!(self.ctx, "INPUT FILES: {:?}", self.input_files);
-        // log_info!(self.ctx, "OUTPUT FILES: {:?}", self.output_files);
     }
 }
 
@@ -300,11 +290,6 @@ impl EventHandler for DataServer {
             OutputFileFromClient { output_file } => {
                 if self.is_active {
                     self.download_file(DataServerFile::Output(output_file), event.src);
-                }
-            }
-            ReportStatus {} => {
-                if self.is_active {
-                    self.report_status();
                 }
             }
             Finish {} => {

@@ -143,6 +143,7 @@ impl Validator {
                                 result.server_state = ResultState::Over;
                                 result.outcome = ResultOutcome::DidntNeed;
                                 result.file_delete_state = FileDeleteState::Done;
+                                result.in_shared_mem = false;
                             }
                         }
                     }
@@ -154,11 +155,6 @@ impl Validator {
         let duration = t.elapsed().as_secs_f64();
         self.dur_sum += duration;
         self.dur_samples += 1;
-        // println!("Validator duration {}", duration);
-        // println!(
-        //     "Validator average duration {:.4}",
-        //     self.dur_sum / self.dur_samples as f64
-        // );
     }
 
     // todo: read files from disk
