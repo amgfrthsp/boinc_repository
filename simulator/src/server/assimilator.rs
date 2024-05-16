@@ -56,7 +56,7 @@ impl Assimilator {
                 AssimilateState::Done
             );
             workunit.assimilate_state = AssimilateState::Done;
-            workunit.transition_time = self.ctx.time();
+            self.db.update_wu_transition_time(workunit, self.ctx.time());
             assimilated_cnt += 1;
         }
         log_info!(self.ctx, "assimilated {} workunits", assimilated_cnt);

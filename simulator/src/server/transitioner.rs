@@ -44,19 +44,23 @@ impl Transitioner {
     }
 
     pub fn transit(&mut self, current_time: f64) {
-        let workunits_to_transit =
-            BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
-                self.ctx.time() >= wu.transition_time
-                    && wu.file_delete_state != FileDeleteState::Done
-                    && wu.file_delete_state != FileDeleteState::Ready
-            });
+        let workunits_to_transit = self.db.get_wus_for_transitioner(self.ctx.time());
+        BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
+            self.ctx.time() >= wu.transition_time
+                && wu.file_delete_state != FileDeleteState::Done
+                && wu.file_delete_state != FileDeleteState::Ready
+        });
         log_info!(self.ctx, "transitioning started");
 
         let mut db_workunit_mut = self.db.workunit.borrow_mut();
 
         for wu_id in workunits_to_transit {
-            // check for timed-out results
             let workunit = db_workunit_mut.get_mut(&wu_id).unwrap();
+
+            if workunit.file_delete_state != FileDeleteState::Init {
+                self.db.no_transition_needed(workunit);
+                continue;
+            }
 
             log_debug!(
                 self.ctx,
@@ -81,7 +85,8 @@ impl Transitioner {
 
             self.update_file_deletion_state(workunit);
 
-            workunit.transition_time = next_transition_time;
+            self.db
+                .update_wu_transition_time(workunit, next_transition_time);
 
             self.print_statistics_for_workunit(workunit);
 

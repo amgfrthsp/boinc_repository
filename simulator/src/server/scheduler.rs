@@ -105,8 +105,8 @@ impl Scheduler {
                 result.time_sent = self.ctx.time();
                 result.client_id = client_info.id;
                 result.report_deadline = self.ctx.time() + workunit.spec.delay_bound;
-                workunit.transition_time =
-                    f64::min(workunit.transition_time, result.report_deadline);
+                let new_wu_t_time = f64::min(workunit.transition_time, result.report_deadline);
+                self.db.update_wu_transition_time(workunit, new_wu_t_time);
                 workunit.client_ids.push(client_info.id);
 
                 assigned_results_cnt += 1;

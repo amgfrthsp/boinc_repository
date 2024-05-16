@@ -65,6 +65,7 @@ impl DBPurger {
                 }
             }
             if all_results_deleted {
+                self.db.no_transition_needed(workunit);
                 db_workunit_mut.remove(&wu_id);
                 self.stats.borrow_mut().n_workunits_fully_processed += 1;
                 log_debug!(self.ctx, "removed workunit {} from database", wu_id);

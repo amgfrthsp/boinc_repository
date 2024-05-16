@@ -142,7 +142,7 @@ impl Validator {
                     }
                 }
             }
-            workunit.transition_time = self.ctx.time();
+            self.db.update_wu_transition_time(workunit, self.ctx.time());
         }
         log_info!(self.ctx, "validation finished");
     }

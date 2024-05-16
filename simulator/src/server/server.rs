@@ -199,7 +199,7 @@ impl Server {
         //     workunit.id
         // );
 
-        self.db.workunit.borrow_mut().insert(workunit.id, workunit);
+        self.db.insert_new_workunit(workunit);
     }
 
     fn on_result_completed(&mut self, result_id: ResultId, is_correct: bool, claimed_credit: f64) {
@@ -223,9 +223,9 @@ impl Server {
             result.server_state = ResultState::Over;
             result.outcome = ResultOutcome::Success;
             result.validate_state = ValidateState::Init;
-            workunit.transition_time = self.ctx.time();
             result.claimed_credit = claimed_credit;
             result.is_correct = is_correct;
+            self.db.update_wu_transition_time(workunit, self.ctx.time());
         }
 
         let processing_time = self.ctx.time() - result.time_sent;
