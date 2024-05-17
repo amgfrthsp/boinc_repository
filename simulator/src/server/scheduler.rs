@@ -80,7 +80,26 @@ impl Scheduler {
 
         let mut shmem = self.shared_memory.borrow_mut();
 
-        while !shmem.is_empty() && !(req.req_secs < 0. && req.req_instances < 0) {
+        if shmem.is_empty() {
+            log_info!(self.ctx, "Scheduling finished. Shared memory is empty.");
+            return;
+        }
+
+        let len = shmem.len();
+        let mut i = 0;
+
+        while !(req.req_secs < 0. && req.req_instances < 0) {
+            log_info!(
+                self.ctx,
+                "{} {} {}",
+                shmem.len(),
+                req.req_secs,
+                req.req_instances
+            );
+            if i >= len {
+                break;
+            }
+            i += 1;
             let result_id = shmem.pop_front().unwrap();
             if !db_result_mut.contains_key(&result_id) {
                 continue;

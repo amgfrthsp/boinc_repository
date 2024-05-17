@@ -213,12 +213,6 @@ impl DataServer {
             log_error!(self.ctx, "No such output file {}", workunit_id);
             return 0;
         }
-
-        self.disk
-            .borrow_mut()
-            .mark_free(input_file.unwrap().size)
-            .expect("Failed to free disk space");
-
         log_debug!(self.ctx, "deleted input files for workunit {}", workunit_id);
 
         return 0;

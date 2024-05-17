@@ -1,8 +1,8 @@
 seed: 95
-sim_duration: 24.
+sim_duration: 100.
 
 clients:
-  - count: 200000
+  - count: 100
     cpu:
       speed: 5.5
       cores: 4
@@ -88,9 +88,9 @@ server:
     cores_max: 1
     delay_min: 30.
     delay_max: 30.
-    min_quorum_min: 3
-    min_quorum_max: 3
-    target_nresults_redundancy: 2
+    min_quorum_min: 1
+    min_quorum_max: 1
+    target_nresults_redundancy: 0
     input_size_min: 5
     input_size_max: 20
     output_size_min: 5

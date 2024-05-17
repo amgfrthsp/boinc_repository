@@ -164,7 +164,7 @@ impl Server {
         self.ctx.emit_self(CheckWorkunitBuffer {}, 1500.);
         self.ctx
             .emit(Finish {}, self.data_server.borrow().id, finish_time);
-        for i in (5..100).step_by(5) {
+        for i in (0..100).step_by(1) {
             let progress = i as f64 / 100.;
             self.ctx
                 .emit_self(SimulationProgress { progress }, progress * finish_time);
@@ -443,7 +443,7 @@ impl EventHandler for Server {
                 }
             }
             SimulationProgress { progress } => {
-                println!("Simulation progress: {} %", progress * 100.);
+                println!("Simulation progress: {:.0}%", progress * 100.);
             }
         })
     }
