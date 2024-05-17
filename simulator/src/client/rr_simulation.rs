@@ -150,12 +150,6 @@ impl RRSimulation {
         let duration = t.elapsed().as_secs_f64();
         self.dur_sum += duration;
         self.dur_samples += 1;
-        // println!("RR sim duration {:.2}", duration);
-        // println!(
-        //     "RR sim average duration {:.2}",
-        //     self.dur_sum / self.dur_samples as f64
-        // );
-        // println!("RR sim sum duration {:.2}", self.dur_sum);
 
         RRSimulationResult {
             results_to_schedule: results_to_schedule

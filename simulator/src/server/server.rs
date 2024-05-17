@@ -160,67 +160,62 @@ impl Server {
         self.db.clients.borrow_mut().insert(client.id, client);
     }
 
-    async fn on_job_spec(&self, mut spec: JobSpec) {
-        // log_debug!(self.ctx, "job spec {:?}", spec.clone());
+    async fn on_job_spec(&self, specs: Vec<JobSpec>) {
+        let mut wus = Vec::new();
+        let mut input_files = Vec::new();
 
-        let mut workunit = WorkunitInfo {
-            id: spec.id,
-            spec: spec.clone(),
-            result_ids: Vec::new(),
-            client_ids: Vec::new(),
-            transition_time: f64::MAX,
-            need_validate: false,
-            file_delete_state: FileDeleteState::Init,
-            canonical_resultid: None,
-            assimilate_state: AssimilateState::Init,
-        };
+        for spec in specs {
+            let mut workunit = WorkunitInfo {
+                id: spec.id,
+                spec: spec.clone(),
+                result_ids: Vec::new(),
+                client_ids: Vec::new(),
+                transition_time: f64::MAX,
+                need_validate: false,
+                file_delete_state: FileDeleteState::Init,
+                canonical_resultid: None,
+                assimilate_state: AssimilateState::Init,
+            };
+            workunit.spec.input_file.workunit_id = workunit.id;
+            input_files.push(workunit.spec.input_file.clone());
 
-        spec.input_file.workunit_id = workunit.id;
-
-        // log_debug!(
-        //     self.ctx,
-        //     "input file download started for workunit {}",
-        //     workunit.id
-        // );
+            wus.push(workunit);
+        }
 
         self.data_server
             .borrow_mut()
-            .download_file(DataServerFile::Input(spec.input_file), self.ctx.id());
+            .download_input_files_from_server(input_files, wus[0].id);
 
         self.ctx
-            .recv_event_by_key::<InputFileDownloadCompleted>(workunit.id)
+            .recv_event_by_key::<InputFileDownloadCompleted>(wus[0].id)
             .await;
 
         let mut db_result_mut = self.db.result.borrow_mut();
 
-        for i in 0..workunit.spec.target_nresults {
-            let result = ResultInfo {
-                id: *self.transitioner.next_result_id.borrow() + i,
-                workunit_id: workunit.id,
-                report_deadline: 0.,
-                server_state: ResultState::Unsent,
-                outcome: ResultOutcome::Undefined,
-                validate_state: ValidateState::Init,
-                file_delete_state: FileDeleteState::Init,
-                in_shared_mem: false,
-                time_sent: 0.,
-                client_id: 0,
-                is_correct: false,
-                claimed_credit: 0.,
-            };
-            self.db.feeder_result_ids.borrow_mut().push_back(result.id);
-            workunit.result_ids.push(result.id);
-            db_result_mut.insert(result.id, result);
+        for mut workunit in wus {
+            for i in 0..workunit.spec.target_nresults {
+                let result = ResultInfo {
+                    id: *self.transitioner.next_result_id.borrow() + i,
+                    workunit_id: workunit.id,
+                    report_deadline: 0.,
+                    server_state: ResultState::Unsent,
+                    outcome: ResultOutcome::Undefined,
+                    validate_state: ValidateState::Init,
+                    file_delete_state: FileDeleteState::Init,
+                    in_shared_mem: false,
+                    time_sent: 0.,
+                    client_id: 0,
+                    is_correct: false,
+                    claimed_credit: 0.,
+                };
+                self.db.feeder_result_ids.borrow_mut().push_back(result.id);
+                workunit.result_ids.push(result.id);
+                db_result_mut.insert(result.id, result);
+            }
+            *self.transitioner.next_result_id.borrow_mut() += workunit.spec.target_nresults;
+
+            self.db.insert_new_workunit(workunit);
         }
-        *self.transitioner.next_result_id.borrow_mut() += workunit.spec.target_nresults;
-
-        // log_debug!(
-        //     self.ctx,
-        //     "input file download finished for workunit {}",
-        //     workunit.id
-        // );
-
-        self.db.insert_new_workunit(workunit);
     }
 
     fn on_result_completed(&mut self, result_id: ResultId, is_correct: bool, claimed_credit: f64) {
@@ -305,28 +300,31 @@ impl Server {
             .emit_self(PurgeDB {}, self.config.db_purger.interval);
     }
 
-    pub fn generate_jobs(&self) {
+    pub async fn generate_jobs(&self) {
+        let t = Instant::now();
         let new_jobs = self.job_generator.generate_jobs(100000);
-        for job in new_jobs {
-            self.ctx.spawn(self.on_job_spec(job));
-        }
+        self.on_job_spec(new_jobs).await;
+        let duration = t.elapsed().as_secs_f64();
+        println!("Job gen duration: {}", duration);
     }
 
-    pub async fn generate_jobs_and_wait(&self, cnt: usize, simulation_id: Id) {
-        let new_jobs = self.job_generator.generate_jobs(cnt);
-        futures::future::join_all(new_jobs.into_iter().map(|j| self.on_job_spec(j))).await;
+    pub async fn generate_jobs_init(&self, cnt: usize, simulation_id: Id) {
+        let new_jobs: Vec<JobSpec> = self.job_generator.generate_jobs(cnt);
+        self.on_job_spec(new_jobs).await;
         self.ctx.emit_now(JobsGenerationCompleted {}, simulation_id);
     }
 
     pub fn check_wu_buffer(&mut self) {
         let t = Instant::now();
-        if self.feeder.get_shared_memory_size() < UNSENT_RESULT_BUFFER_LOWER_BOUND {
+        if self.db.feeder_result_ids.borrow().len() + self.feeder.get_shared_memory_size()
+            < UNSENT_RESULT_BUFFER_LOWER_BOUND
+        {
             log_debug!(
                 self.ctx,
                 "Shared memory size: {}. Generated new workunits",
                 self.feeder.get_shared_memory_size()
             );
-            self.generate_jobs();
+            self.ctx.spawn(self.generate_jobs());
         }
         self.ctx.emit_self(CheckWorkunitBuffer {}, 1500.);
         let duration = t.elapsed().as_secs_f64();
@@ -338,7 +336,7 @@ impl EventHandler for Server {
     fn on(&mut self, event: Event) {
         cast!(match event.data {
             GenerateJobs { cnt } => {
-                self.ctx.spawn(self.generate_jobs_and_wait(cnt, event.src));
+                self.ctx.spawn(self.generate_jobs_init(cnt, event.src));
             }
             StartServer { finish_time } => {
                 self.on_started(finish_time);

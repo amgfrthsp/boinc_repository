@@ -676,6 +676,7 @@ impl Simulator {
         let mut disk_sum = 0;
 
         let mut rr_sim_dur = 0.;
+        let mut sched_dur = 0.;
 
         for client_ref in &self.clients {
             let client = client_ref.borrow();
@@ -687,6 +688,7 @@ impl Simulator {
             disk_sum += client.disk.borrow().capacity();
 
             rr_sim_dur += client.rr_sim.borrow().dur_sum;
+            sched_dur += client.sched_sum;
         }
 
         let n_clients = self.clients.len();
@@ -698,6 +700,7 @@ impl Simulator {
             "RR sim average dur: {:.2} s",
             rr_sim_dur / self.clients.len() as f64
         );
+        println!("Sched sum dur: {:.2} s", sched_dur);
         println!(
             "- Average cores: {:.2}",
             cores_sum as f64 / n_clients as f64

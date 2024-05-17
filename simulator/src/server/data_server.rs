@@ -93,6 +93,45 @@ impl DataServer {
         self.server_id = server_id;
     }
 
+    pub fn download_input_files_from_server(
+        &self,
+        input_files: Vec<InputFileMetadata>,
+        ref_id: u64,
+    ) {
+        self.ctx
+            .spawn(self.process_download_input_files_from_server(input_files, ref_id));
+    }
+
+    async fn process_download_input_files_from_server(
+        &self,
+        input_files: Vec<InputFileMetadata>,
+        ref_id: u64,
+    ) {
+        let mut size = 0;
+        for file in &input_files {
+            size += file.size;
+        }
+        self.process_network_download(
+            DataServerFile::Input(InputFileMetadata {
+                workunit_id: 0,
+                size,
+            }),
+            self.server_id,
+        )
+        .await;
+        for input_file in input_files {
+            self.input_files
+                .borrow_mut()
+                .insert(input_file.workunit_id, input_file);
+        }
+        self.ctx.emit_now(
+            InputFileDownloadCompleted {
+                workunit_id: ref_id,
+            },
+            self.server_id,
+        );
+    }
+
     pub fn on_input_files_inquiry(&self, workunit_id: WorkunitId, ref_id: EventId, client_id: Id) {
         let input_files_ref = self.input_files.borrow();
         let input_file = input_files_ref.get(&workunit_id).unwrap();
@@ -104,49 +143,22 @@ impl DataServer {
     }
 
     async fn process_download_file(&self, file: DataServerFile, from: Id) {
-        // log_debug!(self.ctx, "file download started {:?}", file);
-
-        futures::join!(
-            self.process_network_download(file.clone(), from),
-            //self.process_disk_write(file.clone())
-        );
-
-        // log_debug!(self.ctx, "file download finished {:?}", file);
-
-        // if retry.contains(file_id) {retry in x} else:
-
-        match file {
-            DataServerFile::Input(input_file) => {
-                let workunit_id = input_file.workunit_id;
-
-                self.input_files
-                    .borrow_mut()
-                    .insert(workunit_id, input_file);
-
-                self.ctx
-                    .emit_now(InputFileDownloadCompleted { workunit_id }, self.server_id);
-
-                // log_debug!(
-                //     self.ctx,
-                //     "received a new input file for workunit {}",
-                //     workunit_id,
-                // );
-            }
+        match file.clone() {
+            DataServerFile::Input(..) => {}
+            // from client
             DataServerFile::Output(output_file) => {
-                let result_id = output_file.result_id;
+                futures::join!(
+                    self.process_network_download(file.clone(), from),
+                    self.process_disk_write(file)
+                );
 
+                let result_id = output_file.result_id;
                 self.output_files
                     .borrow_mut()
                     .insert(result_id, output_file);
 
                 self.ctx
                     .emit_now(OutputFileDownloadCompleted { result_id }, from);
-
-                // log_debug!(
-                //     self.ctx,
-                //     "received a new output file for result {}",
-                //     result_id,
-                // );
             }
         }
     }
@@ -156,21 +168,9 @@ impl DataServer {
     }
 
     async fn process_upload_file(&self, file: DataServerFile, to: Id, ref_id: EventId) {
-        if !self.input_files.borrow().contains_key(&file.id())
-            && !self.output_files.borrow().contains_key(&file.id())
-        {
-            // error: no such file
-        }
-
-        // log_debug!(self.ctx, "file upload started {:?}", file);
-
-        futures::join!(
-            self.process_network_upload(file.clone(), to),
-            //self.process_disk_read(file.clone())
-        );
-
         match file {
             DataServerFile::Input(..) => {
+                futures::join!(self.process_network_upload(file.clone(), to),);
                 self.ctx.emit_now(InputFileUploadCompleted { ref_id }, to);
             }
             DataServerFile::Output(..) => {}

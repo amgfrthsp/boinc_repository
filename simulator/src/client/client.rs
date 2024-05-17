@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Instant;
 
 use serde::Serialize;
 
@@ -105,6 +106,7 @@ pub struct Client {
     is_active: bool,
     finish_time: f64,
     pub stats: Rc<RefCell<ClientStats>>,
+    pub sched_sum: f64,
 }
 
 impl Client {
@@ -148,6 +150,7 @@ impl Client {
             is_active: true,
             finish_time: 0.,
             stats,
+            sched_sum: 0.,
         }
     }
 
@@ -172,6 +175,7 @@ impl Client {
         self.ctx.emit_self(AskForWork {}, 200.);
 
         let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
+        let resume_dur = self.finish_time;
         self.ctx.emit_self(Suspend {}, resume_dur);
 
         self.stats.borrow_mut().time_available += if self.ctx.time() + resume_dur > self.finish_time
@@ -309,12 +313,15 @@ impl Client {
         *self.next_scheduling_time.borrow_mut() = self.ctx.time() + delay;
     }
 
-    pub fn schedule_results(&self) {
+    pub fn schedule_results(&mut self) {
+        let t = Instant::now();
         if self.suspended {
             return;
         }
-        self.scheduler.schedule();
+        //self.scheduler.schedule();
         *self.scheduling_event.borrow_mut() = None;
+        let duration = t.elapsed().as_secs_f64();
+        self.sched_sum += duration;
     }
 
     pub fn on_run_result(&self, result_id: ResultId) {
