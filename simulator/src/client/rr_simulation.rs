@@ -153,7 +153,7 @@ impl RRSimulation {
 
         RRSimulationResult {
             results_to_schedule: results_to_schedule
-                .into_iter()
+                .iter()
                 .map(|r| r.spec.id)
                 .collect::<Vec<_>>(),
             work_fetch_req,

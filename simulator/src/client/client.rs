@@ -77,6 +77,7 @@ pub struct Client {
     pub compute: Rc<RefCell<Compute>>,
     pub disk: Rc<RefCell<Disk>>,
     net: Rc<RefCell<Network>>,
+    node_name: String,
     utilities: Rc<RefCell<Utilities>>,
     server_id: Id,
     data_server_id: Id,
@@ -86,7 +87,7 @@ pub struct Client {
     scheduling_event: RefCell<Option<EventId>>,
     suspended: bool,
     pub ctx: SimulationContext,
-    config: ClientGroupConfig,
+    pub config: ClientGroupConfig,
     reliability: f64,
     av_distribution: SimulationDistribution,
     unav_distribution: SimulationDistribution,
@@ -101,6 +102,7 @@ impl Client {
         compute: Rc<RefCell<Compute>>,
         disk: Rc<RefCell<Disk>>,
         net: Rc<RefCell<Network>>,
+        node_name: String,
         utilities: Rc<RefCell<Utilities>>,
         rr_sim: Rc<RefCell<RRSimulation>>,
         file_storage: Rc<FileStorage>,
@@ -118,6 +120,7 @@ impl Client {
             compute,
             disk,
             net,
+            node_name,
             utilities,
             server_id: 0,
             data_server_id: 0,
@@ -136,6 +139,14 @@ impl Client {
             stats,
             sched_sum: 0.,
         }
+    }
+
+    pub fn get_network(&self) -> Rc<RefCell<Network>> {
+        self.net.clone()
+    }
+
+    pub fn get_node_name(&self) -> &String {
+        &self.node_name
     }
 
     fn on_start(&mut self, server_id: Id, data_server_id: Id, finish_time: f64) {

@@ -1,3 +1,4 @@
+use dslab_network::Network;
 use serde::Serialize;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -128,6 +129,16 @@ impl Server {
             rs_dur_sum: 0.,
             check_dur: 0.,
         }
+    }
+
+    pub fn add_client_network(&self, client_id: Id, net: Rc<RefCell<Network>>, node_name: &str) {
+        net.borrow_mut().set_location(self.ctx.id(), node_name);
+        self.scheduler
+            .borrow_mut()
+            .add_client_network(client_id, net.clone(), node_name);
+        self.data_server
+            .borrow_mut()
+            .add_client_network(client_id, net.clone(), node_name);
     }
 
     pub fn on_started(&self, finish_time: f64) {

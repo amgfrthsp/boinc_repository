@@ -3,7 +3,7 @@ use dslab_core::context::SimulationContext;
 use dslab_core::{log_debug, log_info, Event, EventHandler};
 use dslab_network::Network;
 use std::cell::RefCell;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 use std::time::Instant;
 
@@ -16,10 +16,10 @@ use super::stats::ServerStats;
 
 pub struct Scheduler {
     server_id: Id,
-    net: Rc<RefCell<Network>>,
+    client_networks: HashMap<Id, Rc<RefCell<Network>>>,
     db: Rc<BoincDatabase>,
     shared_memory: Rc<RefCell<VecDeque<ResultId>>>,
-    ctx: SimulationContext,
+    pub ctx: SimulationContext,
     #[allow(dead_code)]
     stats: Rc<RefCell<ServerStats>>,
     pub dur_sum: f64,
@@ -28,7 +28,6 @@ pub struct Scheduler {
 
 impl Scheduler {
     pub fn new(
-        net: Rc<RefCell<Network>>,
         db: Rc<BoincDatabase>,
         shared_memory: Rc<RefCell<VecDeque<ResultId>>>,
         ctx: SimulationContext,
@@ -36,7 +35,7 @@ impl Scheduler {
     ) -> Self {
         Self {
             server_id: 0,
-            net,
+            client_networks: HashMap::new(),
             db,
             shared_memory,
             ctx,
@@ -44,6 +43,16 @@ impl Scheduler {
             dur_samples: 0,
             dur_sum: 0.,
         }
+    }
+
+    pub fn add_client_network(
+        &mut self,
+        client_id: Id,
+        net: Rc<RefCell<Network>>,
+        node_name: &str,
+    ) {
+        net.borrow_mut().set_location(self.ctx.id(), node_name);
+        self.client_networks.insert(client_id, net);
     }
 
     pub fn set_server_id(&mut self, server_id: Id) {
@@ -60,6 +69,7 @@ impl Scheduler {
 
         let clients_ref = self.db.clients.borrow();
         let client_info = clients_ref.get(&client_id).unwrap();
+        let net = self.client_networks.get(&client_id).unwrap();
 
         let t = Instant::now();
         let mut assigned_results = Vec::new();
@@ -125,7 +135,7 @@ impl Scheduler {
         }
 
         if !assigned_results.is_empty() {
-            self.net.borrow_mut().send_event(
+            net.borrow_mut().send_event(
                 WorkFetchReply {
                     requests: assigned_results,
                 },

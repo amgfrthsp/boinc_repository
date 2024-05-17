@@ -3,9 +3,6 @@ use dslab_compute::multicore::Compute;
 use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
 use dslab_core::{log_info, Event, EventHandler, Simulation};
-use dslab_network::models::TopologyAwareNetworkModel;
-use dslab_network::routing::ShortestPathStarTopology;
-use dslab_network::Link;
 use dslab_network::{models::SharedBandwidthNetworkModel, Network};
 use dslab_storage::disk::DiskBuilder;
 use dslab_storage::storage::Storage;
@@ -54,9 +51,7 @@ pub struct StartClient {
 }
 
 pub struct Simulator {
-    sim: Rc<RefCell<Simulation>>,
-    network: Rc<RefCell<Network>>,
-    hosts: Vec<String>,
+    simulation: Simulation,
     server: Option<Rc<RefCell<Server>>>,
     clients: Vec<Rc<RefCell<Client>>>,
     ctx: SimulationContext,
@@ -65,33 +60,23 @@ pub struct Simulator {
 
 impl Simulator {
     pub fn new(sim_config: SimulationConfig) -> Self {
-        let mut sim = Simulation::new(sim_config.seed);
-
-        let network = rc!(refcell!(Network::new(
-            Box::new(
-                TopologyAwareNetworkModel::new()
-                    .with_routing(Box::<ShortestPathStarTopology>::default())
-            ),
-            sim.create_context("net"),
-        )));
+        let mut simulation = Simulation::new(sim_config.seed);
 
         // context for starting server and clients
-        let ctx = sim.create_context("ctx");
-        sim.add_handler("ctx", rc!(refcell!(EmptyEventHandler {})));
+        let ctx = simulation.create_context("ctx");
+        simulation.add_handler("ctx", rc!(refcell!(EmptyEventHandler {})));
 
-        let mut sim = Self {
-            sim: rc!(refcell!(sim)),
-            network: network.clone(),
-            hosts: Vec::new(),
+        let mut simulator = Self {
+            simulation,
             server: None,
             clients: Vec::new(),
             ctx,
             sim_config,
         };
 
-        let server_node_name = sim.add_server(sim.sim_config.server.clone());
+        simulator.add_server(simulator.sim_config.server.clone());
         // Add hosts from config
-        for mut host_group_config in sim.sim_config.clients.clone() {
+        for mut host_group_config in simulator.sim_config.clients.clone() {
             if host_group_config.trace.is_none() && host_group_config.cpu.is_none()
                 || host_group_config.trace.is_some() && host_group_config.cpu.is_some()
             {
@@ -107,10 +92,9 @@ impl Simulator {
                 host_group_config.from_h_to_sec();
                 let count = host_group_config.count.clone().unwrap_or(1);
                 for _ in 0..count {
-                    sim.add_host(
+                    simulator.add_host(
                         host_group_config.clone(),
-                        &server_node_name,
-                        sim.ctx.sample_from_distribution(&reliability_dist),
+                        simulator.ctx.sample_from_distribution(&reliability_dist),
                     );
                 }
             } else {
@@ -131,19 +115,37 @@ impl Simulator {
                     host_config.cpu = Some(resources);
                     host_config.from_h_to_sec();
 
-                    sim.add_host(
+                    simulator.add_host(
                         host_config,
-                        &server_node_name,
-                        sim.ctx.sample_from_distribution(&reliability_dist),
+                        simulator.ctx.sample_from_distribution(&reliability_dist),
                     );
                 }
             }
         }
 
-        sim.network.borrow_mut().init_topology();
-        sim.sim.borrow_mut().add_handler("net", network.clone());
+        let server = simulator.server.clone().unwrap();
+        let server_node_name = "server";
 
-        sim
+        for client_ref in &simulator.clients {
+            let client = client_ref.borrow_mut();
+            let client_network = client.get_network();
+
+            client_network.borrow_mut().add_node(
+                server_node_name,
+                Box::new(SharedBandwidthNetworkModel::new(
+                    simulator.sim_config.server.local_bandwidth,
+                    simulator.sim_config.server.local_latency / 1000.,
+                )),
+            );
+
+            server.borrow().add_client_network(
+                client.ctx.id(),
+                client_network.clone(),
+                server_node_name,
+            );
+        }
+
+        simulator
     }
 
     pub fn run(&mut self) {
@@ -183,16 +185,16 @@ impl Simulator {
         });
 
         let t = Instant::now();
-        self.sim.borrow_mut().step_until_no_events();
+        self.simulation.step_until_no_events();
         let duration = t.elapsed().as_secs_f64();
 
         println!("Simulation finished");
         println!("Elapsed time: {:.2}s", duration);
         println!(
             "Simulation speedup: {:.2}",
-            self.sim.borrow_mut().time() / duration
+            self.simulation.time() / duration
         );
-        let event_count = self.sim.borrow_mut().event_count();
+        let event_count = self.simulation.event_count();
         println!(
             "Processed {} events in {:.2?}s ({:.0} events/s)",
             event_count,
@@ -203,19 +205,10 @@ impl Simulator {
         self.print_stats();
     }
 
-    pub fn add_server(&mut self, mut config: ServerConfig) -> String {
+    pub fn add_server(&mut self, mut config: ServerConfig) {
         config.from_h_to_sec();
-        let n = self.hosts.len();
-        let node_name = &format!("host{}", n);
-        self.network.borrow_mut().add_node(
-            node_name,
-            Box::new(SharedBandwidthNetworkModel::new(
-                config.local_bandwidth,
-                config.local_latency / 1000.,
-            )),
-        );
-        self.hosts.push(node_name.to_string());
-        let server_name = &format!("{}::server", node_name);
+
+        let server_name = "server";
 
         let stats = rc!(refcell!(ServerStats::new()));
 
@@ -223,9 +216,9 @@ impl Simulator {
         let database = rc!(BoincDatabase::new());
 
         // Job generator
-        let job_generator_name = &format!("{}::job_generator", node_name);
+        let job_generator_name = &format!("{}::job_generator", server_name);
         let job_generator = JobGenerator::new(
-            self.sim.borrow_mut().create_context(job_generator_name),
+            self.simulation.create_context(job_generator_name),
             config.job_generator.clone(),
         );
 
@@ -234,7 +227,7 @@ impl Simulator {
         let validator_name = &format!("{}::validator", server_name);
         let validator = Validator::new(
             database.clone(),
-            self.sim.borrow_mut().create_context(validator_name),
+            self.simulation.create_context(validator_name),
             config.validator.clone(),
             stats.clone(),
         );
@@ -243,7 +236,7 @@ impl Simulator {
         let assimilator_name = &format!("{}::assimilator", server_name);
         let assimilator = Assimilator::new(
             database.clone(),
-            self.sim.borrow_mut().create_context(assimilator_name),
+            self.simulation.create_context(assimilator_name),
             config.assimilator.clone(),
             stats.clone(),
         );
@@ -252,7 +245,7 @@ impl Simulator {
         let transitioner_name = &format!("{}::transitioner", server_name);
         let transitioner = Transitioner::new(
             database.clone(),
-            self.sim.borrow_mut().create_context(transitioner_name),
+            self.simulation.create_context(transitioner_name),
             config.transitioner.clone(),
             stats.clone(),
         );
@@ -261,7 +254,7 @@ impl Simulator {
         let db_purger_name = &format!("{}::db_purger", server_name);
         let db_purger = DBPurger::new(
             database.clone(),
-            self.sim.borrow_mut().create_context(db_purger_name),
+            self.simulation.create_context(db_purger_name),
             config.db_purger.clone(),
             stats.clone(),
         );
@@ -277,26 +270,18 @@ impl Simulator {
         let feeder: Feeder = Feeder::new(
             shared_memory.clone(),
             database.clone(),
-            self.sim.borrow_mut().create_context(feeder_name),
+            self.simulation.create_context(feeder_name),
             config.feeder.clone(),
         );
 
         // Scheduler
         let scheduler_name = &format!("{}::scheduler", server_name);
         let scheduler = rc!(refcell!(ServerScheduler::new(
-            self.network.clone(),
             database.clone(),
             shared_memory.clone(),
-            self.sim.borrow_mut().create_context(scheduler_name),
+            self.simulation.create_context(scheduler_name),
             stats.clone(),
         )));
-        let scheduler_id = self
-            .sim
-            .borrow_mut()
-            .add_handler(scheduler_name, scheduler.clone());
-        self.network
-            .borrow_mut()
-            .set_location(scheduler_id, node_name);
 
         // Data server
         let data_server_name = &format!("{}::data_server", server_name);
@@ -307,29 +292,24 @@ impl Simulator {
             config.data_server.disk_read_bandwidth,
             config.data_server.disk_write_bandwidth
         )
-        .build(self.sim.borrow_mut().create_context(&disk_name))));
-        self.sim.borrow_mut().add_handler(disk_name, disk.clone());
+        .build(self.simulation.create_context(&disk_name))));
+        self.simulation.add_handler(disk_name, disk.clone());
+
         let data_server: Rc<RefCell<DataServer>> = rc!(refcell!(DataServer::new(
-            self.network.clone(),
             disk,
-            self.sim.borrow_mut().create_context(data_server_name),
+            self.simulation.create_context(data_server_name),
             config.data_server.clone(),
             stats.clone()
         )));
-        let data_server_id = self
-            .sim
-            .borrow_mut()
+        self.simulation
             .add_handler(data_server_name, data_server.clone());
-        self.network
-            .borrow_mut()
-            .set_location(data_server_id, node_name);
 
         // File deleter
         let file_deleter_name = &format!("{}::file_deleter", server_name);
         let file_deleter = FileDeleter::new(
             database.clone(),
             data_server.clone(),
-            self.sim.borrow_mut().create_context(file_deleter_name),
+            self.simulation.create_context(file_deleter_name),
             config.file_deleter.clone(),
         );
 
@@ -344,41 +324,37 @@ impl Simulator {
             db_purger,
             scheduler,
             data_server,
-            self.sim.borrow_mut().create_context(server_name),
+            self.simulation.create_context(server_name),
             config,
             stats.clone()
         )));
-        self.server = Some(server.clone());
-        let server_id = self
-            .sim
-            .borrow_mut()
-            .add_handler(server_name, server.clone());
-        self.network.borrow_mut().set_location(server_id, node_name);
 
-        node_name.clone()
+        self.simulation.add_handler(server_name, server.clone());
+        self.server = Some(server.clone());
     }
 
-    pub fn add_host(
-        &mut self,
-        config: ClientGroupConfig,
-        server_node_name: &str,
-        reliability: f64,
-    ) {
-        let n = self.hosts.len();
-        let node_name = &format!("host{}", n);
-        self.network.borrow_mut().add_node(
+    pub fn add_host(&mut self, config: ClientGroupConfig, reliability: f64) {
+        let n = self.clients.len();
+        let node_name = &format!("client{}", n);
+
+        let network_name = &format!("{}::network", node_name);
+        let network = rc!(refcell!(Network::new(
+            Box::new(SharedBandwidthNetworkModel::new(
+                config.network_bandwidth,
+                config.network_latency / 1000.
+            )),
+            self.simulation.create_context(network_name),
+        )));
+
+        self.simulation.add_handler(network_name, network.clone());
+
+        network.borrow_mut().add_node(
             node_name,
             Box::new(SharedBandwidthNetworkModel::new(
                 config.local_bandwidth,
                 config.local_latency / 1000.,
             )),
         );
-        self.network.borrow_mut().add_link(
-            &node_name,
-            server_node_name,
-            Link::shared(config.network_bandwidth, config.network_latency / 1000.),
-        );
-        self.hosts.push(node_name.to_string());
 
         //stats
         let stats = rc!(refcell!(ClientStats::new()));
@@ -389,11 +365,9 @@ impl Simulator {
             resources.speed,
             resources.cores,
             config.memory * 1000,
-            self.sim.borrow_mut().create_context(&compute_name),
+            self.simulation.create_context(&compute_name),
         )));
-        self.sim
-            .borrow_mut()
-            .add_handler(compute_name, compute.clone());
+        self.simulation.add_handler(compute_name, compute.clone());
         // disk
         let disk_name = format!("{}::disk", node_name);
         let disk = rc!(refcell!(DiskBuilder::simple(
@@ -401,20 +375,15 @@ impl Simulator {
             config.disk_read_bandwidth,
             config.disk_write_bandwidth
         )
-        .build(self.sim.borrow_mut().create_context(&disk_name))));
-        self.sim.borrow_mut().add_handler(disk_name, disk.clone());
+        .build(self.simulation.create_context(&disk_name))));
+        self.simulation.add_handler(disk_name, disk.clone());
 
         let client_name = &format!("{}::client", node_name);
 
         // File Storage
         let file_storage: Rc<FileStorage> = rc!(FileStorage::new());
 
-        let utilities_name = &format!("{}::utilities", client_name);
-        let utilities = rc!(refcell!(Utilities::new(
-            compute.clone(),
-            file_storage.clone(),
-            self.sim.borrow_mut().create_context(utilities_name)
-        )));
+        let utilities = rc!(refcell!(Utilities::new(compute.clone(),)));
 
         // RR Simulator
         let rr_simulator_name = &format!("{}::rr_simulator", client_name);
@@ -424,17 +393,18 @@ impl Simulator {
             file_storage.clone(),
             compute.clone(),
             utilities.clone(),
-            self.sim.borrow_mut().create_context(rr_simulator_name),
+            self.simulation.create_context(rr_simulator_name),
         )));
 
         let client = rc!(refcell!(Client::new(
             compute,
             disk,
-            self.network.clone(),
+            network.clone(),
+            node_name.to_string(),
             utilities.clone(),
             rr_simulator.clone(),
             file_storage.clone(),
-            self.sim.borrow_mut().create_context(client_name),
+            self.simulation.create_context(client_name),
             config.clone(),
             reliability,
             SimulationDistribution::new(
@@ -449,11 +419,10 @@ impl Simulator {
             ),
             stats.clone(),
         )));
-        let client_id = self
-            .sim
-            .borrow_mut()
-            .add_handler(client_name, client.clone());
-        self.network.borrow_mut().set_location(client_id, node_name);
+
+        let client_id = self.simulation.add_handler(client_name, client.clone());
+        network.borrow_mut().set_location(client_id, node_name);
+
         self.clients.push(client.clone());
     }
 

@@ -1,5 +1,5 @@
 use dslab_core::context::SimulationContext;
-use dslab_core::{cast, Event, EventHandler, EventId};
+use dslab_core::{cast, log_info, Event, EventHandler, EventId};
 use dslab_core::{component::Id, log_debug};
 use dslab_network::{DataTransferCompleted, Network};
 use dslab_storage::disk::Disk;
@@ -46,7 +46,7 @@ pub struct InputFileUploadCompleted {
 pub struct DataServer {
     pub id: Id,
     server_id: Id,
-    net: Rc<RefCell<Network>>,
+    client_networks: HashMap<Id, Rc<RefCell<Network>>>,
     disk: Rc<RefCell<Disk>>,
     input_files: RefCell<HashMap<WorkunitId, InputFileMetadata>>, // workunit_id -> input files
     output_files: RefCell<HashMap<ResultId, OutputFileMetadata>>, // result_id -> output files
@@ -60,7 +60,6 @@ pub struct DataServer {
 
 impl DataServer {
     pub fn new(
-        net: Rc<RefCell<Network>>,
         disk: Rc<RefCell<Disk>>,
         ctx: SimulationContext,
         config: DataServerConfig,
@@ -78,7 +77,7 @@ impl DataServer {
         Self {
             id: ctx.id(),
             server_id: 0,
-            net,
+            client_networks: HashMap::new(),
             disk,
             input_files: RefCell::new(HashMap::new()),
             output_files: RefCell::new(HashMap::new()),
@@ -87,6 +86,16 @@ impl DataServer {
             config,
             stats,
         }
+    }
+
+    pub fn add_client_network(
+        &mut self,
+        client_id: Id,
+        net: Rc<RefCell<Network>>,
+        node_name: &str,
+    ) {
+        net.borrow_mut().set_location(self.ctx.id(), node_name);
+        self.client_networks.insert(client_id, net);
     }
 
     pub fn set_server_id(&mut self, server_id: Id) {
@@ -107,18 +116,6 @@ impl DataServer {
         input_files: Vec<InputFileMetadata>,
         ref_id: u64,
     ) {
-        let mut size = 0;
-        for file in &input_files {
-            size += file.size;
-        }
-        self.process_network_download(
-            DataServerFile::Input(InputFileMetadata {
-                workunit_id: 0,
-                size,
-            }),
-            self.server_id,
-        )
-        .await;
         for input_file in input_files {
             self.input_files
                 .borrow_mut()
@@ -135,17 +132,35 @@ impl DataServer {
     pub fn on_input_files_inquiry(&self, workunit_id: WorkunitId, ref_id: EventId, client_id: Id) {
         let input_files_ref = self.input_files.borrow();
         let input_file = input_files_ref.get(&workunit_id).unwrap();
-        self.upload_file(DataServerFile::Input(input_file.clone()), client_id, ref_id);
+        self.upload_input_file_on_client(
+            DataServerFile::Input(input_file.clone()),
+            client_id,
+            ref_id,
+        );
     }
 
-    pub fn download_file(&self, file: DataServerFile, from: Id) {
+    pub fn upload_input_file_on_client(&self, file: DataServerFile, to: Id, ref_id: EventId) {
+        self.ctx.spawn(self.process_upload_file(file, to, ref_id));
+    }
+
+    async fn process_upload_file(&self, file: DataServerFile, to: Id, ref_id: EventId) {
+        match file {
+            DataServerFile::Input(..) => {
+                // input file for client
+                futures::join!(self.process_network_upload(file.clone(), to),);
+                self.ctx.emit_now(InputFileUploadCompleted { ref_id }, to);
+            }
+            DataServerFile::Output(..) => {}
+        }
+    }
+
+    pub fn download_output_file_from_client(&self, file: DataServerFile, from: Id) {
         self.ctx.spawn(self.process_download_file(file, from));
     }
 
     async fn process_download_file(&self, file: DataServerFile, from: Id) {
         match file.clone() {
             DataServerFile::Input(..) => {}
-            // from client
             DataServerFile::Output(output_file) => {
                 futures::join!(
                     self.process_network_download(file.clone(), from),
@@ -163,43 +178,35 @@ impl DataServer {
         }
     }
 
-    pub fn upload_file(&self, file: DataServerFile, to: Id, ref_id: EventId) {
-        self.ctx.spawn(self.process_upload_file(file, to, ref_id));
-    }
-
-    async fn process_upload_file(&self, file: DataServerFile, to: Id, ref_id: EventId) {
-        match file {
-            DataServerFile::Input(..) => {
-                futures::join!(self.process_network_upload(file.clone(), to),);
-                self.ctx.emit_now(InputFileUploadCompleted { ref_id }, to);
-            }
-            DataServerFile::Output(..) => {}
-        }
-    }
-
     async fn process_network_download(&self, file: DataServerFile, from: Id) {
-        let transfer_id = self.net.borrow_mut().transfer_data(
-            from,
-            self.ctx.id(),
-            file.size() as f64,
-            self.ctx.id(),
-        );
+        let net = self.client_networks.get(&from).unwrap();
+        let net_id = net.borrow().id();
+        let transfer_id =
+            net.borrow_mut()
+                .transfer_data(from, self.server_id, file.size() as f64, self.ctx.id());
 
         self.ctx
-            .recv_event_by_key::<DataTransferCompleted>(transfer_id as u64)
+            .recv_event_by_key_from::<DataTransferCompleted>(net_id, transfer_id as u64)
             .await;
     }
 
     async fn process_network_upload(&self, file: DataServerFile, to: Id) {
-        let transfer_id = self.net.borrow_mut().transfer_data(
+        let net = self.client_networks.get(&to).unwrap();
+        let net_id = net.borrow().id();
+        let transfer_id =
+            net.borrow_mut()
+                .transfer_data(self.server_id, to, file.size() as f64, self.ctx.id());
+
+        log_info!(
+            self.ctx,
+            "debug_net: {} {} {}",
             self.ctx.id(),
-            to,
-            file.size() as f64,
-            self.ctx.id(),
+            net_id,
+            transfer_id
         );
 
         self.ctx
-            .recv_event_by_key::<DataTransferCompleted>(transfer_id as u64)
+            .recv_event_by_key_from::<DataTransferCompleted>(net_id, transfer_id as u64)
             .await;
     }
 
@@ -289,7 +296,10 @@ impl EventHandler for DataServer {
             }
             OutputFileFromClient { output_file } => {
                 if self.is_active {
-                    self.download_file(DataServerFile::Output(output_file), event.src);
+                    self.download_output_file_from_client(
+                        DataServerFile::Output(output_file),
+                        event.src,
+                    );
                 }
             }
             Finish {} => {
