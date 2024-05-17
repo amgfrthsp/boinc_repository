@@ -9,6 +9,7 @@ pub struct ServerStats {
     pub total_credit_granted: f64,
 
     // fully processed results
+    pub n_res_deleted: usize,
     pub n_res_success: usize,
     pub n_res_init: usize,
     pub n_res_valid: usize,
@@ -28,6 +29,7 @@ impl ServerStats {
             max_result_processing_time: 0.,
             min_result_processing_time: f64::MAX,
             total_credit_granted: 0.,
+            n_res_deleted: 0,
             n_res_success: 0,
             n_res_init: 0,
             n_res_valid: 0,

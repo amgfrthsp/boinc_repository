@@ -515,7 +515,7 @@ impl Simulator {
         println!("******** Results Stats **********");
 
         let mut n_res_in_progress = 0;
-        let mut n_res_over = 0;
+        let mut n_res_over = stats.n_res_deleted;
         let mut n_res_success = stats.n_res_success;
         let mut n_res_init = stats.n_res_init;
         let mut n_res_valid = stats.n_res_valid;

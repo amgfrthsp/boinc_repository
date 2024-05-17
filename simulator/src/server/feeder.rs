@@ -56,6 +56,9 @@ impl Feeder {
             && self.shared_memory.borrow().len() < self.config.shared_memory_size
         {
             let result_id = vacant_results.pop_front().unwrap();
+            if !db_result_mut.contains_key(&result_id) {
+                continue;
+            }
             let result = db_result_mut.get_mut(&result_id).unwrap();
             if !(!result.in_shared_mem && result.server_state == ResultState::Unsent) {
                 continue;

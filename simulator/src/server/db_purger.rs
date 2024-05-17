@@ -77,6 +77,7 @@ impl DBPurger {
     }
 
     pub fn update_stats(&self, result: ResultInfo) {
+        self.stats.borrow_mut().n_res_deleted += 1;
         match result.outcome {
             ResultOutcome::Undefined => {}
             ResultOutcome::Success => {
