@@ -1,4 +1,5 @@
 use dslab_network::Network;
+use memory_stats::memory_stats;
 use serde::Serialize;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -68,6 +69,11 @@ pub struct GenerateJobs {
 #[derive(Clone, Serialize)]
 pub struct JobsGenerationCompleted {}
 
+#[derive(Clone, Serialize)]
+pub struct SimulationProgress {
+    progress: f64,
+}
+
 pub struct Server {
     // db
     pub db: Rc<BoincDatabase>,
@@ -91,6 +97,7 @@ pub struct Server {
     is_active: bool,
     pub rs_dur_sum: f64,
     pub check_dur: f64,
+    pub memory: f64,
 }
 
 impl Server {
@@ -128,6 +135,7 @@ impl Server {
             is_active: true,
             rs_dur_sum: 0.,
             check_dur: 0.,
+            memory: f64::MIN,
         }
     }
 
@@ -156,6 +164,11 @@ impl Server {
         self.ctx.emit_self(CheckWorkunitBuffer {}, 1500.);
         self.ctx
             .emit(Finish {}, self.data_server.borrow().id, finish_time);
+        for i in (5..100).step_by(5) {
+            let progress = i as f64 / 100.;
+            self.ctx
+                .emit_self(SimulationProgress { progress }, progress * finish_time);
+        }
         self.ctx.emit_self(Finish {}, finish_time);
     }
 
@@ -178,7 +191,7 @@ impl Server {
         for spec in specs {
             let mut workunit = WorkunitInfo {
                 id: spec.id,
-                spec: spec.clone(),
+                spec,
                 result_ids: Vec::new(),
                 client_ids: Vec::new(),
                 transition_time: f64::MAX,
@@ -275,6 +288,12 @@ impl Server {
         self.feeder.scan_work_array();
         self.ctx
             .emit_self(EnvokeFeeder {}, self.config.feeder.interval);
+
+        if let Some(usage) = memory_stats() {
+            self.memory = self.memory.max(usage.physical_mem as f64);
+        } else {
+            println!("Couldn't get the current memory usage :(");
+        }
     }
 
     fn schedule_results(&mut self, client_id: Id, req: WorkFetchRequest) {
@@ -312,10 +331,8 @@ impl Server {
     }
 
     pub async fn generate_jobs(&self) {
-        let t = Instant::now();
         let new_jobs = self.job_generator.generate_jobs(100000);
         self.on_job_spec(new_jobs).await;
-        let duration = t.elapsed().as_secs_f64();
     }
 
     pub async fn generate_jobs_init(&self, cnt: usize, simulation_id: Id) {
@@ -424,6 +441,9 @@ impl EventHandler for Server {
                 if self.is_active {
                     self.check_wu_buffer();
                 }
+            }
+            SimulationProgress { progress } => {
+                println!("Simulation progress: {} %", progress * 100.);
             }
         })
     }

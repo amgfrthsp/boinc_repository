@@ -22,7 +22,7 @@ use crate::config::sim_config::{
     ClientCpuPower, ClientGroupConfig, ServerConfig, SimulationConfig,
 };
 use crate::server::db_purger::DBPurger;
-use crate::server::feeder::{Feeder, SharedMemoryItem, SharedMemoryItemState};
+use crate::server::feeder::Feeder;
 use crate::server::file_deleter::FileDeleter;
 use crate::server::job::{AssimilateState, ResultId, ResultOutcome, ResultState, ValidateState};
 use crate::server::server::{GenerateJobs, JobsGenerationCompleted};
@@ -237,8 +237,6 @@ impl Simulator {
         let assimilator = Assimilator::new(
             database.clone(),
             self.simulation.create_context(assimilator_name),
-            config.assimilator.clone(),
-            stats.clone(),
         );
 
         // Transitioner
@@ -246,8 +244,6 @@ impl Simulator {
         let transitioner = Transitioner::new(
             database.clone(),
             self.simulation.create_context(transitioner_name),
-            config.transitioner.clone(),
-            stats.clone(),
         );
 
         // Database purger
@@ -255,15 +251,10 @@ impl Simulator {
         let db_purger = DBPurger::new(
             database.clone(),
             self.simulation.create_context(db_purger_name),
-            config.db_purger.clone(),
             stats.clone(),
         );
 
         // Feeder
-        let empty_slot = SharedMemoryItem {
-            state: SharedMemoryItemState::Empty,
-            result_id: 0,
-        };
         let shared_memory: Rc<RefCell<VecDeque<ResultId>>> = rc!(refcell!(VecDeque::new()));
 
         let feeder_name = &format!("{}::feeder", server_name);
@@ -298,8 +289,6 @@ impl Simulator {
         let data_server: Rc<RefCell<DataServer>> = rc!(refcell!(DataServer::new(
             disk,
             self.simulation.create_context(data_server_name),
-            config.data_server.clone(),
-            stats.clone()
         )));
         self.simulation
             .add_handler(data_server_name, data_server.clone());
@@ -310,7 +299,6 @@ impl Simulator {
             database.clone(),
             data_server.clone(),
             self.simulation.create_context(file_deleter_name),
-            config.file_deleter.clone(),
         );
 
         let server = rc!(refcell!(Server::new(
@@ -462,6 +450,7 @@ impl Simulator {
         println!("File deleter sum dur: {:.2} s", server.file_deleter.dur_sum);
         println!("DB purger sum dur: {:.2} s", server.db_purger.dur_sum);
         println!("Report status sum dur: {:.2} s", server.rs_dur_sum);
+        println!("Memory usage: {} MB", server.memory / 1_000_000.);
         println!("");
 
         let mut n_wus_inprogress = 0;
@@ -525,21 +514,17 @@ impl Simulator {
 
         println!("******** Results Stats **********");
 
-        let processed_results = server.db.processed_results.borrow();
-        let mut all_results = results.clone();
-        all_results.extend(processed_results.clone());
-
         let mut n_res_in_progress = 0;
         let mut n_res_over = 0;
-        let mut n_res_success = 0;
-        let mut n_res_init = 0;
-        let mut n_res_valid = 0;
-        let mut n_res_invalid = 0;
-        let mut n_res_noreply = 0;
-        let mut n_res_didntneed = 0;
-        let mut n_res_validateerror = 0;
+        let mut n_res_success = stats.n_res_success;
+        let mut n_res_init = stats.n_res_init;
+        let mut n_res_valid = stats.n_res_valid;
+        let mut n_res_invalid = stats.n_res_invalid;
+        let mut n_res_noreply = stats.n_res_noreply;
+        let mut n_res_didntneed = stats.n_res_didntneed;
+        let mut n_res_validateerror = stats.n_res_validateerror;
 
-        for item in all_results.iter() {
+        for item in results.iter() {
             let result = item.1;
             if result.server_state == ResultState::InProgress {
                 n_res_in_progress += 1;
@@ -571,7 +556,7 @@ impl Simulator {
                         n_res_didntneed += 1;
                     }
                     ResultOutcome::ValidateError => {
-                        n_res_over += 1;
+                        n_res_validateerror += 1;
                     }
                 }
                 n_res_over += 1;

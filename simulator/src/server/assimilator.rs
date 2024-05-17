@@ -1,14 +1,11 @@
 use dslab_core::context::SimulationContext;
 use dslab_core::log_info;
-use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
 
-use crate::config::sim_config::AssimilatorConfig;
 use crate::server::job::AssimilateState;
 
 use super::database::BoincDatabase;
-use super::stats::ServerStats;
 
 // TODO:
 // 1. Calculate delay based on output files size
@@ -17,25 +14,15 @@ use super::stats::ServerStats;
 pub struct Assimilator {
     db: Rc<BoincDatabase>,
     ctx: SimulationContext,
-    #[allow(dead_code)]
-    config: AssimilatorConfig,
-    stats: Rc<RefCell<ServerStats>>,
     pub dur_sum: f64,
     dur_samples: usize,
 }
 
 impl Assimilator {
-    pub fn new(
-        db: Rc<BoincDatabase>,
-        ctx: SimulationContext,
-        config: AssimilatorConfig,
-        stats: Rc<RefCell<ServerStats>>,
-    ) -> Self {
+    pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
         Self {
             db,
             ctx,
-            config,
-            stats,
             dur_samples: 0,
             dur_sum: 0.,
         }

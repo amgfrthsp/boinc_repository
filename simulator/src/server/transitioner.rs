@@ -5,13 +5,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
 
-use crate::config::sim_config::TransitionerConfig;
 use crate::server::job::{
     AssimilateState, FileDeleteState, ResultOutcome, ResultState, ValidateState,
 };
 
 use super::job::ResultId;
-use super::stats::ServerStats;
 use super::{
     database::BoincDatabase,
     job::{ResultInfo, WorkunitInfo},
@@ -21,27 +19,16 @@ pub struct Transitioner {
     db: Rc<BoincDatabase>,
     pub next_result_id: RefCell<ResultId>,
     ctx: SimulationContext,
-    #[allow(dead_code)]
-    config: TransitionerConfig,
-    #[allow(dead_code)]
-    stats: Rc<RefCell<ServerStats>>,
     pub dur_sum: f64,
     dur_samples: usize,
 }
 
 impl Transitioner {
-    pub fn new(
-        db: Rc<BoincDatabase>,
-        ctx: SimulationContext,
-        config: TransitionerConfig,
-        stats: Rc<RefCell<ServerStats>>,
-    ) -> Self {
+    pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
         Self {
             db,
             next_result_id: RefCell::new(0),
             ctx,
-            config,
-            stats,
             dur_samples: 0,
             dur_sum: 0.,
         }

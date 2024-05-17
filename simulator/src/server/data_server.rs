@@ -1,5 +1,5 @@
 use dslab_core::context::SimulationContext;
-use dslab_core::{cast, log_info, Event, EventHandler, EventId};
+use dslab_core::{cast, log_error, Event, EventHandler, EventId};
 use dslab_core::{component::Id, log_debug};
 use dslab_network::{DataTransferCompleted, Network};
 use dslab_storage::disk::Disk;
@@ -12,10 +12,8 @@ use serde::Serialize;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::common::Finish;
-use crate::config::sim_config::DataServerConfig;
 
 use super::job::{DataServerFile, InputFileMetadata, OutputFileMetadata, ResultId, WorkunitId};
-use super::stats::ServerStats;
 
 #[derive(Clone, Serialize)]
 pub struct InputFilesInquiry {
@@ -52,19 +50,10 @@ pub struct DataServer {
     output_files: RefCell<HashMap<ResultId, OutputFileMetadata>>, // result_id -> output files
     is_active: bool,
     pub ctx: SimulationContext,
-    #[allow(dead_code)]
-    config: DataServerConfig,
-    #[allow(dead_code)]
-    stats: Rc<RefCell<ServerStats>>,
 }
 
 impl DataServer {
-    pub fn new(
-        disk: Rc<RefCell<Disk>>,
-        ctx: SimulationContext,
-        config: DataServerConfig,
-        stats: Rc<RefCell<ServerStats>>,
-    ) -> Self {
+    pub fn new(disk: Rc<RefCell<Disk>>, ctx: SimulationContext) -> Self {
         ctx.register_key_getter_for::<DataTransferCompleted>(|e| e.dt.id as u64);
         ctx.register_key_getter_for::<DataWriteCompleted>(|e| e.request_id);
         ctx.register_key_getter_for::<DataWriteFailed>(|e| e.request_id);
@@ -83,8 +72,6 @@ impl DataServer {
             output_files: RefCell::new(HashMap::new()),
             is_active: true,
             ctx,
-            config,
-            stats,
         }
     }
 
@@ -132,39 +119,31 @@ impl DataServer {
     pub fn on_input_files_inquiry(&self, workunit_id: WorkunitId, ref_id: EventId, client_id: Id) {
         let input_files_ref = self.input_files.borrow();
         let input_file = input_files_ref.get(&workunit_id).unwrap();
-        self.upload_input_file_on_client(
-            DataServerFile::Input(input_file.clone()),
-            client_id,
-            ref_id,
-        );
+        self.upload_input_file_on_client(input_file.size as f64, client_id, ref_id);
     }
 
-    pub fn upload_input_file_on_client(&self, file: DataServerFile, to: Id, ref_id: EventId) {
-        self.ctx.spawn(self.process_upload_file(file, to, ref_id));
+    pub fn upload_input_file_on_client(&self, size: f64, to: Id, ref_id: EventId) {
+        self.ctx
+            .spawn(self.process_upload_input_file(size, to, ref_id));
     }
 
-    async fn process_upload_file(&self, file: DataServerFile, to: Id, ref_id: EventId) {
-        match file {
-            DataServerFile::Input(..) => {
-                // input file for client
-                futures::join!(self.process_network_upload(file.clone(), to),);
-                self.ctx.emit_now(InputFileUploadCompleted { ref_id }, to);
-            }
-            DataServerFile::Output(..) => {}
-        }
+    async fn process_upload_input_file(&self, size: f64, to: Id, ref_id: EventId) {
+        futures::join!(self.process_network_upload(size, to),);
+        self.ctx.emit_now(InputFileUploadCompleted { ref_id }, to);
     }
 
     pub fn download_output_file_from_client(&self, file: DataServerFile, from: Id) {
-        self.ctx.spawn(self.process_download_file(file, from));
+        self.ctx
+            .spawn(self.process_download_output_file(file, from));
     }
 
-    async fn process_download_file(&self, file: DataServerFile, from: Id) {
-        match file.clone() {
+    async fn process_download_output_file(&self, file: DataServerFile, from: Id) {
+        match file {
             DataServerFile::Input(..) => {}
             DataServerFile::Output(output_file) => {
                 futures::join!(
-                    self.process_network_download(file.clone(), from),
-                    self.process_disk_write(file)
+                    self.process_network_download(output_file.size as f64, from),
+                    self.process_disk_write(output_file.size)
                 );
 
                 let result_id = output_file.result_id;
@@ -178,40 +157,32 @@ impl DataServer {
         }
     }
 
-    async fn process_network_download(&self, file: DataServerFile, from: Id) {
+    async fn process_network_download(&self, size: f64, from: Id) {
         let net = self.client_networks.get(&from).unwrap();
         let net_id = net.borrow().id();
-        let transfer_id =
-            net.borrow_mut()
-                .transfer_data(from, self.server_id, file.size() as f64, self.ctx.id());
+        let transfer_id = net
+            .borrow_mut()
+            .transfer_data(from, self.server_id, size, self.ctx.id());
 
         self.ctx
             .recv_event_by_key_from::<DataTransferCompleted>(net_id, transfer_id as u64)
             .await;
     }
 
-    async fn process_network_upload(&self, file: DataServerFile, to: Id) {
+    async fn process_network_upload(&self, size: f64, to: Id) {
         let net = self.client_networks.get(&to).unwrap();
         let net_id = net.borrow().id();
-        let transfer_id =
-            net.borrow_mut()
-                .transfer_data(self.server_id, to, file.size() as f64, self.ctx.id());
-
-        log_info!(
-            self.ctx,
-            "debug_net: {} {} {}",
-            self.ctx.id(),
-            net_id,
-            transfer_id
-        );
+        let transfer_id = net
+            .borrow_mut()
+            .transfer_data(self.server_id, to, size, self.ctx.id());
 
         self.ctx
             .recv_event_by_key_from::<DataTransferCompleted>(net_id, transfer_id as u64)
             .await;
     }
 
-    async fn process_disk_write(&self, file: DataServerFile) {
-        let disk_write_id = self.disk.borrow_mut().write(file.size(), self.ctx.id());
+    async fn process_disk_write(&self, size: u64) {
+        let disk_write_id = self.disk.borrow_mut().write(size, self.ctx.id());
 
         select! {
             _ = self.ctx.recv_event_by_key::<DataWriteCompleted>(disk_write_id).fuse() => {
@@ -223,8 +194,8 @@ impl DataServer {
         };
     }
 
-    async fn process_disk_read(&self, file: DataServerFile) {
-        let disk_read_id = self.disk.borrow_mut().read(file.size(), self.ctx.id());
+    async fn process_disk_read(&self, size: u64) {
+        let disk_read_id = self.disk.borrow_mut().read(size, self.ctx.id());
 
         select! {
             _ = self.ctx.recv_event_by_key::<DataReadCompleted>(disk_read_id).fuse() => {
@@ -237,47 +208,35 @@ impl DataServer {
     }
 
     pub fn delete_input_files(&mut self, workunit_id: WorkunitId) -> u32 {
-        // log_debug!(
-        //     self.ctx,
-        //     "deleting input files for workunit {}",
-        //     workunit_id,
-        // );
-
         let input_file = self.input_files.borrow_mut().remove(&workunit_id);
         if input_file.is_none() {
-            log_debug!(self.ctx, "No such output file {}", workunit_id);
+            log_error!(self.ctx, "No such output file {}", workunit_id);
             return 0;
         }
 
-        // self.disk
-        //     .borrow_mut()
-        //     .mark_free(input_file.unwrap().size)
-        //     .expect("Failed to free disk space");
+        self.disk
+            .borrow_mut()
+            .mark_free(input_file.unwrap().size)
+            .expect("Failed to free disk space");
 
-        // process error
-
-        // log_debug!(self.ctx, "deleted input files for workunit {}", workunit_id);
+        log_debug!(self.ctx, "deleted input files for workunit {}", workunit_id);
 
         return 0;
     }
 
     pub fn delete_output_files(&mut self, result_id: ResultId) -> u32 {
-        // log_debug!(self.ctx, "deleting output files for result {}", result_id);
         let output_file = self.output_files.borrow_mut().remove(&result_id);
         if output_file.is_none() {
-            // no such file
-            log_debug!(self.ctx, "No such output file {}", result_id);
+            log_error!(self.ctx, "No such output file {}", result_id);
             return 0;
         }
 
-        // self.disk
-        //     .borrow_mut()
-        //     .mark_free(output_file.unwrap().size)
-        //     .expect("Failed to free disk space");
+        self.disk
+            .borrow_mut()
+            .mark_free(output_file.unwrap().size)
+            .expect("Failed to free disk space");
 
-        // process error
-
-        // log_debug!(self.ctx, "deleted output files for result {}", result_id,);
+        log_debug!(self.ctx, "deleted output files for result {}", result_id,);
 
         return 0;
     }

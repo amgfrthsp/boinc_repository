@@ -95,8 +95,8 @@ impl Scheduler {
 
             let est_runtime = self.get_est_runtime(&workunit.spec, client_info.speed);
 
-            // !workunit.client_ids.contains(&client_info.id) &&
-            if workunit.spec.cores <= client_info.cores
+            if !workunit.client_ids.contains(&client_info.id)
+                && workunit.spec.cores <= client_info.cores
                 && workunit.spec.memory <= client_info.memory
                 && req.estimated_delay + est_runtime < workunit.spec.delay_bound
             {

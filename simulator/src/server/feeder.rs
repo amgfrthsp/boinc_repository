@@ -1,6 +1,5 @@
 use dslab_core::context::SimulationContext;
 use dslab_core::log_info;
-use serde::Serialize;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -12,23 +11,10 @@ use crate::server::job::ResultState;
 use super::database::BoincDatabase;
 use super::job::ResultId;
 
-#[derive(Serialize, Debug, Clone, PartialEq)]
-pub enum SharedMemoryItemState {
-    Empty,
-    Present,
-}
-
-#[derive(Serialize, Debug, Clone)]
-pub struct SharedMemoryItem {
-    pub state: SharedMemoryItemState,
-    pub result_id: ResultId,
-}
-
 pub struct Feeder {
     shared_memory: Rc<RefCell<VecDeque<ResultId>>>,
     db: Rc<BoincDatabase>,
     ctx: SimulationContext,
-    #[allow(dead_code)]
     config: FeederConfig,
     pub dur_sum: f64,
     dur_samples: usize,

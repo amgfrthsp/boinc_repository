@@ -4,10 +4,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
 
-use crate::config::sim_config::DBPurgerConfig;
-
 use super::database::BoincDatabase;
-use super::job::FileDeleteState;
+use super::job::{FileDeleteState, ResultInfo, ResultOutcome, ValidateState};
 use super::stats::ServerStats;
 
 // TODO:
@@ -17,8 +15,6 @@ use super::stats::ServerStats;
 pub struct DBPurger {
     db: Rc<BoincDatabase>,
     ctx: SimulationContext,
-    #[allow(dead_code)]
-    config: DBPurgerConfig,
     stats: Rc<RefCell<ServerStats>>,
     pub dur_sum: f64,
     dur_samples: usize,
@@ -28,13 +24,11 @@ impl DBPurger {
     pub fn new(
         db: Rc<BoincDatabase>,
         ctx: SimulationContext,
-        config: DBPurgerConfig,
         stats: Rc<RefCell<ServerStats>>,
     ) -> Self {
         Self {
             db,
             ctx,
-            config,
             stats,
             dur_samples: 0,
             dur_sum: 0.,
@@ -52,7 +46,6 @@ impl DBPurger {
 
         let mut db_workunit_mut = self.db.workunit.borrow_mut();
         let mut db_result_mut = self.db.result.borrow_mut();
-        let mut db_processed_result_mut = self.db.processed_results.borrow_mut();
 
         for wu_id in workunits_to_delete {
             let workunit = db_workunit_mut.get_mut(&wu_id).unwrap();
@@ -65,8 +58,7 @@ impl DBPurger {
                 if result.file_delete_state != FileDeleteState::Done {
                     all_results_deleted = false;
                 } else {
-                    db_processed_result_mut.insert(*result_id, result.clone());
-                    db_result_mut.remove(result_id);
+                    self.update_stats(db_result_mut.remove(result_id).unwrap());
                     log_debug!(self.ctx, "removed result {} from database", result_id);
                 }
             }
@@ -82,5 +74,34 @@ impl DBPurger {
         let duration = t.elapsed().as_secs_f64();
         self.dur_sum += duration;
         self.dur_samples += 1;
+    }
+
+    pub fn update_stats(&self, result: ResultInfo) {
+        match result.outcome {
+            ResultOutcome::Undefined => {}
+            ResultOutcome::Success => {
+                self.stats.borrow_mut().n_res_success += 1;
+                match result.validate_state {
+                    ValidateState::Valid => {
+                        self.stats.borrow_mut().n_res_valid += 1;
+                    }
+                    ValidateState::Invalid => {
+                        self.stats.borrow_mut().n_res_invalid += 1;
+                    }
+                    ValidateState::Init => {
+                        self.stats.borrow_mut().n_res_init += 1;
+                    }
+                }
+            }
+            ResultOutcome::NoReply => {
+                self.stats.borrow_mut().n_res_noreply += 1;
+            }
+            ResultOutcome::DidntNeed => {
+                self.stats.borrow_mut().n_res_didntneed += 1;
+            }
+            ResultOutcome::ValidateError => {
+                self.stats.borrow_mut().n_res_validateerror += 1;
+            }
+        }
     }
 }

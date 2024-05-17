@@ -170,7 +170,6 @@ impl Client {
         self.ctx.emit_self(AskForWork {}, 200.);
 
         let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
-        let resume_dur = self.finish_time;
         self.ctx.emit_self(Suspend {}, resume_dur);
 
         self.stats.borrow_mut().time_available += if self.ctx.time() + resume_dur > self.finish_time
@@ -267,7 +266,7 @@ impl Client {
 
             futures::join!(
                 self.process_data_server_input_file_download(ref_id),
-                self.process_disk_write(DataServerFile::Input(result.spec.input_file.clone())),
+                self.process_disk_write(result.spec.input_file.size),
             );
 
             self.file_storage
@@ -425,8 +424,7 @@ impl Client {
         self.change_result(result_id, Some(ResultState::Reading), None);
 
         // disk read
-        self.process_disk_read(DataServerFile::Input(result.spec.input_file.clone()))
-            .await;
+        self.process_disk_read(result.spec.input_file.size).await;
         log_debug!(
             self.ctx,
             "result {}: input files disk reading finished",
@@ -438,12 +436,11 @@ impl Client {
         }
 
         // comp start & update state
-        self.process_compute(result_id, result.spec.clone()).await;
+        self.process_compute(result_id, &result.spec).await;
 
         // disk write
         self.change_result(result_id, Some(ResultState::Writing), None);
-        self.process_disk_write(DataServerFile::Output(result.spec.output_file.clone()))
-            .await;
+        self.process_disk_write(result.spec.output_file.size).await;
         self.file_storage.output_files.borrow_mut().insert(
             result.spec.output_file.result_id,
             result.spec.output_file.clone(),
@@ -552,8 +549,8 @@ impl Client {
             .await;
     }
 
-    async fn process_disk_write(&self, file: DataServerFile) {
-        let disk_write_id = self.disk.borrow_mut().write(file.size(), self.ctx.id());
+    async fn process_disk_write(&self, size: u64) {
+        let disk_write_id = self.disk.borrow_mut().write(size, self.ctx.id());
 
         select! {
             _ = self.ctx.recv_event_by_key::<DataWriteCompleted>(disk_write_id).fuse() => {
@@ -565,8 +562,8 @@ impl Client {
         };
     }
 
-    async fn process_disk_read(&self, file: DataServerFile) {
-        let disk_read_id = self.disk.borrow_mut().read(file.size(), self.ctx.id());
+    async fn process_disk_read(&self, size: u64) {
+        let disk_read_id = self.disk.borrow_mut().read(size, self.ctx.id());
 
         select! {
             _ = self.ctx.recv_event_by_key::<DataReadCompleted>(disk_read_id).fuse() => {
@@ -599,7 +596,7 @@ impl Client {
         }
     }
 
-    async fn process_compute(&self, result_id: ResultId, spec: JobSpec) {
+    async fn process_compute(&self, result_id: ResultId, spec: &JobSpec) {
         let comp_id = self.compute.borrow_mut().run(
             spec.gflops,
             spec.memory,

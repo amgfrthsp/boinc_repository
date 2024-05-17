@@ -4,7 +4,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
 
-use crate::config::sim_config::FileDeleterConfig;
 use crate::server::job::FileDeleteState;
 
 use super::data_server::DataServer;
@@ -18,8 +17,6 @@ pub struct FileDeleter {
     db: Rc<BoincDatabase>,
     data_server: Rc<RefCell<DataServer>>,
     ctx: SimulationContext,
-    #[allow(dead_code)]
-    config: FileDeleterConfig,
     pub dur_sum: f64,
     dur_samples: usize,
 }
@@ -29,13 +26,11 @@ impl FileDeleter {
         db: Rc<BoincDatabase>,
         data_server: Rc<RefCell<DataServer>>,
         ctx: SimulationContext,
-        config: FileDeleterConfig,
     ) -> Self {
         Self {
             db,
             data_server,
             ctx,
-            config,
             dur_samples: 0,
             dur_sum: 0.,
         }

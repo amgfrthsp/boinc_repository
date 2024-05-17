@@ -1,11 +1,11 @@
 seed: 95
-sim_duration: 100.
+sim_duration: 24.
 
 clients:
-  - count: 8000
+  - count: 200000
     cpu:
       speed: 5.5
-      cores: 1
+      cores: 4
     work_fetch_interval: 1.
     buffered_work_min: 4.
     buffered_work_max: 12.
@@ -88,9 +88,9 @@ server:
     cores_max: 1
     delay_min: 30.
     delay_max: 30.
-    min_quorum_min: 1
-    min_quorum_max: 1
-    target_nresults_redundancy: 0
+    min_quorum_min: 3
+    min_quorum_max: 3
+    target_nresults_redundancy: 2
     input_size_min: 5
     input_size_max: 20
     output_size_min: 5

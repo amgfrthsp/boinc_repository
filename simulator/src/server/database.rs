@@ -22,7 +22,6 @@ pub struct BoincDatabase {
     pub transition_time_sorted: RefCell<BTreeSet<(FloatWrapper, WorkunitId)>>,
     pub result: RefCell<HashMap<ResultId, ResultInfo>>,
     pub feeder_result_ids: RefCell<VecDeque<ResultId>>,
-    pub processed_results: RefCell<HashMap<ResultId, ResultInfo>>,
     pub clients: RefCell<HashMap<Id, ClientInfo>>,
 }
 
@@ -31,7 +30,6 @@ impl BoincDatabase {
         Self {
             workunit: refcell!(HashMap::new()),
             result: refcell!(HashMap::new()),
-            processed_results: refcell!(HashMap::new()),
             feeder_result_ids: refcell!(VecDeque::new()),
             transition_time_sorted: refcell!(BTreeSet::new()),
             clients: refcell!(HashMap::new()),

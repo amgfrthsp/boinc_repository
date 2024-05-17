@@ -7,6 +7,15 @@ pub struct ServerStats {
     pub max_result_processing_time: f64,
     pub min_result_processing_time: f64,
     pub total_credit_granted: f64,
+
+    // fully processed results
+    pub n_res_success: usize,
+    pub n_res_init: usize,
+    pub n_res_valid: usize,
+    pub n_res_invalid: usize,
+    pub n_res_noreply: usize,
+    pub n_res_didntneed: usize,
+    pub n_res_validateerror: usize,
 }
 
 impl ServerStats {
@@ -19,22 +28,13 @@ impl ServerStats {
             max_result_processing_time: 0.,
             min_result_processing_time: f64::MAX,
             total_credit_granted: 0.,
+            n_res_success: 0,
+            n_res_init: 0,
+            n_res_valid: 0,
+            n_res_invalid: 0,
+            n_res_noreply: 0,
+            n_res_didntneed: 0,
+            n_res_validateerror: 0,
         }
     }
 }
-
-/*
-Total number of clients
-Average cores
-Average speed
-Average memory
-Average disk
-
-Average hosts availability time %
-Average hosts unavailability time %
-
-Average job flops
-Average job memory
-Average job cores, delay, target_nresults, input size, output size
-
-*/

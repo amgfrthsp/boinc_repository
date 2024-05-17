@@ -5,5 +5,5 @@ members = ["simulator", "examples/*"]
 [profile.release]
 # codegen-units = 1
 # lto = "fat"
-debug = true 
+# debug = true 
 
