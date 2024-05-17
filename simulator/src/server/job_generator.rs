@@ -67,7 +67,8 @@ impl JobGenerator {
             *self.jobs_generated.borrow_mut() += generated_jobs.len() as u64;
         }
 
-        println!(
+        log_info!(
+            self.ctx,
             "Generated {} new workunits {}",
             generated_jobs.len(),
             self.ctx.time()

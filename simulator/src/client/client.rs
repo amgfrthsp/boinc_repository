@@ -383,6 +383,8 @@ impl Client {
             }
         }
 
+        drop(fs_results);
+
         for (result_id, comp_id) in cont_results {
             self.on_continue_result(result_id, comp_id);
         }

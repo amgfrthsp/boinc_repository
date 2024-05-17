@@ -316,7 +316,6 @@ impl Server {
         let new_jobs = self.job_generator.generate_jobs(100000);
         self.on_job_spec(new_jobs).await;
         let duration = t.elapsed().as_secs_f64();
-        println!("Job gen duration: {}", duration);
     }
 
     pub async fn generate_jobs_init(&self, cnt: usize, simulation_id: Id) {
