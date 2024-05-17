@@ -19,7 +19,6 @@ use dslab_storage::storage::Storage;
 use futures::{select, FutureExt};
 
 use super::rr_simulation::RRSimulation;
-use super::scheduler::Scheduler;
 use super::stats::ClientStats;
 use super::storage::FileStorage;
 use super::task::{ResultInfo, ResultState};
@@ -72,17 +71,6 @@ pub struct ResultCompleted {
 }
 
 #[derive(Clone, Serialize)]
-pub struct ExecuteResult {
-    pub result_id: ResultId,
-}
-
-#[derive(Clone, Serialize)]
-pub struct ContinueResult {
-    pub result_id: ResultId,
-    pub comp_id: EventId,
-}
-
-#[derive(Clone, Serialize)]
 pub struct ScheduleResults {}
 
 pub struct Client {
@@ -92,7 +80,6 @@ pub struct Client {
     utilities: Rc<RefCell<Utilities>>,
     server_id: Id,
     data_server_id: Id,
-    scheduler: Scheduler,
     pub rr_sim: Rc<RefCell<RRSimulation>>,
     file_storage: Rc<FileStorage>,
     next_scheduling_time: RefCell<f64>,
@@ -115,7 +102,6 @@ impl Client {
         disk: Rc<RefCell<Disk>>,
         net: Rc<RefCell<Network>>,
         utilities: Rc<RefCell<Utilities>>,
-        mut scheduler: Scheduler,
         rr_sim: Rc<RefCell<RRSimulation>>,
         file_storage: Rc<FileStorage>,
         ctx: SimulationContext,
@@ -128,7 +114,6 @@ impl Client {
         ctx.register_key_getter_for::<CompStarted>(|e| e.id);
         ctx.register_key_getter_for::<CompFinished>(|e| e.id);
 
-        scheduler.set_client_id(ctx.id());
         Self {
             compute,
             disk,
@@ -136,7 +121,6 @@ impl Client {
             utilities,
             server_id: 0,
             data_server_id: 0,
-            scheduler,
             rr_sim,
             file_storage,
             next_scheduling_time: RefCell::new(0.),
@@ -199,7 +183,7 @@ impl Client {
 
         for result_id in running_results {
             let result = fs_results.get_mut(&result_id).unwrap();
-            self.utilities.borrow().preempt_result(result);
+            self.preempt_result(result);
         }
 
         let suspencion_dur = self.ctx.sample_from_distribution(&self.unav_distribution) * 3600.;
@@ -318,7 +302,92 @@ impl Client {
         if self.suspended {
             return;
         }
-        //self.scheduler.schedule();
+        log_info!(self.ctx, "scheduling started");
+
+        let sim_result = self.rr_sim.borrow_mut().simulate(true);
+
+        let results_to_schedule = sim_result.results_to_schedule;
+
+        log_info!(
+            self.ctx,
+            "All results: {}; ready to schedule: {}; running: {}",
+            self.file_storage.results.borrow().len(),
+            results_to_schedule.len(),
+            self.file_storage.running_results.borrow().len()
+        );
+
+        let mut cores_available = self.compute.borrow().cores_total();
+        let mut memory_available = self.compute.borrow().memory_total();
+
+        let mut scheduled_results: Vec<ResultId> = Vec::new();
+        let mut cont_results: Vec<(ResultId, EventId)> = Vec::new();
+        let mut start_results: Vec<ResultId> = Vec::new();
+
+        let mut fs_results = self.file_storage.results.borrow_mut();
+
+        let mut skip = 0;
+        let mut cont = 0;
+        let mut start = 0;
+        let mut preempt = 0;
+
+        for result_id in results_to_schedule {
+            let result = fs_results.get_mut(&result_id).unwrap();
+            if result.spec.cores > cores_available || result.spec.memory > memory_available {
+                log_debug!(self.ctx, "Skip result {}", result_id);
+                skip += 1;
+                continue;
+            }
+            cores_available -= result.spec.cores;
+            memory_available -= result.spec.memory;
+
+            if let ResultState::Preempted { comp_id } = result.state {
+                log_debug!(self.ctx, "Continue result {}", result_id);
+                cont_results.push((result_id, comp_id));
+                cont += 1;
+            } else if result.state == ResultState::Unstarted {
+                log_debug!(self.ctx, "Start result {}", result_id);
+                start_results.push(result_id);
+                start += 1;
+            } else {
+                log_debug!(
+                    self.ctx,
+                    "Keep result {} with state {:?} running",
+                    result_id,
+                    result.state
+                );
+            }
+            scheduled_results.push(result_id);
+        }
+
+        let clone = self.file_storage.running_results.borrow().clone();
+
+        for result_id in clone {
+            let result = fs_results.get_mut(&result_id).unwrap();
+            if !scheduled_results.contains(&result_id)
+                && !(result.state == ResultState::Running
+                    && self.utilities.borrow().is_running_finished(result))
+            {
+                self.preempt_result(result);
+                preempt += 1;
+            }
+        }
+
+        for (result_id, comp_id) in cont_results {
+            self.on_continue_result(result_id, comp_id);
+        }
+        for result_id in start_results {
+            self.on_run_result(result_id);
+        }
+
+        log_info!(
+            self.ctx,
+            "scheduling finished. skip {} continue {} start {} preempt {}",
+            skip,
+            cont,
+            start,
+            preempt
+        );
+
         *self.scheduling_event.borrow_mut() = None;
         let duration = t.elapsed().as_secs_f64();
         self.sched_sum += duration;
@@ -558,6 +627,33 @@ impl Client {
         self.change_result(result_id, Some(ResultState::Running), None);
     }
 
+    pub fn preempt_result(&self, result: &mut ResultInfo) {
+        match result.state {
+            ResultState::Running => {
+                self.compute
+                    .borrow_mut()
+                    .preempt_computation(result.comp_id.unwrap());
+
+                result.state = ResultState::Preempted {
+                    comp_id: result.comp_id.unwrap(),
+                };
+                log_debug!(self.ctx, "Preempt result {}", result.spec.id);
+
+                self.file_storage
+                    .running_results
+                    .borrow_mut()
+                    .remove(&result.spec.id);
+            }
+            ResultState::Reading => {
+                result.state = ResultState::Canceled;
+                log_debug!(self.ctx, "Cancel result {}", result.spec.id);
+            }
+            _ => {
+                panic!("Cannot preempt result with state {:?}", result.state);
+            }
+        }
+    }
+
     fn on_work_fetch(&self) {
         if self.suspended {
             return;
@@ -626,16 +722,6 @@ impl EventHandler for Client {
             WorkFetchReply { requests } => {
                 if self.is_active {
                     self.on_result_requests(requests);
-                }
-            }
-            ExecuteResult { result_id } => {
-                if self.is_active {
-                    self.on_run_result(result_id);
-                }
-            }
-            ContinueResult { result_id, comp_id } => {
-                if self.is_active {
-                    self.on_continue_result(result_id, comp_id);
                 }
             }
             CompPreempted { .. } => {}

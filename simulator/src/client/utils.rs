@@ -35,31 +35,4 @@ impl Utilities {
             .fraction_done(result.comp_id.unwrap())
             .is_err()
     }
-
-    pub fn preempt_result(&self, result: &mut ResultInfo) {
-        match result.state {
-            ResultState::Running => {
-                self.compute
-                    .borrow_mut()
-                    .preempt_computation(result.comp_id.unwrap());
-
-                result.state = ResultState::Preempted {
-                    comp_id: result.comp_id.unwrap(),
-                };
-                log_debug!(self.ctx, "Preempt result {}", result.spec.id);
-
-                self.file_storage
-                    .running_results
-                    .borrow_mut()
-                    .remove(&result.spec.id);
-            }
-            ResultState::Reading => {
-                result.state = ResultState::Canceled;
-                log_debug!(self.ctx, "Cancel result {}", result.spec.id);
-            }
-            _ => {
-                panic!("Cannot preempt result with state {:?}", result.state);
-            }
-        }
-    }
 }

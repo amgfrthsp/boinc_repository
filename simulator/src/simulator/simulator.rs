@@ -17,7 +17,6 @@ use std::{cell::RefCell, time::Instant};
 use sugars::{rc, refcell};
 
 use crate::client::rr_simulation::RRSimulation;
-use crate::client::scheduler::Scheduler as ClientScheduler;
 use crate::client::stats::ClientStats;
 use crate::client::storage::FileStorage;
 use crate::client::utils::Utilities;
@@ -428,22 +427,11 @@ impl Simulator {
             self.sim.borrow_mut().create_context(rr_simulator_name),
         )));
 
-        // Scheduler
-        let scheduler_name = &format!("{}::scheduler", client_name);
-        let scheduler = ClientScheduler::new(
-            rr_simulator.clone(),
-            compute.clone(),
-            file_storage.clone(),
-            utilities.clone(),
-            self.sim.borrow_mut().create_context(scheduler_name),
-        );
-
         let client = rc!(refcell!(Client::new(
             compute,
             disk,
             self.network.clone(),
             utilities.clone(),
-            scheduler,
             rr_simulator.clone(),
             file_storage.clone(),
             self.sim.borrow_mut().create_context(client_name),
