@@ -3,7 +3,6 @@ use memory_stats::memory_stats;
 use serde::Serialize;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Instant;
 
 use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
@@ -30,7 +29,7 @@ use crate::server::data_server::InputFileDownloadCompleted;
 use crate::server::database::ClientInfo;
 use crate::simulator::simulator::StartServer;
 
-const UNSENT_RESULT_BUFFER_LOWER_BOUND: usize = 2000;
+pub const UNSENT_RESULT_BUFFER_LOWER_BOUND: usize = 1000;
 
 #[derive(Clone, Serialize)]
 pub struct ServerRegister {}
@@ -57,9 +56,6 @@ pub struct PurgeDB {}
 
 #[derive(Clone, Serialize)]
 pub struct DeleteFiles {}
-
-#[derive(Clone, Serialize)]
-pub struct CheckWorkunitBuffer {}
 
 #[derive(Clone, Serialize)]
 pub struct GenerateJobs {
@@ -161,7 +157,6 @@ impl Server {
             .emit_self(PurgeDB {}, self.config.db_purger.interval);
         self.ctx
             .emit_self(DeleteFiles {}, self.config.file_deleter.interval);
-        self.ctx.emit_self(CheckWorkunitBuffer {}, 1500.);
         self.ctx
             .emit(Finish {}, self.data_server.borrow().id, finish_time);
         for i in (0..100).step_by(1) {
@@ -207,7 +202,7 @@ impl Server {
         }
 
         self.data_server
-            .borrow_mut()
+            .borrow()
             .download_input_files_from_server(input_files, wus[0].id);
 
         self.ctx
@@ -284,10 +279,12 @@ impl Server {
 
     // ******* daemons **********
 
-    fn envoke_feeder(&mut self) {
+    fn envoke_feeder(&mut self, reschedule: bool) {
         self.feeder.scan_work_array();
-        self.ctx
-            .emit_self(EnvokeFeeder {}, self.config.feeder.interval);
+        if reschedule {
+            self.ctx
+                .emit_self(EnvokeFeeder {}, self.config.feeder.interval);
+        }
 
         if let Some(usage) = memory_stats() {
             self.memory = self.memory.max(usage.physical_mem as f64);
@@ -297,7 +294,24 @@ impl Server {
     }
 
     fn schedule_results(&mut self, client_id: Id, req: WorkFetchRequest) {
+        if self.feeder.get_shared_memory_size() < UNSENT_RESULT_BUFFER_LOWER_BOUND
+            && !self.db.feeder_result_ids.borrow().is_empty()
+        {
+            self.envoke_feeder(false);
+        }
+
         self.scheduler.borrow_mut().schedule(client_id, req);
+
+        if self.db.feeder_result_ids.borrow().len() + self.feeder.get_shared_memory_size()
+            < UNSENT_RESULT_BUFFER_LOWER_BOUND
+        {
+            log_debug!(
+                self.ctx,
+                "Shared memory size: {}. Generated new workunits",
+                self.feeder.get_shared_memory_size()
+            );
+            self.ctx.spawn(self.generate_jobs());
+        }
     }
 
     fn envoke_transitioner(&mut self) {
@@ -331,7 +345,7 @@ impl Server {
     }
 
     pub async fn generate_jobs(&self) {
-        let new_jobs = self.job_generator.generate_jobs(100000);
+        let new_jobs = self.job_generator.generate_jobs(5000);
         self.on_job_spec(new_jobs).await;
     }
 
@@ -339,23 +353,6 @@ impl Server {
         let new_jobs: Vec<JobSpec> = self.job_generator.generate_jobs(cnt);
         self.on_job_spec(new_jobs).await;
         self.ctx.emit_now(JobsGenerationCompleted {}, simulation_id);
-    }
-
-    pub fn check_wu_buffer(&mut self) {
-        let t = Instant::now();
-        if self.db.feeder_result_ids.borrow().len() + self.feeder.get_shared_memory_size()
-            < UNSENT_RESULT_BUFFER_LOWER_BOUND
-        {
-            log_debug!(
-                self.ctx,
-                "Shared memory size: {}. Generated new workunits",
-                self.feeder.get_shared_memory_size()
-            );
-            self.ctx.spawn(self.generate_jobs());
-        }
-        self.ctx.emit_self(CheckWorkunitBuffer {}, 1500.);
-        let duration = t.elapsed().as_secs_f64();
-        self.check_dur += duration;
     }
 }
 
@@ -417,7 +414,7 @@ impl EventHandler for Server {
             }
             EnvokeFeeder {} => {
                 if self.is_active {
-                    self.envoke_feeder();
+                    self.envoke_feeder(true);
                 }
             }
             PurgeDB {} => {
@@ -436,11 +433,6 @@ impl EventHandler for Server {
                     self.ctx,
                     "Simulation finished. No new events will be processed"
                 );
-            }
-            CheckWorkunitBuffer {} => {
-                if self.is_active {
-                    self.check_wu_buffer();
-                }
             }
             SimulationProgress { progress } => {
                 println!("Simulation progress: {:.0}%", progress * 100.);

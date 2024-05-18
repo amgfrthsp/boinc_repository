@@ -25,7 +25,9 @@ use crate::server::db_purger::DBPurger;
 use crate::server::feeder::Feeder;
 use crate::server::file_deleter::FileDeleter;
 use crate::server::job::{AssimilateState, ResultId, ResultOutcome, ResultState, ValidateState};
-use crate::server::server::{GenerateJobs, JobsGenerationCompleted};
+use crate::server::server::{
+    GenerateJobs, JobsGenerationCompleted, UNSENT_RESULT_BUFFER_LOWER_BOUND,
+};
 use crate::server::stats::ServerStats;
 use crate::{
     client::client::Client,
@@ -99,26 +101,37 @@ impl Simulator {
                 }
             } else {
                 let trace_path = host_group_config.trace.clone().unwrap();
-                let file = File::open(trace_path).unwrap();
-                let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
+                let mut cnt = 0;
+                let N = host_group_config.count.unwrap();
+                loop {
+                    if cnt >= N {
+                        break;
+                    }
+                    let file = File::open(trace_path.clone()).unwrap();
+                    let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
 
-                for result in reader.records() {
-                    // cores, speed
-                    let record = result.unwrap();
+                    for result in reader.records() {
+                        // cores, speed
+                        if cnt >= N {
+                            break;
+                        }
+                        cnt += 1;
+                        let record = result.unwrap();
 
-                    let resources = ClientCpuPower {
-                        cores: record.get(0).unwrap().parse::<u32>().unwrap(),
-                        speed: record.get(1).unwrap().parse::<f64>().unwrap(),
-                    };
+                        let resources = ClientCpuPower {
+                            cores: record.get(0).unwrap().parse::<u32>().unwrap(),
+                            speed: record.get(1).unwrap().parse::<f64>().unwrap(),
+                        };
 
-                    let mut host_config = host_group_config.clone();
-                    host_config.cpu = Some(resources);
-                    host_config.from_h_to_sec();
+                        let mut host_config = host_group_config.clone();
+                        host_config.cpu = Some(resources);
+                        host_config.from_h_to_sec();
 
-                    simulator.add_host(
-                        host_config,
-                        simulator.ctx.sample_from_distribution(&reliability_dist),
-                    );
+                        simulator.add_host(
+                            host_config,
+                            simulator.ctx.sample_from_distribution(&reliability_dist),
+                        );
+                    }
                 }
             }
         }
@@ -184,23 +197,32 @@ impl Simulator {
             }
         });
 
+        let server = self.server.clone().unwrap();
+
         let t = Instant::now();
         self.simulation.step_until_no_events();
         let duration = t.elapsed().as_secs_f64();
 
         println!("Simulation finished");
+        println!("");
         println!("Elapsed time: {:.2}s", duration);
+        println!("Memory usage: {} MB", server.borrow().memory / 1_000_000.);
         println!(
-            "Simulation speedup: {:.2}",
-            self.simulation.time() / duration
+            "Memory usage: {} GB",
+            server.borrow().memory / 1_000_000_000.
         );
-        let event_count = self.simulation.event_count();
-        println!(
-            "Processed {} events in {:.2?}s ({:.0} events/s)",
-            event_count,
-            duration,
-            event_count as f64 / duration
-        );
+        println!("Total number of clients: {}", self.clients.len());
+        // println!(
+        //     "Simulation speedup: {:.2}",
+        //     self.simulation.time() / duration
+        // );
+        // let event_count = self.simulation.event_count();
+        // println!(
+        //     "Processed {} events in {:.2?}s ({:.0} events/s)",
+        //     event_count,
+        //     duration,
+        //     event_count as f64 / duration
+        // );
 
         self.print_stats();
     }
@@ -451,6 +473,12 @@ impl Simulator {
         println!("DB purger sum dur: {:.2} s", server.db_purger.dur_sum);
         println!("Report status sum dur: {:.2} s", server.rs_dur_sum);
         println!("Memory usage: {} MB", server.memory / 1_000_000.);
+        println!(
+            "Empty buffer: {}. shmem size {} lower bound {}",
+            server.scheduler.borrow().dur_samples,
+            self.sim_config.server.feeder.shared_memory_size,
+            UNSENT_RESULT_BUFFER_LOWER_BOUND
+        );
         println!("");
 
         let mut n_wus_inprogress = 0;

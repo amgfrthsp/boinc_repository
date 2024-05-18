@@ -1,14 +1,14 @@
-seed: 95
-sim_duration: 24.
+seed: 94
+sim_duration: 100.
 
 clients:
-  - count: 100000
+  - count: 1000
     cpu:
       speed: 5.5
-      cores: 4
-    work_fetch_interval: 1.
-    buffered_work_min: 4.
-    buffered_work_max: 12.
+      cores: 1
+    work_fetch_interval: 3.
+    buffered_work_min: 12.
+    buffered_work_max: 30.
     memory: 8
     disk_capacity: 128
     disk_read_bandwidth: 400.
@@ -30,19 +30,20 @@ clients:
       LogNormal:
         mu: -0.586
         sigma: 2.844
-  # - trace: trace.csv
-  #   work_fetch_interval: 3600.
-  #   buffered_work_min: 10800.
-  #   buffered_work_max: 21600.
+  # - trace: seti.csv
+  #   count: 1
+  #   work_fetch_interval: 6
+  #   buffered_work_min: 7.
+  #   buffered_work_max: 20.
   #   memory: 8
-  #   disk_capacity: 256
+  #   disk_capacity: 128
   #   disk_read_bandwidth: 400.
   #   disk_write_bandwidth: 200.
   #   network_latency: 40
   #   network_bandwidth: 70
   #   local_latency: 0.0
   #   local_bandwidth: 10000
-  #   report_status_interval: 1800.
+  #   report_status_interval: 1.
   #   reliability_distribution:
   #     Uniform:
   #       min: 0.8
@@ -71,11 +72,11 @@ server:
   file_deleter:
     interval: 4.
   feeder:
-    shared_memory_size: 20000
+    shared_memory_size: 5000
     interval: 0.2
 
   data_server:
-    disk_capacity: 1000000
+    disk_capacity: 100000000
     disk_read_bandwidth: 700.
     disk_write_bandwidth: 500.
   
@@ -86,11 +87,11 @@ server:
     memory_max: 30
     cores_min: 1
     cores_max: 1
-    delay_min: 30.
-    delay_max: 30.
-    min_quorum_min: 3
-    min_quorum_max: 3
-    target_nresults_redundancy: 2
+    delay_min: 1000.
+    delay_max: 1000.
+    min_quorum_min: 1
+    min_quorum_max: 1
+    target_nresults_redundancy: 0
     input_size_min: 5
     input_size_max: 20
     output_size_min: 5

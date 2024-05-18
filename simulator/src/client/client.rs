@@ -167,7 +167,8 @@ impl Client {
         );
         self.ctx
             .emit_self(ReportStatus {}, self.config.report_status_interval);
-        self.ctx.emit_self(AskForWork {}, 200.);
+        self.ctx
+            .emit_self(AskForWork {}, self.ctx.gen_range(5. ..10.));
 
         let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
         self.ctx.emit_self(Suspend {}, resume_dur);
@@ -278,11 +279,16 @@ impl Client {
         result.state = ResultState::Unstarted;
 
         self.file_storage
+            .results_for_sim
+            .borrow_mut()
+            .insert(result.spec.id);
+
+        self.file_storage
             .results
             .borrow_mut()
             .insert(result.spec.id, result);
 
-        self.plan_scheduling(5.);
+        self.plan_scheduling(3.);
     }
 
     pub fn plan_scheduling(&self, delay: f64) {
@@ -342,6 +348,9 @@ impl Client {
 
         for result_id in results_to_schedule {
             let result = fs_results.get_mut(&result_id).unwrap();
+            if cores_available == 0 {
+                break;
+            }
             if result.spec.cores > cores_available || result.spec.memory > memory_available {
                 log_debug!(self.ctx, "Skip result {}", result_id);
                 skip += 1;
@@ -486,7 +495,7 @@ impl Client {
         );
 
         self.change_result(result_id, Some(ResultState::Over), None);
-        self.plan_scheduling(5.);
+        self.plan_scheduling(3.);
 
         self.process_disk_free(DataServerFile::Input(result.spec.input_file));
         self.process_disk_free(DataServerFile::Output(result.spec.output_file));
@@ -495,9 +504,10 @@ impl Client {
             "result {}: deleted input/output files from disk",
             result_id
         );
-        self.change_result(result_id, Some(ResultState::Deleted), None);
-
         let processing_time = self.ctx.time() - result.time_added;
+        self.change_result(result_id, Some(ResultState::Deleted), None);
+        self.file_storage.results.borrow_mut().remove(&result_id);
+
         self.stats.borrow_mut().results_processing_time += processing_time;
 
         let min_processing_time = self.stats.borrow_mut().min_result_processing_time;
@@ -620,6 +630,11 @@ impl Client {
 
         self.file_storage
             .running_results
+            .borrow_mut()
+            .remove(&result_id);
+
+        self.file_storage
+            .results_for_sim
             .borrow_mut()
             .remove(&result_id);
     }

@@ -2,9 +2,10 @@ use crate::common::FloatWrapper;
 
 use super::job::{ResultId, ResultInfo, WorkunitId, WorkunitInfo};
 use dslab_core::Id;
+use rustc_hash::FxHashMap;
 use std::{
     cell::RefCell,
-    collections::{BTreeSet, HashMap, VecDeque},
+    collections::{BTreeSet, VecDeque},
 };
 use sugars::refcell;
 
@@ -18,21 +19,23 @@ pub struct ClientInfo {
 }
 
 pub struct BoincDatabase {
-    pub workunit: RefCell<HashMap<WorkunitId, WorkunitInfo>>,
+    pub workunit: RefCell<FxHashMap<WorkunitId, WorkunitInfo>>,
+    pub workunits_to_delete: RefCell<VecDeque<WorkunitId>>,
     pub transition_time_sorted: RefCell<BTreeSet<(FloatWrapper, WorkunitId)>>,
-    pub result: RefCell<HashMap<ResultId, ResultInfo>>,
+    pub result: RefCell<FxHashMap<ResultId, ResultInfo>>,
     pub feeder_result_ids: RefCell<VecDeque<ResultId>>,
-    pub clients: RefCell<HashMap<Id, ClientInfo>>,
+    pub clients: RefCell<FxHashMap<Id, ClientInfo>>,
 }
 
 impl BoincDatabase {
     pub fn new() -> Self {
         Self {
-            workunit: refcell!(HashMap::new()),
-            result: refcell!(HashMap::new()),
+            workunit: refcell!(FxHashMap::default()),
+            workunits_to_delete: refcell!(VecDeque::new()),
+            result: refcell!(FxHashMap::default()),
             feeder_result_ids: refcell!(VecDeque::new()),
             transition_time_sorted: refcell!(BTreeSet::new()),
-            clients: refcell!(HashMap::new()),
+            clients: refcell!(FxHashMap::default()),
         }
     }
 
@@ -72,7 +75,7 @@ impl BoincDatabase {
     }
 
     pub fn get_map_keys_by_predicate<K: Clone + Ord, V, F>(
-        hm: &HashMap<K, V>,
+        hm: &FxHashMap<K, V>,
         predicate: F,
     ) -> Vec<K>
     where

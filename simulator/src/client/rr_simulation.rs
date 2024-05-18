@@ -57,13 +57,7 @@ impl RRSimulation {
 
     pub fn simulate(&mut self, is_scheduling: bool) -> RRSimulationResult {
         let t = Instant::now();
-        let results_to_consider =
-            FileStorage::get_map_keys_by_predicate(&self.file_storage.results.borrow(), |result| {
-                result.state == ResultState::Unstarted
-                    || result.state == ResultState::Reading
-                    || result.state == ResultState::Running
-                    || matches!(result.state, ResultState::Preempted { .. })
-            });
+        let results_to_consider = self.file_storage.results_for_sim.borrow();
 
         log_debug!(
             self.ctx,
@@ -74,8 +68,15 @@ impl RRSimulation {
         let mut fs_results = self.file_storage.results.borrow_mut();
         let mut results_to_schedule: Vec<&ResultInfo> = Vec::new();
 
-        for result_id in &results_to_consider {
+        for result_id in results_to_consider.iter() {
             let result = fs_results.get_mut(result_id).unwrap();
+            if !(result.state == ResultState::Unstarted
+                || result.state == ResultState::Reading
+                || result.state == ResultState::Running
+                || matches!(result.state, ResultState::Preempted { .. }))
+            {
+                continue;
+            }
             result.sim_miss_deadline = false;
             if result.state == ResultState::Running
                 && self.utilities.borrow().is_running_finished(result)
@@ -86,8 +87,15 @@ impl RRSimulation {
                 result.sim_miss_deadline = true;
             }
         }
-        for result_id in &results_to_consider {
+        for result_id in results_to_consider.iter() {
             let result = fs_results.get(result_id).unwrap();
+            if !(result.state == ResultState::Unstarted
+                || result.state == ResultState::Reading
+                || result.state == ResultState::Running
+                || matches!(result.state, ResultState::Preempted { .. }))
+            {
+                continue;
+            }
             if result.state == ResultState::Running
                 && self.utilities.borrow().is_running_finished(result)
             {
@@ -144,7 +152,7 @@ impl RRSimulation {
         };
 
         if !is_scheduling {
-            log_info!(self.ctx, "WorkFetchRequest: {:?}", work_fetch_req);
+            log_info!(self.ctx, "WorkFetchRequest: {:?}", work_fetch_req,);
         }
 
         let duration = t.elapsed().as_secs_f64();

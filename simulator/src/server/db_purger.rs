@@ -39,15 +39,20 @@ impl DBPurger {
         let t = Instant::now();
         log_info!(self.ctx, "database purging started");
 
-        let workunits_to_delete =
-            BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
-                wu.file_delete_state == FileDeleteState::Done
-            });
+        let mut workunits_to_delete = self.db.workunits_to_delete.borrow_mut();
 
         let mut db_workunit_mut = self.db.workunit.borrow_mut();
         let mut db_result_mut = self.db.result.borrow_mut();
 
-        for wu_id in workunits_to_delete {
+        let len = workunits_to_delete.len();
+        let mut i = 0;
+
+        loop {
+            if i >= len {
+                break;
+            }
+            i += 1;
+            let wu_id = workunits_to_delete.pop_front().unwrap();
             let workunit = db_workunit_mut.get_mut(&wu_id).unwrap();
             let mut all_results_deleted = true;
             for result_id in &workunit.result_ids {
@@ -67,6 +72,8 @@ impl DBPurger {
                 db_workunit_mut.remove(&wu_id);
                 self.stats.borrow_mut().n_workunits_fully_processed += 1;
                 log_debug!(self.ctx, "removed workunit {} from database", wu_id);
+            } else {
+                workunits_to_delete.push_back(wu_id);
             }
         }
         log_info!(self.ctx, "database purging finished");

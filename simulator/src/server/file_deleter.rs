@@ -58,9 +58,13 @@ impl FileDeleter {
         for wu_id in workunits_to_process {
             let workunit = db_workunit_mut.get_mut(&wu_id).unwrap();
 
-            let retval = self.data_server.borrow_mut().delete_input_files(wu_id);
+            let retval = self.data_server.borrow().delete_input_files(wu_id);
             if retval == 0 {
                 workunit.file_delete_state = FileDeleteState::Done;
+                self.db
+                    .workunits_to_delete
+                    .borrow_mut()
+                    .push_back(workunit.id);
             }
         }
 
@@ -80,7 +84,7 @@ impl FileDeleter {
         for result_id in results_to_process {
             let result = db_result_mut.get_mut(&result_id).unwrap();
 
-            let retval = self.data_server.borrow_mut().delete_output_files(result_id);
+            let retval = self.data_server.borrow().delete_output_files(result_id);
             if retval == 0 {
                 result.file_delete_state = FileDeleteState::Done;
             }

@@ -8,8 +8,9 @@ use dslab_storage::events::{
 };
 use dslab_storage::storage::Storage;
 use futures::{select, FutureExt};
+use rustc_hash::FxHashMap;
 use serde::Serialize;
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use crate::common::Finish;
 
@@ -44,10 +45,10 @@ pub struct InputFileUploadCompleted {
 pub struct DataServer {
     pub id: Id,
     server_id: Id,
-    client_networks: HashMap<Id, Rc<RefCell<Network>>>,
+    client_networks: FxHashMap<Id, Rc<RefCell<Network>>>,
     disk: Rc<RefCell<Disk>>,
-    input_files: RefCell<HashMap<WorkunitId, InputFileMetadata>>, // workunit_id -> input files
-    output_files: RefCell<HashMap<ResultId, OutputFileMetadata>>, // result_id -> output files
+    input_files: RefCell<FxHashMap<WorkunitId, InputFileMetadata>>, // workunit_id -> input files
+    output_files: RefCell<FxHashMap<ResultId, OutputFileMetadata>>, // result_id -> output files
     is_active: bool,
     pub ctx: SimulationContext,
 }
@@ -66,10 +67,10 @@ impl DataServer {
         Self {
             id: ctx.id(),
             server_id: 0,
-            client_networks: HashMap::new(),
+            client_networks: FxHashMap::default(),
             disk,
-            input_files: RefCell::new(HashMap::new()),
-            output_files: RefCell::new(HashMap::new()),
+            input_files: RefCell::new(FxHashMap::default()),
+            output_files: RefCell::new(FxHashMap::default()),
             is_active: true,
             ctx,
         }
@@ -98,7 +99,7 @@ impl DataServer {
             .spawn(self.process_download_input_files_from_server(input_files, ref_id));
     }
 
-    async fn process_download_input_files_from_server(
+    pub async fn process_download_input_files_from_server(
         &self,
         input_files: Vec<InputFileMetadata>,
         ref_id: u64,
@@ -207,7 +208,7 @@ impl DataServer {
         };
     }
 
-    pub fn delete_input_files(&mut self, workunit_id: WorkunitId) -> u32 {
+    pub fn delete_input_files(&self, workunit_id: WorkunitId) -> u32 {
         let input_file = self.input_files.borrow_mut().remove(&workunit_id);
         if input_file.is_none() {
             log_error!(self.ctx, "No such output file {}", workunit_id);
@@ -218,7 +219,7 @@ impl DataServer {
         return 0;
     }
 
-    pub fn delete_output_files(&mut self, result_id: ResultId) -> u32 {
+    pub fn delete_output_files(&self, result_id: ResultId) -> u32 {
         let output_file = self.output_files.borrow_mut().remove(&result_id);
         if output_file.is_none() {
             log_error!(self.ctx, "No such output file {}", result_id);

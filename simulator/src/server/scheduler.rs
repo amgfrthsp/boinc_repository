@@ -2,8 +2,9 @@ use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
 use dslab_core::{log_debug, log_info, Event, EventHandler};
 use dslab_network::Network;
+use rustc_hash::FxHashMap;
 use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::rc::Rc;
 use std::time::Instant;
 
@@ -16,14 +17,14 @@ use super::stats::ServerStats;
 
 pub struct Scheduler {
     server_id: Id,
-    client_networks: HashMap<Id, Rc<RefCell<Network>>>,
+    client_networks: FxHashMap<Id, Rc<RefCell<Network>>>,
     db: Rc<BoincDatabase>,
     shared_memory: Rc<RefCell<VecDeque<ResultId>>>,
     pub ctx: SimulationContext,
     #[allow(dead_code)]
     stats: Rc<RefCell<ServerStats>>,
     pub dur_sum: f64,
-    dur_samples: usize,
+    pub dur_samples: usize,
 }
 
 impl Scheduler {
@@ -35,7 +36,7 @@ impl Scheduler {
     ) -> Self {
         Self {
             server_id: 0,
-            client_networks: HashMap::new(),
+            client_networks: FxHashMap::default(),
             db,
             shared_memory,
             ctx,
@@ -82,6 +83,7 @@ impl Scheduler {
 
         if shmem.is_empty() {
             log_info!(self.ctx, "Scheduling finished. Shared memory is empty.");
+            self.dur_samples += 1;
             return;
         }
 
@@ -89,13 +91,6 @@ impl Scheduler {
         let mut i = 0;
 
         while !(req.req_secs < 0. && req.req_instances < 0) {
-            log_info!(
-                self.ctx,
-                "{} {} {}",
-                shmem.len(),
-                req.req_secs,
-                req.req_instances
-            );
             if i >= len {
                 break;
             }
@@ -165,7 +160,6 @@ impl Scheduler {
 
         let schedule_duration = t.elapsed().as_secs_f64();
         self.dur_sum += schedule_duration;
-        self.dur_samples += 1;
         log_info!(
             self.ctx,
             "scheduling finished: assigned {} results in {:.2?} for client {}.shared memory size is {}",
