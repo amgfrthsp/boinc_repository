@@ -101,37 +101,26 @@ impl Simulator {
                 }
             } else {
                 let trace_path = host_group_config.trace.clone().unwrap();
-                let mut cnt = 0;
-                let N = host_group_config.count.unwrap();
-                loop {
-                    if cnt >= N {
-                        break;
-                    }
-                    let file = File::open(trace_path.clone()).unwrap();
-                    let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
+                let file = File::open(trace_path.clone()).unwrap();
+                let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
 
-                    for result in reader.records() {
-                        // cores, speed
-                        if cnt >= N {
-                            break;
-                        }
-                        cnt += 1;
-                        let record = result.unwrap();
+                for result in reader.records() {
+                    // cores, speed
+                    let record = result.unwrap();
 
-                        let resources = ClientCpuPower {
-                            cores: record.get(0).unwrap().parse::<u32>().unwrap(),
-                            speed: record.get(1).unwrap().parse::<f64>().unwrap(),
-                        };
+                    let resources = ClientCpuPower {
+                        cores: record.get(0).unwrap().parse::<u32>().unwrap(),
+                        speed: record.get(1).unwrap().parse::<f64>().unwrap(),
+                    };
 
-                        let mut host_config = host_group_config.clone();
-                        host_config.cpu = Some(resources);
-                        host_config.from_h_to_sec();
+                    let mut host_config = host_group_config.clone();
+                    host_config.cpu = Some(resources);
+                    host_config.from_h_to_sec();
 
-                        simulator.add_host(
-                            host_config,
-                            simulator.ctx.sample_from_distribution(&reliability_dist),
-                        );
-                    }
+                    simulator.add_host(
+                        host_config,
+                        simulator.ctx.sample_from_distribution(&reliability_dist),
+                    );
                 }
             }
         }

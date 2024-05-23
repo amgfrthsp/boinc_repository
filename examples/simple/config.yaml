@@ -1,14 +1,13 @@
-seed: 94
+seed: 95
 sim_duration: 100.
 
 clients:
-  - count: 1000
-    cpu:
-      speed: 5.5
+  - cpu:
       cores: 1
-    work_fetch_interval: 3.
-    buffered_work_min: 12.
-    buffered_work_max: 30.
+      speed: 5.5
+    work_fetch_interval: 0.5
+    buffered_work_min: 3.
+    buffered_work_max: 6.
     memory: 8
     disk_capacity: 128
     disk_read_bandwidth: 400.
@@ -30,47 +29,21 @@ clients:
       LogNormal:
         mu: -0.586
         sigma: 2.844
-  # - trace: seti.csv
-  #   count: 1
-  #   work_fetch_interval: 6
-  #   buffered_work_min: 7.
-  #   buffered_work_max: 20.
-  #   memory: 8
-  #   disk_capacity: 128
-  #   disk_read_bandwidth: 400.
-  #   disk_write_bandwidth: 200.
-  #   network_latency: 40
-  #   network_bandwidth: 70
-  #   local_latency: 0.0
-  #   local_bandwidth: 10000
-  #   report_status_interval: 1.
-  #   reliability_distribution:
-  #     Uniform:
-  #       min: 0.8
-  #       max: 1.
-  #   availability_distribution:
-  #     Weibull:
-  #       scale: 2.964
-  #       shape: 0.393
-  #   unavailability_distribution:
-  #     LogNormal:
-  #       mu: -0.586
-  #       sigma: 2.844
 
 server:
   local_latency: 0.0
   local_bandwidth: 10000
   report_status_interval: 0.5
   assimilator:
-    interval: 3.
+    interval: 0.5
   validator:
-    interval: 1.
+    interval: 0.5
   transitioner:
     interval: 0.25
   db_purger:
-    interval: 3.
+    interval: 1
   file_deleter:
-    interval: 4.
+    interval: 1
   feeder:
     shared_memory_size: 5000
     interval: 0.2
@@ -87,8 +60,8 @@ server:
     memory_max: 30
     cores_min: 1
     cores_max: 1
-    delay_min: 1000.
-    delay_max: 1000.
+    delay_min: 100.
+    delay_max: 100.
     min_quorum_min: 1
     min_quorum_max: 1
     target_nresults_redundancy: 0
