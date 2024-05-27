@@ -2,12 +2,13 @@ seed: 95
 sim_duration: 100.
 
 clients:
-  - cpu:
+  - count: 10
+    cpu:
       cores: 1
       speed: 5.5
-    work_fetch_interval: 0.5
-    buffered_work_min: 3.
-    buffered_work_max: 6.
+    work_fetch_interval: 1
+    buffered_work_min: 4.
+    buffered_work_max: 10.
     memory: 8
     disk_capacity: 128
     disk_read_bandwidth: 400.
@@ -47,6 +48,11 @@ server:
   feeder:
     shared_memory_size: 5000
     interval: 0.2
+  scheduler:
+    est_runtime_error_distribution:
+      Normal:
+        mu: 1.
+        sigma: 0.05
 
   data_server:
     disk_capacity: 100000000
@@ -60,8 +66,8 @@ server:
     memory_max: 30
     cores_min: 1
     cores_max: 1
-    delay_min: 100.
-    delay_max: 100.
+    delay_min: 24.
+    delay_max: 24.
     min_quorum_min: 1
     min_quorum_max: 1
     target_nresults_min: 1

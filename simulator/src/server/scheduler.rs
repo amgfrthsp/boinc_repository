@@ -10,6 +10,7 @@ use std::time::Instant;
 
 use crate::client::client::{WorkFetchReply, WorkFetchRequest};
 use crate::server::job::{ResultRequest, ResultState};
+use crate::simulator::dist_params::SimulationDistribution;
 
 use super::database::BoincDatabase;
 use super::job::{JobSpec, ResultId};
@@ -20,6 +21,7 @@ pub struct Scheduler {
     client_networks: FxHashMap<Id, Rc<RefCell<Network>>>,
     db: Rc<BoincDatabase>,
     shared_memory: Rc<RefCell<VecDeque<ResultId>>>,
+    est_runtime_error_dist: SimulationDistribution,
     pub ctx: SimulationContext,
     #[allow(dead_code)]
     stats: Rc<RefCell<ServerStats>>,
@@ -31,6 +33,7 @@ impl Scheduler {
     pub fn new(
         db: Rc<BoincDatabase>,
         shared_memory: Rc<RefCell<VecDeque<ResultId>>>,
+        error_dist: SimulationDistribution,
         ctx: SimulationContext,
         stats: Rc<RefCell<ServerStats>>,
     ) -> Self {
@@ -39,6 +42,7 @@ impl Scheduler {
             client_networks: FxHashMap::default(),
             db,
             shared_memory,
+            est_runtime_error_dist: error_dist,
             ctx,
             stats,
             dur_samples: 0,
@@ -172,7 +176,11 @@ impl Scheduler {
 
     // FIX: take into account I/O
     pub fn get_est_runtime(&self, spec: &JobSpec, client_speed: f64) -> f64 {
-        spec.gflops / client_speed / spec.cores_dependency.speedup(spec.cores)
+        (spec.gflops / client_speed / spec.cores_dependency.speedup(spec.cores))
+            * self
+                .ctx
+                .sample_from_distribution(&self.est_runtime_error_dist)
+                .max(0.)
     }
 }
 

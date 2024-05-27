@@ -36,7 +36,10 @@ use crate::{
     },
 };
 
-use super::dist_params::{DistributionConfig, SimulationDistribution, ALL_RANDOM_HOSTS};
+use super::dist_params::{
+    DistributionConfig, SimulationDistribution, CLIENT_AVAILABILITY_ALL_RANDOM_HOSTS,
+    SCHEDULER_EST_RUNTIME_ERROR,
+};
 
 #[derive(Clone, Serialize)]
 pub struct StartServer {
@@ -278,6 +281,13 @@ impl Simulator {
         let scheduler = rc!(refcell!(ServerScheduler::new(
             database.clone(),
             shared_memory.clone(),
+            SimulationDistribution::new(
+                config
+                    .scheduler
+                    .clone()
+                    .est_runtime_error_distribution
+                    .unwrap_or(SCHEDULER_EST_RUNTIME_ERROR),
+            ),
             self.simulation.create_context(scheduler_name),
             stats.clone(),
         )));
@@ -406,12 +416,12 @@ impl Simulator {
             SimulationDistribution::new(
                 config
                     .availability_distribution
-                    .unwrap_or(ALL_RANDOM_HOSTS.availability),
+                    .unwrap_or(CLIENT_AVAILABILITY_ALL_RANDOM_HOSTS.availability),
             ),
             SimulationDistribution::new(
                 config
                     .unavailability_distribution
-                    .unwrap_or(ALL_RANDOM_HOSTS.unavailability),
+                    .unwrap_or(CLIENT_AVAILABILITY_ALL_RANDOM_HOSTS.unavailability),
             ),
             stats.clone(),
         )));

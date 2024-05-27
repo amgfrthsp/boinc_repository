@@ -84,6 +84,7 @@ pub struct ServerConfig {
     pub db_purger: DBPurgerConfig,
     pub file_deleter: FileDeleterConfig,
     pub feeder: FeederConfig,
+    pub scheduler: SchedulerConfig,
 }
 
 impl ServerConfig {
@@ -169,7 +170,9 @@ pub struct FeederConfig {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
-pub struct SchedulerConfig {}
+pub struct SchedulerConfig {
+    pub est_runtime_error_distribution: Option<DistributionConfig>,
+}
 
 /// Holds configuration of a single data server or a set of identical data servers.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
