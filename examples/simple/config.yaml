@@ -64,7 +64,8 @@ server:
     delay_max: 100.
     min_quorum_min: 1
     min_quorum_max: 1
-    target_nresults_redundancy: 0
+    target_nresults_min: 1
+    target_nresults_max: 1
     input_size_min: 5
     input_size_max: 20
     output_size_min: 5

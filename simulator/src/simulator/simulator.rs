@@ -25,9 +25,7 @@ use crate::server::db_purger::DBPurger;
 use crate::server::feeder::Feeder;
 use crate::server::file_deleter::FileDeleter;
 use crate::server::job::{AssimilateState, ResultId, ResultOutcome, ResultState, ValidateState};
-use crate::server::server::{
-    GenerateJobs, JobsGenerationCompleted, UNSENT_RESULT_BUFFER_LOWER_BOUND,
-};
+use crate::server::server::{GenerateJobs, JobsGenerationCompleted};
 use crate::server::stats::ServerStats;
 use crate::{
     client::client::Client,

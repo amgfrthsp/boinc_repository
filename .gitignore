@@ -5,3 +5,5 @@ Cargo.lock
 *.txt
 *.csv
 *.svg
+configs
+exps

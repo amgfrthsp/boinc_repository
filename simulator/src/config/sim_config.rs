@@ -119,8 +119,9 @@ pub struct JobGeneratorConfig {
     // wu min_quorum value in [min_quorum_min; min_quorum_max]
     pub min_quorum_min: u64,
     pub min_quorum_max: u64,
-    // target_nresults = min_quorum + [0..=target_nresults_redundancy]
-    pub target_nresults_redundancy: u64,
+    // initial number of results, target_nresults >= min_quorum
+    pub target_nresults_min: u64,
+    pub target_nresults_max: u64,
     // wu input size in [input_size_min; input_size_max] (MB)
     pub input_size_min: u64,
     pub input_size_max: u64,

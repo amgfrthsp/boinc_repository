@@ -45,10 +45,9 @@ impl JobGenerator {
                     .ctx
                     .gen_range(self.config.delay_min..=self.config.delay_max),
                 min_quorum,
-                target_nresults: min_quorum
-                    + self
-                        .ctx
-                        .gen_range(0..=self.config.target_nresults_redundancy),
+                target_nresults: self
+                    .ctx
+                    .gen_range(self.config.target_nresults_min..=self.config.target_nresults_max),
                 input_file: InputFileMetadata {
                     workunit_id: job_id,
                     size: self
