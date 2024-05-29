@@ -7,7 +7,7 @@ use dslab_network::{models::SharedBandwidthNetworkModel, Network};
 use dslab_storage::disk::DiskBuilder;
 use dslab_storage::storage::Storage;
 use serde::Serialize;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::rc::Rc;
 use std::{cell::RefCell, time::Instant};
@@ -80,10 +80,12 @@ impl Simulator {
         simulator.add_server(simulator.sim_config.server.clone());
         // Add hosts from config
         for mut host_group_config in simulator.sim_config.clients.clone() {
-            if host_group_config.trace.is_none() && host_group_config.cpu.is_none()
-                || host_group_config.trace.is_some() && host_group_config.cpu.is_some()
+            if host_group_config.cpu_power_trace.is_none() && host_group_config.cpu.is_none()
+                || host_group_config.cpu_power_trace.is_some() && host_group_config.cpu.is_some()
             {
-                panic!("Client group should be configered either with traces or manually");
+                panic!(
+                    "Client group cpu power should be configured either with traces or manually"
+                );
             }
             let reliability_dist = SimulationDistribution::new(
                 host_group_config
@@ -91,19 +93,45 @@ impl Simulator {
                     .clone()
                     .unwrap_or(DistributionConfig::Uniform { min: 0.8, max: 1. }),
             );
+
+            let mut av_periods: HashMap<Id, VecDeque<f64>> = HashMap::new();
+            if host_group_config.availability_trace.is_some() {
+                let trace_path = host_group_config.availability_trace.clone().unwrap();
+                let file = File::open(trace_path.clone()).unwrap();
+                let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
+
+                for result in reader.records() {
+                    let record = result.unwrap();
+
+                    let client_id = record.get(0).unwrap().parse::<Id>().unwrap();
+                    let event_type = record.get(1).unwrap().parse::<u32>().unwrap();
+                    let event_start = record.get(2).unwrap().parse::<f64>().unwrap();
+                    let event_end = record.get(3).unwrap().parse::<f64>().unwrap();
+
+                    if !av_periods.contains_key(&client_id) {
+                        av_periods.insert(client_id, VecDeque::new());
+                    }
+                    let v = av_periods.get_mut(&client_id).unwrap();
+
+                    v.push_back(event_end - event_start);
+                }
+            }
             if host_group_config.cpu.is_some() {
                 host_group_config.from_h_to_sec();
                 let count = host_group_config.count.clone().unwrap_or(1);
-                for _ in 0..count {
+                for i in 0..count {
                     simulator.add_host(
                         host_group_config.clone(),
                         simulator.ctx.sample_from_distribution(&reliability_dist),
+                        av_periods.remove(&i).unwrap_or_default(),
                     );
                 }
             } else {
-                let trace_path = host_group_config.trace.clone().unwrap();
+                let trace_path = host_group_config.cpu_power_trace.clone().unwrap();
                 let file = File::open(trace_path.clone()).unwrap();
                 let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
+
+                let mut i = 0;
 
                 for result in reader.records() {
                     // cores, speed
@@ -121,7 +149,9 @@ impl Simulator {
                     simulator.add_host(
                         host_config,
                         simulator.ctx.sample_from_distribution(&reliability_dist),
+                        av_periods.remove(&i).unwrap_or_default(),
                     );
+                    i += 1;
                 }
             }
         }
@@ -339,7 +369,12 @@ impl Simulator {
         self.server = Some(server.clone());
     }
 
-    pub fn add_host(&mut self, config: ClientGroupConfig, reliability: f64) {
+    pub fn add_host(
+        &mut self,
+        config: ClientGroupConfig,
+        reliability: f64,
+        availability_periods: VecDeque<f64>,
+    ) {
         let n = self.clients.len();
         let node_name = &format!("client{}", n);
 
@@ -413,6 +448,7 @@ impl Simulator {
             self.simulation.create_context(client_name),
             config.clone(),
             reliability,
+            availability_periods,
             SimulationDistribution::new(
                 config
                     .availability_distribution
