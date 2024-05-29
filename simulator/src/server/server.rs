@@ -326,8 +326,8 @@ impl Server {
             .emit_self(ValidateResults {}, self.config.validator.interval);
     }
 
-    fn assimilate_results(&mut self) {
-        self.assimilator.assimilate();
+    async fn assimilate_results(&self) {
+        self.assimilator.assimilate().await;
         self.ctx
             .emit_self(AssimilateResults {}, self.config.assimilator.interval);
     }
@@ -404,7 +404,7 @@ impl EventHandler for Server {
             }
             AssimilateResults {} => {
                 if self.is_active {
-                    self.assimilate_results();
+                    self.ctx.spawn(self.assimilate_results());
                 }
             }
             EnvokeTransitioner {} => {

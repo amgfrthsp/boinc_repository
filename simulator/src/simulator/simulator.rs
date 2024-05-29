@@ -243,13 +243,6 @@ impl Simulator {
             stats.clone(),
         );
 
-        // Assimilator
-        let assimilator_name = &format!("{}::assimilator", server_name);
-        let assimilator = Assimilator::new(
-            database.clone(),
-            self.simulation.create_context(assimilator_name),
-        );
-
         // Transitioner
         let transitioner_name = &format!("{}::transitioner", server_name);
         let transitioner = Transitioner::new(
@@ -310,6 +303,14 @@ impl Simulator {
         )));
         self.simulation
             .add_handler(data_server_name, data_server.clone());
+
+        // Assimilator
+        let assimilator_name = &format!("{}::assimilator", server_name);
+        let assimilator = Assimilator::new(
+            database.clone(),
+            data_server.clone(),
+            self.simulation.create_context(assimilator_name),
+        );
 
         // File deleter
         let file_deleter_name = &format!("{}::file_deleter", server_name);

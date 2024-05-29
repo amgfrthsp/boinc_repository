@@ -195,17 +195,8 @@ impl DataServer {
         };
     }
 
-    async fn process_disk_read(&self, size: u64) {
-        let disk_read_id = self.disk.borrow_mut().read(size, self.ctx.id());
-
-        select! {
-            _ = self.ctx.recv_event_by_key::<DataReadCompleted>(disk_read_id).fuse() => {
-                // log_debug!(self.ctx, "read completed!!!");
-            }
-            _ = self.ctx.recv_event_by_key::<DataReadFailed>(disk_read_id).fuse() => {
-                log_debug!(self.ctx, "read FAILED!!!");
-            }
-        };
+    pub fn read_from_disk(&self, size: u64, requester: Id) -> u64 {
+        self.disk.borrow_mut().read(size, requester)
     }
 
     pub fn delete_input_files(&self, workunit_id: WorkunitId) -> u32 {

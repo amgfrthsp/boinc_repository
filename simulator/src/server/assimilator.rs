@@ -1,10 +1,13 @@
 use dslab_core::context::SimulationContext;
 use dslab_core::log_info;
+use dslab_storage::events::DataReadCompleted;
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
 
 use crate::server::job::AssimilateState;
 
+use super::data_server::DataServer;
 use super::database::BoincDatabase;
 
 // TODO:
@@ -13,22 +16,28 @@ use super::database::BoincDatabase;
 
 pub struct Assimilator {
     db: Rc<BoincDatabase>,
+    data_server: Rc<RefCell<DataServer>>,
     ctx: SimulationContext,
     pub dur_sum: f64,
     dur_samples: usize,
 }
 
 impl Assimilator {
-    pub fn new(db: Rc<BoincDatabase>, ctx: SimulationContext) -> Self {
+    pub fn new(
+        db: Rc<BoincDatabase>,
+        data_server: Rc<RefCell<DataServer>>,
+        ctx: SimulationContext,
+    ) -> Self {
         Self {
             db,
+            data_server,
             ctx,
             dur_samples: 0,
             dur_sum: 0.,
         }
     }
 
-    pub fn assimilate(&mut self) {
+    pub async fn assimilate(&self) {
         let t = Instant::now();
         let workunits_to_assimilate =
             BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
@@ -37,10 +46,24 @@ impl Assimilator {
         log_info!(self.ctx, "assimilation started");
         let mut assimilated_cnt = 0;
 
-        let mut db_workunit_mut = self.db.workunit.borrow_mut();
-
         for wu_id in workunits_to_assimilate {
+            let mut db_workunit_mut = self.db.workunit.borrow_mut();
             let workunit = db_workunit_mut.get_mut(&wu_id).unwrap();
+
+            let read_id = self
+                .data_server
+                .borrow()
+                .read_from_disk(workunit.spec.output_file.size, self.ctx.id());
+
+            drop(db_workunit_mut);
+
+            self.ctx
+                .recv_event_by_key::<DataReadCompleted>(read_id)
+                .await;
+
+            let mut db_workunit_mut = self.db.workunit.borrow_mut();
+            let workunit = db_workunit_mut.get_mut(&wu_id).unwrap();
+
             log_info!(
                 self.ctx,
                 "workunit {} assimilate_state {:?} -> {:?}",
@@ -52,9 +75,9 @@ impl Assimilator {
             self.db.update_wu_transition_time(workunit, self.ctx.time());
             assimilated_cnt += 1;
         }
-        let duration = t.elapsed().as_secs_f64();
         log_info!(self.ctx, "assimilated {} workunits", assimilated_cnt);
-        self.dur_sum += duration;
-        self.dur_samples += 1;
+        //let duration = t.elapsed().as_secs_f64();
+        // self.dur_sum += duration;
+        // self.dur_samples += 1;
     }
 }
