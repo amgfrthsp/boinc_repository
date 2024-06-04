@@ -3,13 +3,13 @@ use serde::Serialize;
 
 use dslab_compute::multicore::CoresDependency;
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone, Default)]
 pub struct InputFileMetadata {
     pub workunit_id: WorkunitId,
     pub size: u64,
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone, Default)]
 pub struct OutputFileMetadata {
     pub result_id: ResultId,
     pub size: u64,
