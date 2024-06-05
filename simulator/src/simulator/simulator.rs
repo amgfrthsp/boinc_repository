@@ -79,7 +79,7 @@ impl Simulator {
 
         simulator.add_server(simulator.sim_config.server.clone());
         // Add hosts from config
-        for mut host_group_config in simulator.sim_config.clients.clone() {
+        for host_group_config in simulator.sim_config.clients.clone() {
             if host_group_config.trace.is_none() && host_group_config.cpu.is_none()
                 || host_group_config.trace.is_some() && host_group_config.cpu.is_some()
             {
@@ -92,7 +92,6 @@ impl Simulator {
                     .unwrap_or(DistributionConfig::Uniform { min: 0.8, max: 1. }),
             );
             if host_group_config.cpu.is_some() {
-                host_group_config.from_h_to_sec();
                 let count = host_group_config.count.clone().unwrap_or(1);
                 for _ in 0..count {
                     simulator.add_host(
@@ -116,7 +115,6 @@ impl Simulator {
 
                     let mut host_config = host_group_config.clone();
                     host_config.cpu = Some(resources);
-                    host_config.from_h_to_sec();
 
                     simulator.add_host(
                         host_config,
@@ -217,8 +215,6 @@ impl Simulator {
     }
 
     pub fn add_server(&mut self, mut config: ServerConfig) {
-        config.from_h_to_sec();
-
         let server_name = "server";
 
         let stats = rc!(refcell!(ServerStats::new()));

@@ -205,11 +205,16 @@ impl SimulationConfig {
         )
         .unwrap_or_else(|_| panic!("Can't parse YAML from file {}", file_name));
 
-        Self {
+        let mut config = Self {
             seed: raw.seed.unwrap_or(124),
             sim_duration: raw.sim_duration.unwrap_or(1.),
             clients: raw.clients.unwrap_or_default(),
             server: raw.server.unwrap_or_default(),
+        };
+        for client_group in config.clients.iter_mut() {
+            client_group.from_h_to_sec();
         }
+        config.server.from_h_to_sec();
+        config
     }
 }
