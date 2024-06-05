@@ -1,4 +1,4 @@
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ServerStats {
     pub n_workunits_fully_processed: u64,
     pub n_results_completed: u64,
@@ -17,26 +17,29 @@ pub struct ServerStats {
     pub n_res_noreply: usize,
     pub n_res_didntneed: usize,
     pub n_res_validateerror: usize,
+
+    // component's duration
+    pub assimilator_sum_dur: f64,
+    pub assimilator_samples: u32,
+    pub db_purger_sum_dur: f64,
+    pub db_purger_samples: u32,
+    pub feeder_sum_dur: f64,
+    pub feeder_samples: u32,
+    pub file_deleter_sum_dur: f64,
+    pub file_deleter_samples: u32,
+    pub scheduler_sum_dur: f64,
+    pub scheduler_samples: u32,
+    pub transitioner_sum_dur: f64,
+    pub transitioner_samples: u32,
+    pub validator_sum_dur: f64,
+    pub validator_samples: u32,
 }
 
 impl ServerStats {
     pub fn new() -> Self {
         Self {
-            n_workunits_fully_processed: 0,
-            n_results_completed: 0,
-            gflops_total: 0.,
-            results_processing_time: 0.,
-            max_result_processing_time: 0.,
             min_result_processing_time: f64::MAX,
-            total_credit_granted: 0.,
-            n_res_deleted: 0,
-            n_res_success: 0,
-            n_res_init: 0,
-            n_res_valid: 0,
-            n_res_invalid: 0,
-            n_res_noreply: 0,
-            n_res_didntneed: 0,
-            n_res_validateerror: 0,
+            ..Default::default()
         }
     }
 }

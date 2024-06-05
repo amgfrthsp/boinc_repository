@@ -3,7 +3,6 @@ use dslab_core::log_debug;
 use dslab_core::log_info;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Instant;
 
 use crate::config::sim_config::ValidatorConfig;
 use crate::server::job::{
@@ -32,8 +31,6 @@ pub struct Validator {
     #[allow(dead_code)]
     config: ValidatorConfig,
     stats: Rc<RefCell<ServerStats>>,
-    pub dur_sum: f64,
-    dur_samples: usize,
 }
 
 impl Validator {
@@ -48,13 +45,10 @@ impl Validator {
             ctx,
             config,
             stats,
-            dur_samples: 0,
-            dur_sum: 0.,
         }
     }
 
     pub fn validate(&mut self) {
-        let t = Instant::now();
         let workunits_to_validate =
             BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
                 wu.need_validate
@@ -152,9 +146,6 @@ impl Validator {
             self.db.update_wu_transition_time(workunit, self.ctx.time());
         }
         log_info!(self.ctx, "validation finished");
-        let duration = t.elapsed().as_secs_f64();
-        self.dur_sum += duration;
-        self.dur_samples += 1;
     }
 
     // todo: read files from disk

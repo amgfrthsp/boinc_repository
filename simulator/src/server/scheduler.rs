@@ -6,7 +6,6 @@ use rustc_hash::FxHashMap;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
-use std::time::Instant;
 
 use crate::client::client::{WorkFetchReply, WorkFetchRequest};
 use crate::server::job::{ResultRequest, ResultState};
@@ -25,8 +24,6 @@ pub struct Scheduler {
     pub ctx: SimulationContext,
     #[allow(dead_code)]
     stats: Rc<RefCell<ServerStats>>,
-    pub dur_sum: f64,
-    pub dur_samples: usize,
 }
 
 impl Scheduler {
@@ -45,8 +42,6 @@ impl Scheduler {
             est_runtime_error_dist: error_dist,
             ctx,
             stats,
-            dur_samples: 0,
-            dur_sum: 0.,
         }
     }
 
@@ -76,7 +71,6 @@ impl Scheduler {
         let client_info = clients_ref.get(&client_id).unwrap();
         let net = self.client_networks.get(&client_id).unwrap();
 
-        let t = Instant::now();
         let mut assigned_results = Vec::new();
         let mut assigned_results_cnt = 0;
 
@@ -87,7 +81,6 @@ impl Scheduler {
 
         if shmem.is_empty() {
             log_info!(self.ctx, "Scheduling finished. Shared memory is empty.");
-            self.dur_samples += 1;
             return;
         }
 
@@ -162,13 +155,10 @@ impl Scheduler {
             );
         }
 
-        let schedule_duration = t.elapsed().as_secs_f64();
-        self.dur_sum += schedule_duration;
         log_info!(
             self.ctx,
-            "scheduling finished: assigned {} results in {:.2?} for client {}.shared memory size is {}",
+            "scheduling finished: assigned {} results for client {}.shared memory size is {}",
             assigned_results_cnt,
-            schedule_duration,
             client_info.id,
             shmem.len()
         );

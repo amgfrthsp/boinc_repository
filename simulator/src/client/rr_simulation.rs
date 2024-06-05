@@ -6,7 +6,6 @@ use std::cell::RefCell;
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
 use std::rc::Rc;
-use std::time::Instant;
 
 use crate::client::storage::FileStorage;
 use crate::client::task::ResultState;
@@ -30,8 +29,6 @@ pub struct RRSimulation {
     compute: Rc<RefCell<Compute>>,
     utilities: Rc<RefCell<Utilities>>,
     ctx: SimulationContext,
-    pub dur_sum: f64,
-    dur_samples: usize,
 }
 
 impl RRSimulation {
@@ -50,13 +47,10 @@ impl RRSimulation {
             compute,
             utilities,
             ctx,
-            dur_samples: 0,
-            dur_sum: 0.,
         }
     }
 
     pub fn simulate(&mut self, is_scheduling: bool) -> RRSimulationResult {
-        let t = Instant::now();
         let results_to_consider = self.file_storage.results_for_sim.borrow();
 
         log_debug!(
@@ -154,10 +148,6 @@ impl RRSimulation {
         if !is_scheduling {
             log_info!(self.ctx, "WorkFetchRequest: {:?}", work_fetch_req,);
         }
-
-        let duration = t.elapsed().as_secs_f64();
-        self.dur_sum += duration;
-        self.dur_samples += 1;
 
         RRSimulationResult {
             results_to_schedule: results_to_schedule

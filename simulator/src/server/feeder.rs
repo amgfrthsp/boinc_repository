@@ -3,7 +3,6 @@ use dslab_core::log_info;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
-use std::time::Instant;
 
 use crate::config::sim_config::FeederConfig;
 use crate::server::job::ResultState;
@@ -16,8 +15,6 @@ pub struct Feeder {
     db: Rc<BoincDatabase>,
     ctx: SimulationContext,
     config: FeederConfig,
-    pub dur_sum: f64,
-    dur_samples: usize,
 }
 
 impl Feeder {
@@ -32,8 +29,6 @@ impl Feeder {
             db,
             ctx,
             config,
-            dur_samples: 0,
-            dur_sum: 0.,
         }
     }
 
@@ -42,7 +37,6 @@ impl Feeder {
     }
 
     pub fn scan_work_array(&mut self) {
-        let t = Instant::now();
         log_info!(
             self.ctx,
             "feeder started. shared memory size is {}",
@@ -66,9 +60,6 @@ impl Feeder {
             self.shared_memory.borrow_mut().push_back(result_id);
             result.in_shared_mem = true;
         }
-        let duration = t.elapsed().as_secs_f64();
-        self.dur_sum += duration;
-        self.dur_samples += 1;
         log_info!(
             self.ctx,
             "feeder finished. shared memory size is {}",

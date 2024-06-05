@@ -2,7 +2,6 @@ use dslab_core::context::SimulationContext;
 use dslab_core::{log_debug, log_info};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Instant;
 
 use super::database::BoincDatabase;
 use super::job::{FileDeleteState, ResultInfo, ResultOutcome, ValidateState};
@@ -16,8 +15,6 @@ pub struct DBPurger {
     db: Rc<BoincDatabase>,
     ctx: SimulationContext,
     stats: Rc<RefCell<ServerStats>>,
-    pub dur_sum: f64,
-    dur_samples: usize,
 }
 
 impl DBPurger {
@@ -26,17 +23,10 @@ impl DBPurger {
         ctx: SimulationContext,
         stats: Rc<RefCell<ServerStats>>,
     ) -> Self {
-        Self {
-            db,
-            ctx,
-            stats,
-            dur_samples: 0,
-            dur_sum: 0.,
-        }
+        Self { db, ctx, stats }
     }
 
     pub fn purge_database(&mut self) {
-        let t = Instant::now();
         log_info!(self.ctx, "database purging started");
 
         let mut workunits_to_delete = self.db.workunits_to_delete.borrow_mut();
@@ -77,10 +67,6 @@ impl DBPurger {
             }
         }
         log_info!(self.ctx, "database purging finished");
-
-        let duration = t.elapsed().as_secs_f64();
-        self.dur_sum += duration;
-        self.dur_samples += 1;
     }
 
     pub fn update_stats(&self, result: ResultInfo) {

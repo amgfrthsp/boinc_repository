@@ -3,7 +3,6 @@ use dslab_core::log_info;
 use dslab_storage::events::DataReadCompleted;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Instant;
 
 use crate::server::job::AssimilateState;
 
@@ -18,8 +17,6 @@ pub struct Assimilator {
     db: Rc<BoincDatabase>,
     data_server: Rc<RefCell<DataServer>>,
     ctx: SimulationContext,
-    pub dur_sum: f64,
-    dur_samples: usize,
 }
 
 impl Assimilator {
@@ -32,13 +29,10 @@ impl Assimilator {
             db,
             data_server,
             ctx,
-            dur_samples: 0,
-            dur_sum: 0.,
         }
     }
 
     pub async fn assimilate(&self) {
-        let t = Instant::now();
         let workunits_to_assimilate =
             BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
                 wu.assimilate_state == AssimilateState::Ready
@@ -76,9 +70,6 @@ impl Assimilator {
             assimilated_cnt += 1;
         }
         log_info!(self.ctx, "assimilated {} workunits", assimilated_cnt);
-        //let duration = t.elapsed().as_secs_f64();
-        // self.dur_sum += duration;
-        // self.dur_samples += 1;
     }
 }
 

@@ -2,7 +2,6 @@ use dslab_core::context::SimulationContext;
 use dslab_core::log_info;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Instant;
 
 use crate::server::job::FileDeleteState;
 
@@ -17,8 +16,6 @@ pub struct FileDeleter {
     db: Rc<BoincDatabase>,
     data_server: Rc<RefCell<DataServer>>,
     ctx: SimulationContext,
-    pub dur_sum: f64,
-    dur_samples: usize,
 }
 
 impl FileDeleter {
@@ -31,18 +28,12 @@ impl FileDeleter {
             db,
             data_server,
             ctx,
-            dur_samples: 0,
-            dur_sum: 0.,
         }
     }
 
     pub fn delete_files(&mut self) {
-        let t = Instant::now();
         self.delete_input_files();
         self.delete_output_files();
-        let duration = t.elapsed().as_secs_f64();
-        self.dur_sum += duration;
-        self.dur_samples += 1;
     }
 
     pub fn delete_input_files(&self) {

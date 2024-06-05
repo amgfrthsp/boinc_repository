@@ -3,7 +3,6 @@ use dslab_core::log_debug;
 use dslab_core::log_info;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Instant;
 
 use crate::server::job::{
     AssimilateState, FileDeleteState, ResultOutcome, ResultState, ValidateState,
@@ -19,8 +18,6 @@ pub struct Transitioner {
     db: Rc<BoincDatabase>,
     pub next_result_id: RefCell<ResultId>,
     ctx: SimulationContext,
-    pub dur_sum: f64,
-    dur_samples: usize,
 }
 
 impl Transitioner {
@@ -29,13 +26,10 @@ impl Transitioner {
             db,
             next_result_id: RefCell::new(0),
             ctx,
-            dur_samples: 0,
-            dur_sum: 0.,
         }
     }
 
     pub fn transit(&mut self, current_time: f64) {
-        let t = Instant::now();
         let workunits_to_transit = self.db.get_wus_for_transitioner(self.ctx.time());
         log_info!(self.ctx, "transitioning started");
 
@@ -90,9 +84,6 @@ impl Transitioner {
             *self.next_result_id.borrow_mut() += new_results_needed_cnt;
         }
         log_info!(self.ctx, "transitioning finished");
-        let duration = t.elapsed().as_secs_f64();
-        self.dur_sum += duration;
-        self.dur_samples += 1;
     }
 
     fn check_timed_out_and_validation(

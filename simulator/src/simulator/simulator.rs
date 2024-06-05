@@ -214,10 +214,10 @@ impl Simulator {
         self.print_stats();
     }
 
-    pub fn add_server(&mut self, mut config: ServerConfig) {
+    pub fn add_server(&mut self, config: ServerConfig) {
         let server_name = "server";
 
-        let stats = rc!(refcell!(ServerStats::new()));
+        let stats = rc!(refcell!(ServerStats::default()));
 
         // Database
         let database = rc!(BoincDatabase::new());
@@ -453,26 +453,20 @@ impl Simulator {
         let results = server.db.result.borrow();
 
         println!("******** Server Stats **********");
-        // println!("Assimilator sum dur: {:.2} s", server.assimilator.dur_sum);
-        // println!("Validator sum dur: {:.2} s", server.validator.dur_sum);
-        // println!("Transitioner sum dur: {:.2} s", server.transitioner.dur_sum);
-        // println!("Feeder sum dur: {:.2} s", server.feeder.dur_sum);
-        // println!("Check buffer sum dur: {:.2} s", server.check_dur);
-        // println!(
-        //     "Scheduler sum dur: {:.2} s",
-        //     server.scheduler.borrow().dur_sum
-        // );
-        // println!("File deleter sum dur: {:.2} s", server.file_deleter.dur_sum);
-        // println!("DB purger sum dur: {:.2} s", server.db_purger.dur_sum);
-        // println!("Report status sum dur: {:.2} s", server.rs_dur_sum);
-        // println!("Memory usage: {} MB", server.memory / 1_000_000.);
+        println!("Assimilator sum dur: {:.2} s", stats.assimilator_sum_dur);
+        println!("Validator sum dur: {:.2} s", stats.validator_sum_dur);
+        println!("Transitioner sum dur: {:.2} s", stats.transitioner_sum_dur);
+        println!("Feeder sum dur: {:.2} s", stats.feeder_sum_dur);
+        println!("Scheduler sum dur: {:.2} s", stats.scheduler_sum_dur);
+        println!("File deleter sum dur: {:.2} s", stats.file_deleter_sum_dur);
+        println!("DB purger sum dur: {:.2} s", stats.db_purger_sum_dur);
         // println!(
         //     "Empty buffer: {}. shmem size {} lower bound {}",
         //     server.scheduler.borrow().dur_samples,
         //     self.sim_config.server.feeder.shared_memory_size,
         //     UNSENT_RESULT_BUFFER_LOWER_BOUND
         // );
-        // println!("");
+        println!("");
 
         let mut n_wus_inprogress = 0;
         let mut n_wus_stage_canonical = 0;
@@ -650,20 +644,20 @@ impl Simulator {
             speed_sum += client.compute.borrow().speed();
             disk_sum += client.disk.borrow().capacity();
 
-            rr_sim_dur += client.rr_sim.borrow().dur_sum;
-            sched_dur += client.sched_sum;
+            rr_sim_dur += client.stats.borrow().rrsim_sum_sur;
+            sched_dur += client.stats.borrow().scheduler_sum_sur;
         }
 
         let n_clients = self.clients.len();
 
         println!("******** Clients Stats **********");
         println!("Total number of clients: {}", self.clients.len());
-        // println!("RR sim sum dur: {:.2} s", rr_sim_dur);
-        // println!(
-        //     "RR sim average dur: {:.2} s",
-        //     rr_sim_dur / self.clients.len() as f64
-        // );
-        // println!("Sched sum dur: {:.2} s", sched_dur);
+        println!("RR sim sum dur: {:.2} s", rr_sim_dur);
+        println!(
+            "RR sim average dur: {:.2} s",
+            rr_sim_dur / self.clients.len() as f64
+        );
+        println!("Sched sum dur: {:.2} s", sched_dur);
         println!(
             "- Average cores: {:.2}",
             cores_sum as f64 / n_clients as f64

@@ -18,7 +18,7 @@ use dslab_storage::events::{
 use dslab_storage::storage::Storage;
 use futures::{select, FutureExt};
 
-use super::rr_simulation::RRSimulation;
+use super::rr_simulation::{RRSimulation, RRSimulationResult};
 use super::stats::ClientStats;
 use super::storage::FileStorage;
 use super::task::{ResultInfo, ResultState};
@@ -94,7 +94,6 @@ pub struct Client {
     is_active: bool,
     finish_time: f64,
     pub stats: Rc<RefCell<ClientStats>>,
-    pub sched_sum: f64,
 }
 
 impl Client {
@@ -137,7 +136,6 @@ impl Client {
             is_active: true,
             finish_time: 0.,
             stats,
-            sched_sum: 0.,
         }
     }
 
@@ -313,6 +311,18 @@ impl Client {
         *self.next_scheduling_time.borrow_mut() = self.ctx.time() + delay;
     }
 
+    pub fn perform_rr_sim(&self, is_scheduling: bool) -> RRSimulationResult {
+        let t = Instant::now();
+
+        let sim_result = self.rr_sim.borrow_mut().simulate(is_scheduling);
+
+        let duration = t.elapsed().as_secs_f64();
+        self.stats.borrow_mut().rrsim_sum_sur += duration;
+        self.stats.borrow_mut().rrsim_samples += 1;
+
+        sim_result
+    }
+
     pub fn schedule_results(&mut self) {
         let t = Instant::now();
         if self.suspended {
@@ -320,7 +330,7 @@ impl Client {
         }
         log_info!(self.ctx, "scheduling started");
 
-        let sim_result = self.rr_sim.borrow_mut().simulate(true);
+        let sim_result = self.perform_rr_sim(true);
 
         let results_to_schedule = sim_result.results_to_schedule;
 
@@ -411,7 +421,8 @@ impl Client {
 
         *self.scheduling_event.borrow_mut() = None;
         let duration = t.elapsed().as_secs_f64();
-        self.sched_sum += duration;
+        self.stats.borrow_mut().scheduler_sum_sur += duration;
+        self.stats.borrow_mut().scheduler_samples += 1;
     }
 
     pub fn on_run_result(&self, result_id: ResultId) {
@@ -683,7 +694,7 @@ impl Client {
         if self.suspended {
             return;
         }
-        let sim_result = self.rr_sim.borrow_mut().simulate(false);
+        let sim_result = self.perform_rr_sim(false);
 
         if sim_result.work_fetch_req.estimated_delay < self.config.buffered_work_min {
             self.net.borrow_mut().send_event(

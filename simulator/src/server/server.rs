@@ -3,6 +3,7 @@ use memory_stats::memory_stats;
 use serde::Serialize;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Instant;
 
 use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
@@ -280,7 +281,14 @@ impl Server {
     // ******* daemons **********
 
     fn envoke_feeder(&mut self, reschedule: bool) {
+        let t = Instant::now();
+
         self.feeder.scan_work_array();
+
+        let duration = t.elapsed().as_secs_f64();
+        self.stats.borrow_mut().feeder_sum_dur += duration;
+        self.stats.borrow_mut().feeder_samples += 1;
+
         if reschedule {
             self.ctx
                 .emit_self(EnvokeFeeder {}, self.config.feeder.interval);
@@ -300,7 +308,13 @@ impl Server {
             self.envoke_feeder(false);
         }
 
+        let t = Instant::now();
+
         self.scheduler.borrow_mut().schedule(client_id, req);
+
+        let duration = t.elapsed().as_secs_f64();
+        self.stats.borrow_mut().scheduler_sum_dur += duration;
+        self.stats.borrow_mut().scheduler_samples += 1;
 
         if self.db.feeder_result_ids.borrow().len() + self.feeder.get_shared_memory_size()
             < UNSENT_RESULT_BUFFER_LOWER_BOUND
@@ -315,31 +329,66 @@ impl Server {
     }
 
     fn envoke_transitioner(&mut self) {
+        let t = Instant::now();
+
         self.transitioner.transit(self.ctx.time());
+
+        let duration = t.elapsed().as_secs_f64();
+        self.stats.borrow_mut().transitioner_sum_dur += duration;
+        self.stats.borrow_mut().transitioner_samples += 1;
+
         self.ctx
             .emit_self(EnvokeTransitioner {}, self.config.transitioner.interval);
     }
 
     fn validate_results(&mut self) {
+        let t = Instant::now();
+
         self.validator.validate();
+
+        let duration = t.elapsed().as_secs_f64();
+        self.stats.borrow_mut().validator_sum_dur += duration;
+        self.stats.borrow_mut().validator_samples += 1;
+
         self.ctx
             .emit_self(ValidateResults {}, self.config.validator.interval);
     }
 
     async fn assimilate_results(&self) {
+        let t = Instant::now();
+
         self.assimilator.assimilate().await;
+
+        let duration = t.elapsed().as_secs_f64();
+        self.stats.borrow_mut().assimilator_sum_dur += duration;
+        self.stats.borrow_mut().assimilator_samples += 1;
+
         self.ctx
             .emit_self(AssimilateResults {}, self.config.assimilator.interval);
     }
 
     fn delete_files(&mut self) {
+        let t = Instant::now();
+
         self.file_deleter.delete_files();
+
+        let duration = t.elapsed().as_secs_f64();
+        self.stats.borrow_mut().file_deleter_sum_dur += duration;
+        self.stats.borrow_mut().file_deleter_samples += 1;
+
         self.ctx
             .emit_self(DeleteFiles {}, self.config.file_deleter.interval);
     }
 
     fn purge_db(&mut self) {
+        let t = Instant::now();
+
         self.db_purger.purge_database();
+
+        let duration = t.elapsed().as_secs_f64();
+        self.stats.borrow_mut().db_purger_sum_dur += duration;
+        self.stats.borrow_mut().db_purger_samples += 1;
+
         self.ctx
             .emit_self(PurgeDB {}, self.config.db_purger.interval);
     }
