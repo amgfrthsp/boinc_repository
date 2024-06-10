@@ -45,7 +45,7 @@ pub struct InputFileUploadCompleted {
 pub struct DataServer {
     pub id: Id,
     server_id: Id,
-    client_networks: FxHashMap<Id, Rc<RefCell<Network>>>,
+    network: Rc<RefCell<Network>>,
     disk: Rc<RefCell<Disk>>,
     input_files: RefCell<FxHashMap<WorkunitId, InputFileMetadata>>, // workunit_id -> input files
     output_files: RefCell<FxHashMap<ResultId, OutputFileMetadata>>, // result_id -> output files
@@ -54,7 +54,11 @@ pub struct DataServer {
 }
 
 impl DataServer {
-    pub fn new(disk: Rc<RefCell<Disk>>, ctx: SimulationContext) -> Self {
+    pub fn new(
+        network: Rc<RefCell<Network>>,
+        disk: Rc<RefCell<Disk>>,
+        ctx: SimulationContext,
+    ) -> Self {
         ctx.register_key_getter_for::<DataTransferCompleted>(|e| e.dt.id as u64);
         ctx.register_key_getter_for::<DataWriteCompleted>(|e| e.request_id);
         ctx.register_key_getter_for::<DataWriteFailed>(|e| e.request_id);
@@ -67,23 +71,13 @@ impl DataServer {
         Self {
             id: ctx.id(),
             server_id: 0,
-            client_networks: FxHashMap::default(),
+            network,
             disk,
             input_files: RefCell::new(FxHashMap::default()),
             output_files: RefCell::new(FxHashMap::default()),
             is_active: true,
             ctx,
         }
-    }
-
-    pub fn add_client_network(
-        &mut self,
-        client_id: Id,
-        net: Rc<RefCell<Network>>,
-        node_name: &str,
-    ) {
-        net.borrow_mut().set_location(self.ctx.id(), node_name);
-        self.client_networks.insert(client_id, net);
     }
 
     pub fn set_server_id(&mut self, server_id: Id) {
@@ -159,26 +153,24 @@ impl DataServer {
     }
 
     async fn process_network_download(&self, size: f64, from: Id) {
-        let net = self.client_networks.get(&from).unwrap();
-        let net_id = net.borrow().id();
-        let transfer_id = net
-            .borrow_mut()
-            .transfer_data(from, self.server_id, size, self.ctx.id());
+        let transfer_id =
+            self.network
+                .borrow_mut()
+                .transfer_data(from, self.server_id, size, self.ctx.id());
 
         self.ctx
-            .recv_event_by_key_from::<DataTransferCompleted>(net_id, transfer_id as u64)
+            .recv_event_by_key::<DataTransferCompleted>(transfer_id as u64)
             .await;
     }
 
     async fn process_network_upload(&self, size: f64, to: Id) {
-        let net = self.client_networks.get(&to).unwrap();
-        let net_id = net.borrow().id();
-        let transfer_id = net
-            .borrow_mut()
-            .transfer_data(self.server_id, to, size, self.ctx.id());
+        let transfer_id =
+            self.network
+                .borrow_mut()
+                .transfer_data(self.server_id, to, size, self.ctx.id());
 
         self.ctx
-            .recv_event_by_key_from::<DataTransferCompleted>(net_id, transfer_id as u64)
+            .recv_event_by_key::<DataTransferCompleted>(transfer_id as u64)
             .await;
     }
 

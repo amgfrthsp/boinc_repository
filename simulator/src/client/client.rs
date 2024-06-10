@@ -76,8 +76,7 @@ pub struct ScheduleResults {}
 pub struct Client {
     pub compute: Rc<RefCell<Compute>>,
     pub disk: Rc<RefCell<Disk>>,
-    net: Rc<RefCell<Network>>,
-    node_name: String,
+    network: Rc<RefCell<Network>>,
     utilities: Rc<RefCell<Utilities>>,
     server_id: Id,
     data_server_id: Id,
@@ -100,8 +99,7 @@ impl Client {
     pub fn new(
         compute: Rc<RefCell<Compute>>,
         disk: Rc<RefCell<Disk>>,
-        net: Rc<RefCell<Network>>,
-        node_name: String,
+        network: Rc<RefCell<Network>>,
         utilities: Rc<RefCell<Utilities>>,
         rr_sim: Rc<RefCell<RRSimulation>>,
         file_storage: Rc<FileStorage>,
@@ -118,8 +116,7 @@ impl Client {
         Self {
             compute,
             disk,
-            net,
-            node_name,
+            network,
             utilities,
             server_id: 0,
             data_server_id: 0,
@@ -137,14 +134,6 @@ impl Client {
             finish_time: 0.,
             stats,
         }
-    }
-
-    pub fn get_network(&self) -> Rc<RefCell<Network>> {
-        self.net.clone()
-    }
-
-    pub fn get_node_name(&self) -> &String {
-        &self.node_name
     }
 
     fn on_start(&mut self, server_id: Id, data_server_id: Id, finish_time: f64) {
@@ -490,7 +479,7 @@ impl Client {
         self.change_result(result_id, Some(ResultState::Notifying), None);
 
         let claimed_credit = result.spec.gflops / GFLOPS_CREDIT_RATIO;
-        self.net.borrow_mut().send_event(
+        self.network.borrow_mut().send_event(
             ResultCompleted {
                 result_id,
                 is_correct: self.ctx.gen_range(0. ..1.) < self.reliability,
@@ -697,7 +686,7 @@ impl Client {
         let sim_result = self.perform_rr_sim(false);
 
         if sim_result.work_fetch_req.estimated_delay < self.config.buffered_work_min {
-            self.net.borrow_mut().send_event(
+            self.network.borrow_mut().send_event(
                 sim_result.work_fetch_req,
                 self.ctx.id(),
                 self.server_id,
