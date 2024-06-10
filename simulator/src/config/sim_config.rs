@@ -24,7 +24,7 @@ pub struct ClientCpuPower {
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct ClientGroupConfig {
     // trace file with CPU power of hosts
-    pub trace: Option<String>,
+    pub cpu_power_trace: Option<String>,
     // if trace is None, client group size
     pub count: Option<u32>,
     // if trace is None, CPU power of hosts
@@ -54,6 +54,7 @@ pub struct ClientGroupConfig {
     // client's statistics report interval (s)
     pub report_status_interval: f64,
     pub reliability_distribution: Option<DistributionConfig>,
+    pub availability_trace: Option<String>,
     pub availability_distribution: Option<DistributionConfig>,
     pub unavailability_distribution: Option<DistributionConfig>,
 }

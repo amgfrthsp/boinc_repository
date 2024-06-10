@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::rc::Rc;
 use std::time::Instant;
 
@@ -89,6 +90,7 @@ pub struct Client {
     pub ctx: SimulationContext,
     pub config: ClientGroupConfig,
     reliability: f64,
+    availability_trace_periods: VecDeque<f64>,
     av_distribution: SimulationDistribution,
     unav_distribution: SimulationDistribution,
     is_active: bool,
@@ -109,6 +111,7 @@ impl Client {
         ctx: SimulationContext,
         config: ClientGroupConfig,
         reliability: f64,
+        availability_trace_periods: VecDeque<f64>,
         av_distribution: SimulationDistribution,
         unav_distribution: SimulationDistribution,
         stats: Rc<RefCell<ClientStats>>,
@@ -132,6 +135,7 @@ impl Client {
             ctx,
             config,
             reliability,
+            availability_trace_periods,
             av_distribution,
             unav_distribution,
             is_active: true,
@@ -170,7 +174,12 @@ impl Client {
         self.ctx
             .emit_self(AskForWork {}, self.ctx.gen_range(5. ..10.));
 
-        let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
+        let resume_dur;
+        if self.availability_trace_periods.is_empty() {
+            resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
+        } else {
+            resume_dur = self.availability_trace_periods.pop_front().unwrap();
+        }
         self.ctx.emit_self(Suspend {}, resume_dur);
 
         self.stats.borrow_mut().time_available += if self.ctx.time() + resume_dur > self.finish_time
@@ -196,8 +205,12 @@ impl Client {
             let result = fs_results.get_mut(&result_id).unwrap();
             self.preempt_result(result);
         }
-
-        let suspencion_dur = self.ctx.sample_from_distribution(&self.unav_distribution) * 3600.;
+        let suspencion_dur;
+        if self.availability_trace_periods.is_empty() {
+            suspencion_dur = self.ctx.sample_from_distribution(&self.unav_distribution) * 3600.;
+        } else {
+            suspencion_dur = self.availability_trace_periods.pop_front().unwrap();
+        }
         self.ctx.emit_self(Resume {}, suspencion_dur);
 
         self.stats.borrow_mut().time_unavailable +=
@@ -216,7 +229,12 @@ impl Client {
         self.ctx.emit_self(AskForWork {}, 0.);
         self.ctx.emit_self(ScheduleResults {}, 0.);
 
-        let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
+        let resume_dur;
+        if self.availability_trace_periods.is_empty() {
+            resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
+        } else {
+            resume_dur = self.availability_trace_periods.pop_front().unwrap();
+        }
 
         self.ctx.emit_self(Suspend {}, resume_dur);
 
