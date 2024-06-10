@@ -9,7 +9,7 @@ use crate::{common::HOUR, simulator::dist_params::DistributionConfig};
 struct RawSimulationConfig {
     pub seed: Option<u64>,
     pub sim_duration: Option<f64>,
-    pub server: Option<ServerConfig>,
+    pub projects: Option<Vec<ProjectConfig>>,
     pub clients: Option<Vec<ClientGroupConfig>>,
 }
 
@@ -65,6 +65,13 @@ impl ClientGroupConfig {
         self.buffered_work_max *= HOUR;
         self.report_status_interval *= HOUR;
     }
+}
+
+/// Holds configuration of a project
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
+pub struct ProjectConfig {
+    pub name: String,
+    pub server: ServerConfig,
 }
 
 /// Holds configuration of the main server
@@ -192,7 +199,7 @@ pub struct SimulationConfig {
     // Simulation duration in hours
     pub sim_duration: f64,
     pub clients: Vec<ClientGroupConfig>,
-    pub server: ServerConfig,
+    pub projects: Vec<ProjectConfig>,
 }
 
 impl SimulationConfig {
@@ -209,12 +216,16 @@ impl SimulationConfig {
             seed: raw.seed.unwrap_or(124),
             sim_duration: raw.sim_duration.unwrap_or(24.),
             clients: raw.clients.unwrap_or_default(),
-            server: raw.server.unwrap_or_default(),
+            projects: raw.projects.unwrap_or_default(),
         };
+
         for client_group in config.clients.iter_mut() {
             client_group.from_h_to_sec();
         }
-        config.server.from_h_to_sec();
+        for project in config.projects.iter_mut() {
+            project.server.from_h_to_sec();
+        }
+
         config
     }
 }

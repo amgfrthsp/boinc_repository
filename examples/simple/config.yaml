@@ -1,14 +1,14 @@
-seed: 95
+seed: 126
 sim_duration: 100.
 
 clients:
   - count: 10
     cpu:
-      cores: 1
       speed: 5.5
+      cores: 2
     work_fetch_interval: 1
-    buffered_work_min: 4.
-    buffered_work_max: 10.
+    buffered_work_min: 5.
+    buffered_work_max: 12.
     memory: 8
     disk_capacity: 128
     disk_read_bandwidth: 400.
@@ -29,50 +29,50 @@ clients:
     unavailability_distribution:
       LogNormal:
         mu: -0.586
-        sigma: 2.844
-
-server:
-  local_latency: 0.0
-  local_bandwidth: 10000
-  report_status_interval: 0.5
-  assimilator:
-    interval: 0.5
-  validator:
-    interval: 0.5
-  transitioner:
-    interval: 0.25
-  db_purger:
-    interval: 1
-  file_deleter:
-    interval: 1
-  feeder:
-    shared_memory_size: 5000
-    interval: 0.2
-  scheduler:
-    est_runtime_error_distribution:
-      Normal:
-        mu: 1.
-        sigma: 0.05
-
-  data_server:
-    disk_capacity: 100000000
-    disk_read_bandwidth: 700.
-    disk_write_bandwidth: 500.
-  
-  job_generator:
-    gflops_min: 7500.
-    gflops_max: 7500.
-    memory_min: 10
-    memory_max: 30
-    cores_min: 1
-    cores_max: 1
-    delay_min: 24.
-    delay_max: 24.
-    min_quorum_min: 1
-    min_quorum_max: 1
-    target_nresults_min: 1
-    target_nresults_max: 1
-    input_size_min: 5
-    input_size_max: 20
-    output_size_min: 5
-    output_size_max: 20
+        sigma: 2.444
+projects:
+  - name: SETI
+    server:
+      local_latency: 0.0
+      local_bandwidth: 10000
+      report_status_interval: 0.5
+      assimilator:
+        interval: 0.5
+      validator:
+        interval: 0.5
+      transitioner:
+        interval: 0.25
+      db_purger:
+        interval: 1
+      file_deleter:
+        interval: 1
+      feeder:
+        shared_memory_size: 5000
+        interval: 0.2
+      scheduler:
+        est_runtime_error_distribution:
+          Normal:
+            mu: 1.
+            sigma: 0.05
+      data_server:
+        disk_capacity: 100000000
+        disk_read_bandwidth: 700.
+        disk_write_bandwidth: 500.
+      
+      job_generator:
+        gflops_min: 7896.
+        gflops_max: 7896.
+        memory_min: 10
+        memory_max: 30
+        cores_min: 1
+        cores_max: 1
+        delay_min: 100.
+        delay_max: 100.
+        min_quorum_min: 2
+        min_quorum_max: 2
+        target_nresults_min: 3
+        target_nresults_max: 3
+        input_size_min: 5
+        input_size_max: 20
+        output_size_min: 5
+        output_size_max: 20

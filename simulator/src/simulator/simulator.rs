@@ -19,7 +19,7 @@ use crate::client::storage::FileStorage;
 use crate::client::utils::Utilities;
 use crate::common::HOUR;
 use crate::config::sim_config::{
-    ClientCpuPower, ClientGroupConfig, ServerConfig, SimulationConfig,
+    ClientCpuPower, ClientGroupConfig, ProjectConfig, SimulationConfig,
 };
 use crate::server::db_purger::DBPurger;
 use crate::server::feeder::Feeder;
@@ -87,7 +87,10 @@ impl Simulator {
             sim_config,
         };
 
-        simulator.add_server(simulator.sim_config.server.clone());
+        for project_config in simulator.sim_config.projects.clone() {
+            simulator.add_project(project_config);
+        }
+
         // Add hosts from config
         for host_group_config in simulator.sim_config.clients.clone() {
             if host_group_config.trace.is_none() && host_group_config.cpu.is_none()
@@ -202,8 +205,8 @@ impl Simulator {
         self.print_stats();
     }
 
-    pub fn add_server(&mut self, config: ServerConfig) {
-        let server_name = "server";
+    pub fn add_project(&mut self, project_config: ProjectConfig) {
+        let server_name = format!("{}::server", project_config.name);
 
         let stats = rc!(refcell!(ServerStats::default()));
 
@@ -214,7 +217,7 @@ impl Simulator {
         let job_generator_name = &format!("{}::job_generator", server_name);
         let job_generator = JobGenerator::new(
             self.simulation.create_context(job_generator_name),
-            config.job_generator.clone(),
+            project_config.server.job_generator.clone(),
         );
 
         // Adding daemon components
@@ -223,7 +226,7 @@ impl Simulator {
         let validator = Validator::new(
             database.clone(),
             self.simulation.create_context(validator_name),
-            config.validator.clone(),
+            project_config.server.validator.clone(),
             stats.clone(),
         );
 
@@ -250,7 +253,7 @@ impl Simulator {
             shared_memory.clone(),
             database.clone(),
             self.simulation.create_context(feeder_name),
-            config.feeder.clone(),
+            project_config.server.feeder.clone(),
         );
 
         // Scheduler
@@ -260,7 +263,8 @@ impl Simulator {
             database.clone(),
             shared_memory.clone(),
             SimulationDistribution::new(
-                config
+                project_config
+                    .server
                     .scheduler
                     .clone()
                     .est_runtime_error_distribution
@@ -275,9 +279,9 @@ impl Simulator {
         // file storage
         let disk_name = format!("{}::disk", data_server_name);
         let disk = rc!(refcell!(DiskBuilder::simple(
-            config.data_server.disk_capacity * 1000,
-            config.data_server.disk_read_bandwidth,
-            config.data_server.disk_write_bandwidth
+            project_config.server.data_server.disk_capacity * 1000,
+            project_config.server.data_server.disk_read_bandwidth,
+            project_config.server.data_server.disk_write_bandwidth
         )
         .build(self.simulation.create_context(&disk_name))));
         self.simulation.add_handler(disk_name, disk.clone());
@@ -318,18 +322,18 @@ impl Simulator {
             db_purger,
             scheduler,
             data_server,
-            self.simulation.create_context(server_name),
-            config.clone(),
+            self.simulation.create_context(&server_name),
+            project_config.server.clone(),
             stats.clone()
         )));
 
-        let server_id = self.simulation.add_handler(server_name, server.clone());
+        let server_id = self.simulation.add_handler(&server_name, server.clone());
 
         self.network.borrow_mut().add_node(
-            server_name,
+            &server_name,
             Box::new(SharedBandwidthNetworkModel::new(
-                config.local_bandwidth,
-                config.local_latency / 1000.,
+                project_config.server.local_bandwidth,
+                project_config.server.local_latency / 1000.,
             )),
         );
         self.network
