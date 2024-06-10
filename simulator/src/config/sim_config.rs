@@ -207,7 +207,7 @@ impl SimulationConfig {
 
         let mut config = Self {
             seed: raw.seed.unwrap_or(124),
-            sim_duration: raw.sim_duration.unwrap_or(1.),
+            sim_duration: raw.sim_duration.unwrap_or(24.),
             clients: raw.clients.unwrap_or_default(),
             server: raw.server.unwrap_or_default(),
         };

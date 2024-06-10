@@ -195,17 +195,17 @@ impl Client {
             self.preempt_result(result);
         }
 
-        let suspencion_dur = self.ctx.sample_from_distribution(&self.unav_distribution) * 3600.;
-        self.ctx.emit_self(Resume {}, suspencion_dur);
+        let suspension_dur = self.ctx.sample_from_distribution(&self.unav_distribution) * 3600.;
+        self.ctx.emit_self(Resume {}, suspension_dur);
 
         self.stats.borrow_mut().time_unavailable +=
-            if self.ctx.time() + suspencion_dur > self.finish_time {
+            if self.ctx.time() + suspension_dur > self.finish_time {
                 self.finish_time - self.ctx.time()
             } else {
-                suspencion_dur
+                suspension_dur
             };
 
-        log_info!(self.ctx, "Client suspended for {}s", suspencion_dur);
+        log_info!(self.ctx, "Client suspended for {}s", suspension_dur);
     }
 
     fn on_resume(&mut self) {
@@ -317,7 +317,7 @@ impl Client {
         let sim_result = self.rr_sim.borrow_mut().simulate(is_scheduling);
 
         let duration = t.elapsed().as_secs_f64();
-        self.stats.borrow_mut().rrsim_sum_sur += duration;
+        self.stats.borrow_mut().rrsim_sum_dur += duration;
         self.stats.borrow_mut().rrsim_samples += 1;
 
         sim_result
@@ -421,7 +421,7 @@ impl Client {
 
         *self.scheduling_event.borrow_mut() = None;
         let duration = t.elapsed().as_secs_f64();
-        self.stats.borrow_mut().scheduler_sum_sur += duration;
+        self.stats.borrow_mut().scheduler_sum_dur += duration;
         self.stats.borrow_mut().scheduler_samples += 1;
     }
 

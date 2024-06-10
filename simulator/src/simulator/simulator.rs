@@ -430,15 +430,9 @@ impl Simulator {
     }
 
     pub fn print_stats(&self) {
-        let server_clone = self.server.clone().unwrap();
-        let server = server_clone.borrow();
-        let stats = server.stats.borrow();
-
         println!("");
         println!("******** Simulation Stats **********");
         println!("Time period simulated: {} h", self.sim_config.sim_duration);
-        println!("Calculated {:.3} PFLOPS", stats.gflops_total / 1_000_000.);
-        println!("Total credit granted: {:.3}", stats.total_credit_granted);
         println!("");
 
         self.print_server_stats();
@@ -453,13 +447,22 @@ impl Simulator {
         let results = server.db.result.borrow();
 
         println!("******** Server Stats **********");
-        println!("Assimilator sum dur: {:.2} s", stats.assimilator_sum_dur);
-        println!("Validator sum dur: {:.2} s", stats.validator_sum_dur);
-        println!("Transitioner sum dur: {:.2} s", stats.transitioner_sum_dur);
-        println!("Feeder sum dur: {:.2} s", stats.feeder_sum_dur);
-        println!("Scheduler sum dur: {:.2} s", stats.scheduler_sum_dur);
-        println!("File deleter sum dur: {:.2} s", stats.file_deleter_sum_dur);
-        println!("DB purger sum dur: {:.2} s", stats.db_purger_sum_dur);
+        println!(
+            "Average Speed: {:.2} GFLOPS",
+            stats.gflops_total / (self.sim_config.sim_duration * 3600.)
+        );
+        println!("Total credit granted: {:.3}", stats.total_credit_granted);
+        println!(
+            "Average credit/day: {:.3}",
+            stats.total_credit_granted / (self.sim_config.sim_duration / 24.)
+        );
+        // println!("Assimilator sum dur: {:.2} s", stats.assimilator_sum_dur);
+        // println!("Validator sum dur: {:.2} s", stats.validator_sum_dur);
+        // println!("Transitioner sum dur: {:.2} s", stats.transitioner_sum_dur);
+        // println!("Feeder sum dur: {:.2} s", stats.feeder_sum_dur);
+        // println!("Scheduler sum dur: {:.2} s", stats.scheduler_sum_dur);
+        // println!("File deleter sum dur: {:.2} s", stats.file_deleter_sum_dur);
+        // println!("DB purger sum dur: {:.2} s", stats.db_purger_sum_dur);
         // println!(
         //     "Empty buffer: {}. shmem size {} lower bound {}",
         //     server.scheduler.borrow().dur_samples,
@@ -632,9 +635,6 @@ impl Simulator {
         let mut memory_sum = 0;
         let mut disk_sum = 0;
 
-        let mut rr_sim_dur = 0.;
-        let mut sched_dur = 0.;
-
         for client_ref in &self.clients {
             let client = client_ref.borrow();
             total_stats += client.stats.borrow().clone();
@@ -643,21 +643,18 @@ impl Simulator {
             memory_sum += client.compute.borrow().memory_total();
             speed_sum += client.compute.borrow().speed();
             disk_sum += client.disk.borrow().capacity();
-
-            rr_sim_dur += client.stats.borrow().rrsim_sum_sur;
-            sched_dur += client.stats.borrow().scheduler_sum_sur;
         }
 
         let n_clients = self.clients.len();
 
         println!("******** Clients Stats **********");
         println!("Total number of clients: {}", self.clients.len());
-        println!("RR sim sum dur: {:.2} s", rr_sim_dur);
+        println!("RR sim sum dur: {:.2} s", total_stats.rrsim_sum_dur);
         println!(
             "RR sim average dur: {:.2} s",
-            rr_sim_dur / self.clients.len() as f64
+            total_stats.rrsim_sum_dur / self.clients.len() as f64
         );
-        println!("Sched sum dur: {:.2} s", sched_dur);
+        println!("Sched sum dur: {:.2} s", total_stats.scheduler_sum_dur);
         println!(
             "- Average cores: {:.2}",
             cores_sum as f64 / n_clients as f64
@@ -685,10 +682,6 @@ impl Simulator {
             (total_stats.time_unavailable as f64 / (self.sim_config.sim_duration * 3600.))
                 / n_clients as f64
                 * 100.
-        );
-        println!(
-            "- Average GFLOPs processed: {:.2}",
-            (total_stats.gflops_processed as f64 / n_clients as f64)
         );
         println!(
             "- Average results processed by one client: {:.2}",

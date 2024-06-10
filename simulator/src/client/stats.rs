@@ -12,9 +12,9 @@ pub struct ClientStats {
     pub time_unavailable: f64,
 
     // component's duration
-    pub scheduler_sum_sur: f64,
+    pub scheduler_sum_dur: f64,
     pub scheduler_samples: u32,
-    pub rrsim_sum_sur: f64,
+    pub rrsim_sum_dur: f64,
     pub rrsim_samples: u32,
 }
 
