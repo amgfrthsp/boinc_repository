@@ -104,38 +104,29 @@ impl ServerConfig {
         self.transitioner.interval *= HOUR;
 
         self.report_status_interval *= HOUR;
-        self.job_generator.delay_min *= HOUR;
-        self.job_generator.delay_max *= HOUR;
+        self.job_generator.delay *= HOUR;
     }
 }
 
 /// Holds configuration of a job generator
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct JobGeneratorConfig {
-    // wu size in [gflops_min; gflops_max] (GFLOPs)
-    pub gflops_min: f64,
-    pub gflops_max: f64,
-    // wu memory size in memory_min; memory_max] (MB)
-    pub memory_min: u64,
-    pub memory_max: u64,
-    // wu cores amount in [cores_min; cores_max]
-    pub cores_min: u32,
-    pub cores_max: u32,
-    // wu delay time in [delay_min; delay_max] (s)
-    pub delay_min: f64,
-    pub delay_max: f64,
-    // wu min_quorum value in [min_quorum_min; min_quorum_max]
-    pub min_quorum_min: u64,
-    pub min_quorum_max: u64,
+    // wu size in GFLOPs
+    pub gflops: f64,
+    // wu memory size in MB
+    pub memory: u64,
+    // wu cores amount
+    pub cores: u32,
+    // wu delay time in h
+    pub delay: f64,
+    // wu min_quorum value
+    pub min_quorum: u64,
     // initial number of results, target_nresults >= min_quorum
-    pub target_nresults_min: u64,
-    pub target_nresults_max: u64,
-    // wu input size in [input_size_min; input_size_max] (MB)
-    pub input_size_min: u64,
-    pub input_size_max: u64,
-    // wu output size in [output_size_min; output_size_max] (MB)
-    pub output_size_min: u64,
-    pub output_size_max: u64,
+    pub target_nresults: u64,
+    // wu input size in MB
+    pub input_size: u64,
+    // wu output size in MB
+    pub output_size: u64,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]

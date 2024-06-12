@@ -60,19 +60,11 @@ projects:
         disk_write_bandwidth: 500.
       
       job_generator:
-        gflops_min: 7896.
-        gflops_max: 7896.
-        memory_min: 10
-        memory_max: 30
-        cores_min: 1
-        cores_max: 1
-        delay_min: 100.
-        delay_max: 100.
-        min_quorum_min: 2
-        min_quorum_max: 2
-        target_nresults_min: 3
-        target_nresults_max: 3
-        input_size_min: 5
-        input_size_max: 20
-        output_size_min: 5
-        output_size_max: 20
+        gflops: 7896.
+        memory: 10
+        cores: 1
+        delay: 100.
+        min_quorum: 2
+        target_nresults: 3
+        input_size: 5
+        output_size: 5
