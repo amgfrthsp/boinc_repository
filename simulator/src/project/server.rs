@@ -70,7 +70,7 @@ pub struct SimulationProgress {
     progress: f64,
 }
 
-pub struct Server {
+pub struct ProjectServer {
     // db
     pub db: Rc<BoincDatabase>,
     //job_generator
@@ -96,7 +96,7 @@ pub struct Server {
     pub memory: f64,
 }
 
-impl Server {
+impl ProjectServer {
     pub fn new(
         database: Rc<BoincDatabase>,
         job_generator: JobGenerator,
@@ -394,7 +394,7 @@ impl Server {
     }
 }
 
-impl EventHandler for Server {
+impl EventHandler for ProjectServer {
     fn on(&mut self, event: Event) {
         cast!(match event.data {
             GenerateJobs { cnt } => {

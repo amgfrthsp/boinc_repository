@@ -31,8 +31,8 @@ use crate::{
     client::client::Client,
     project::{
         assimilator::Assimilator, data_server::DataServer, database::BoincDatabase,
-        job_generator::JobGenerator, scheduler::Scheduler as ServerScheduler, server::Server,
-        transitioner::Transitioner, validator::Validator,
+        job_generator::JobGenerator, scheduler::Scheduler as ServerScheduler,
+        server::ProjectServer, transitioner::Transitioner, validator::Validator,
     },
 };
 
@@ -56,7 +56,8 @@ pub struct StartClient {
 pub struct Simulator {
     simulation: Simulation,
     network: Rc<RefCell<Network>>,
-    server: Option<Rc<RefCell<Server>>>,
+    projects: Vec<Rc<RefCell<ProjectServer>>>,
+    server: Option<Rc<RefCell<ProjectServer>>>,
     clients: Vec<Rc<RefCell<Client>>>,
     ctx: SimulationContext,
     sim_config: SimulationConfig,
@@ -81,6 +82,7 @@ impl Simulator {
         let mut simulator = Self {
             simulation,
             network,
+            projects: Vec::new(),
             server: None,
             clients: Vec::new(),
             ctx,
@@ -141,10 +143,6 @@ impl Simulator {
     }
 
     pub fn run(&mut self) {
-        if self.server.is_none() {
-            println!("Server is not added");
-            return;
-        }
         println!("Simulation started");
 
         let server = self.server.clone().unwrap();
@@ -311,7 +309,7 @@ impl Simulator {
             self.simulation.create_context(file_deleter_name),
         );
 
-        let server = rc!(refcell!(Server::new(
+        let server = rc!(refcell!(ProjectServer::new(
             database.clone(),
             job_generator,
             validator,
@@ -343,6 +341,7 @@ impl Simulator {
             .borrow_mut()
             .set_location(server_id, &server_name);
 
+        self.projects.push(server.clone());
         self.server = Some(server.clone());
     }
 

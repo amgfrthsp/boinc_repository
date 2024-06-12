@@ -1,4 +1,4 @@
-use dslab_core::EventId;
+use dslab_core::{EventId, Id};
 
 use crate::project::job::JobSpec;
 
@@ -20,6 +20,7 @@ pub enum ResultState {
 
 #[derive(Debug, Clone)]
 pub struct ResultInfo {
+    pub project_id: Id,
     pub spec: JobSpec,
     pub report_deadline: f64,
     pub state: ResultState,

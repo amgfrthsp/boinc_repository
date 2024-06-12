@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Instant;
 
@@ -64,6 +65,13 @@ pub struct ClientRegister {
 }
 
 #[derive(Clone, Serialize)]
+pub struct ProjectInfo {
+    // project_id == server_id
+    pub id: Id,
+    pub data_server_id: Id,
+}
+
+#[derive(Clone, Serialize)]
 pub struct ResultCompleted {
     pub result_id: ResultId,
     pub is_correct: bool,
@@ -78,6 +86,7 @@ pub struct Client {
     pub disk: Rc<RefCell<Disk>>,
     network: Rc<RefCell<Network>>,
     utilities: Rc<RefCell<Utilities>>,
+    projects: HashMap<Id, ProjectInfo>,
     server_id: Id,
     data_server_id: Id,
     pub rr_sim: Rc<RefCell<RRSimulation>>,
@@ -118,6 +127,7 @@ impl Client {
             disk,
             network,
             utilities,
+            projects: HashMap::new(),
             server_id: 0,
             data_server_id: 0,
             rr_sim,
@@ -217,15 +227,16 @@ impl Client {
         log_info!(self.ctx, "Client resumed for {}", resume_dur);
     }
 
-    fn on_result_requests(&self, reqs: Vec<ResultRequest>) {
+    fn on_result_requests(&self, reqs: Vec<ResultRequest>, project_id: Id) {
         for req in reqs {
-            self.ctx.spawn(self.process_result_request(req));
+            self.ctx.spawn(self.process_result_request(req, project_id));
         }
     }
 
-    async fn process_result_request(&self, req: ResultRequest) {
+    async fn process_result_request(&self, req: ResultRequest, project_id: Id) {
         let ref_id = req.spec.id;
         let mut result = ResultInfo {
+            project_id,
             spec: req.spec,
             report_deadline: req.report_deadline,
             state: ResultState::Downloading,
@@ -746,7 +757,7 @@ impl EventHandler for Client {
             }
             WorkFetchReply { requests } => {
                 if self.is_active {
-                    self.on_result_requests(requests);
+                    self.on_result_requests(requests, event.src);
                 }
             }
             CompPreempted { .. } => {}
