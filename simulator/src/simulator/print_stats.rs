@@ -7,12 +7,12 @@ use crate::{
     common::HOUR,
     project::{
         job::{AssimilateState, ResultOutcome, ResultState, ValidateState},
-        server::ProjectServer,
+        project::BoincProject,
     },
 };
 
-pub fn print_project_stats(server_ref: Rc<RefCell<ProjectServer>>, sim_duration: f64) {
-    let server = server_ref.borrow();
+pub fn print_project_stats(project: &BoincProject, sim_duration: f64) {
+    let server = project.server.borrow();
     let stats = server.stats.borrow();
     let workunits = server.db.workunit.borrow();
     let results = server.db.result.borrow();

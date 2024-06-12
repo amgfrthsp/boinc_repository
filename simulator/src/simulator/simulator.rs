@@ -23,6 +23,7 @@ use crate::project::db_purger::DBPurger;
 use crate::project::feeder::Feeder;
 use crate::project::file_deleter::FileDeleter;
 use crate::project::job::ResultId;
+use crate::project::project::BoincProject;
 use crate::project::server::{GenerateJobs, JobsGenerationCompleted};
 use crate::project::stats::ServerStats;
 use crate::simulator::print_stats::{print_clients_stats, print_project_stats};
@@ -55,8 +56,7 @@ pub struct StartClient {
 pub struct Simulator {
     simulation: Simulation,
     network: Rc<RefCell<Network>>,
-    projects: Vec<Rc<RefCell<ProjectServer>>>,
-    server: Option<Rc<RefCell<ProjectServer>>>,
+    projects: Vec<BoincProject>,
     clients: Vec<Rc<RefCell<Client>>>,
     ctx: SimulationContext,
     sim_config: SimulationConfig,
@@ -82,7 +82,6 @@ impl Simulator {
             simulation,
             network,
             projects: Vec::new(),
-            server: None,
             clients: Vec::new(),
             ctx,
             sim_config,
@@ -144,34 +143,36 @@ impl Simulator {
     pub fn run(&mut self) {
         println!("Simulation started");
 
-        let server = self.server.clone().unwrap();
-
-        self.ctx.spawn(async {
-            self.ctx
-                .emit_now(GenerateJobs { cnt: 300000 }, server.borrow().ctx.id());
-
-            self.ctx.recv_event::<JobsGenerationCompleted>().await;
-
-            log_info!(self.ctx, "Initial workunits added to server");
-
-            self.ctx.emit_now(
-                StartServer {
-                    finish_time: self.ctx.time() + self.sim_config.sim_duration * 3600.,
-                },
-                server.borrow().ctx.id(),
-            );
-
-            for client in &self.clients {
+        for project in self.projects.iter() {
+            self.ctx.spawn(async {
                 self.ctx.emit_now(
-                    StartClient {
-                        server_id: server.borrow().ctx.id(),
-                        data_server_id: server.borrow().data_server.borrow().ctx.id(),
+                    GenerateJobs { cnt: 300000 },
+                    project.server.borrow().ctx.id(),
+                );
+
+                self.ctx.recv_event::<JobsGenerationCompleted>().await;
+
+                log_info!(self.ctx, "Initial workunits added to {} server");
+
+                self.ctx.emit_now(
+                    StartServer {
                         finish_time: self.ctx.time() + self.sim_config.sim_duration * 3600.,
                     },
-                    client.borrow().ctx.id(),
+                    project.server.borrow().ctx.id(),
                 );
-            }
-        });
+
+                for client in &self.clients {
+                    self.ctx.emit_now(
+                        StartClient {
+                            server_id: project.server.borrow().ctx.id(),
+                            data_server_id: project.server.borrow().data_server.borrow().ctx.id(),
+                            finish_time: self.ctx.time() + self.sim_config.sim_duration * 3600.,
+                        },
+                        client.borrow().ctx.id(),
+                    );
+                }
+            });
+        }
 
         let t = Instant::now();
         self.simulation.step_until_no_events();
@@ -335,8 +336,8 @@ impl Simulator {
             .borrow_mut()
             .set_location(server_id, &server_name);
 
-        self.projects.push(server.clone());
-        self.server = Some(server.clone());
+        self.projects
+            .push(BoincProject::new(project_config.name, server));
     }
 
     pub fn add_host(&mut self, config: ClientGroupConfig, reliability: f64) {
@@ -424,7 +425,7 @@ impl Simulator {
 
     pub fn print_stats(&self) {
         for project in self.projects.iter() {
-            print_project_stats(project.clone(), self.sim_config.sim_duration);
+            print_project_stats(project, self.sim_config.sim_duration);
         }
         print_clients_stats(self.clients.clone(), self.sim_config.sim_duration);
     }

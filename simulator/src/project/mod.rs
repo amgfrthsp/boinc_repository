@@ -6,6 +6,7 @@ pub mod feeder;
 pub mod file_deleter;
 pub mod job;
 pub mod job_generator;
+pub mod project;
 pub mod scheduler;
 pub mod server;
 pub mod stats;
