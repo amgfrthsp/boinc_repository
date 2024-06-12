@@ -3,7 +3,7 @@ use dslab_core::log_info;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::server::job::FileDeleteState;
+use crate::project::job::FileDeleteState;
 
 use super::data_server::DataServer;
 use super::database::BoincDatabase;

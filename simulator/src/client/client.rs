@@ -25,10 +25,10 @@ use super::task::{ResultInfo, ResultState};
 use super::utils::Utilities;
 use crate::common::{Finish, ReportStatus};
 use crate::config::sim_config::ClientGroupConfig;
-use crate::server::data_server::{
+use crate::project::data_server::{
     InputFileUploadCompleted, InputFilesInquiry, OutputFileDownloadCompleted, OutputFileFromClient,
 };
-use crate::server::job::{DataServerFile, JobSpec, ResultId, ResultRequest};
+use crate::project::job::{DataServerFile, JobSpec, ResultId, ResultRequest};
 use crate::simulator::dist_params::SimulationDistribution;
 use crate::simulator::simulator::StartClient;
 

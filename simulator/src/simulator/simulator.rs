@@ -21,15 +21,15 @@ use crate::common::HOUR;
 use crate::config::sim_config::{
     ClientCpuPower, ClientGroupConfig, ProjectConfig, SimulationConfig,
 };
-use crate::server::db_purger::DBPurger;
-use crate::server::feeder::Feeder;
-use crate::server::file_deleter::FileDeleter;
-use crate::server::job::{AssimilateState, ResultId, ResultOutcome, ResultState, ValidateState};
-use crate::server::server::{GenerateJobs, JobsGenerationCompleted};
-use crate::server::stats::ServerStats;
+use crate::project::db_purger::DBPurger;
+use crate::project::feeder::Feeder;
+use crate::project::file_deleter::FileDeleter;
+use crate::project::job::{AssimilateState, ResultId, ResultOutcome, ResultState, ValidateState};
+use crate::project::server::{GenerateJobs, JobsGenerationCompleted};
+use crate::project::stats::ServerStats;
 use crate::{
     client::client::Client,
-    server::{
+    project::{
         assimilator::Assimilator, data_server::DataServer, database::BoincDatabase,
         job_generator::JobGenerator, scheduler::Scheduler as ServerScheduler, server::Server,
         transitioner::Transitioner, validator::Validator,

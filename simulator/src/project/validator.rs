@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::config::sim_config::ValidatorConfig;
-use crate::server::job::{
+use crate::project::job::{
     AssimilateState, FileDeleteState, ResultOutcome, ResultState, ValidateState,
 };
 

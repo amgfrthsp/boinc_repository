@@ -10,7 +10,7 @@ use std::rc::Rc;
 use crate::client::storage::FileStorage;
 use crate::client::task::ResultState;
 use crate::common::FloatWrapper;
-use crate::server::job::ResultId;
+use crate::project::job::ResultId;
 
 use super::client::WorkFetchRequest;
 use super::task::ResultInfo;

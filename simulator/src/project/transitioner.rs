@@ -4,7 +4,7 @@ use dslab_core::log_info;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::server::job::{
+use crate::project::job::{
     AssimilateState, FileDeleteState, ResultOutcome, ResultState, ValidateState,
 };
 

@@ -25,8 +25,8 @@ use super::validator::Validator;
 use crate::client::client::{ClientRegister, ResultCompleted, WorkFetchRequest};
 use crate::common::Finish;
 use crate::config::sim_config::ServerConfig;
-use crate::server::data_server::InputFileDownloadCompleted;
-use crate::server::database::ClientInfo;
+use crate::project::data_server::InputFileDownloadCompleted;
+use crate::project::database::ClientInfo;
 use crate::simulator::simulator::StartServer;
 
 pub const UNSENT_RESULT_BUFFER_LOWER_BOUND: usize = 1000;

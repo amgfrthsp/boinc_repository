@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 
 use crate::config::sim_config::FeederConfig;
-use crate::server::job::ResultState;
+use crate::project::job::ResultState;
 
 use super::database::BoincDatabase;
 use super::job::ResultId;

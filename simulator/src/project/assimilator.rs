@@ -4,7 +4,7 @@ use dslab_storage::events::DataReadCompleted;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::server::job::AssimilateState;
+use crate::project::job::AssimilateState;
 
 use super::data_server::DataServer;
 use super::database::BoincDatabase;

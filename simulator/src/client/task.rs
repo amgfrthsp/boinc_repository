@@ -1,6 +1,6 @@
 use dslab_core::EventId;
 
-use crate::server::job::JobSpec;
+use crate::project::job::JobSpec;
 
 #[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]

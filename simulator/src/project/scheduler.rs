@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 
 use crate::client::client::{WorkFetchReply, WorkFetchRequest};
-use crate::server::job::{ResultRequest, ResultState};
+use crate::project::job::{ResultRequest, ResultState};
 use crate::simulator::dist_params::SimulationDistribution;
 
 use super::database::BoincDatabase;
