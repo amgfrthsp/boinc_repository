@@ -66,8 +66,7 @@ pub struct ClientRegister {
 
 #[derive(Clone, Serialize)]
 pub struct ProjectInfo {
-    // project_id == server_id
-    pub id: Id,
+    pub server_id: Id,
     pub data_server_id: Id,
 }
 
@@ -87,8 +86,6 @@ pub struct Client {
     network: Rc<RefCell<Network>>,
     utilities: Rc<RefCell<Utilities>>,
     projects: HashMap<Id, ProjectInfo>,
-    server_id: Id,
-    data_server_id: Id,
     pub rr_sim: Rc<RefCell<RRSimulation>>,
     file_storage: Rc<FileStorage>,
     next_scheduling_time: RefCell<f64>,
@@ -128,8 +125,6 @@ impl Client {
             network,
             utilities,
             projects: HashMap::new(),
-            server_id: 0,
-            data_server_id: 0,
             rr_sim,
             file_storage,
             next_scheduling_time: RefCell::new(0.),
@@ -146,22 +141,29 @@ impl Client {
         }
     }
 
-    fn on_start(&mut self, server_id: Id, data_server_id: Id, finish_time: f64) {
+    fn on_start(&mut self, server_data_server_ids: Vec<(Id, Id)>, finish_time: f64) {
         log_info!(self.ctx, "started");
         self.finish_time = finish_time;
         self.ctx.emit_self(Finish {}, finish_time);
 
-        self.server_id = server_id;
-        self.data_server_id = data_server_id;
-        self.ctx.emit(
-            ClientRegister {
-                speed: self.compute.borrow().speed(),
-                cores: self.compute.borrow().cores_total(),
-                memory: self.compute.borrow().memory_total(),
-            },
-            self.server_id,
-            0.,
-        );
+        for (server_id, data_server_id) in server_data_server_ids {
+            self.projects.insert(
+                server_id,
+                ProjectInfo {
+                    server_id,
+                    data_server_id,
+                },
+            );
+            self.ctx.emit(
+                ClientRegister {
+                    speed: self.compute.borrow().speed(),
+                    cores: self.compute.borrow().cores_total(),
+                    memory: self.compute.borrow().memory_total(),
+                },
+                server_id,
+                0.,
+            );
+        }
         self.ctx
             .emit_self(ReportStatus {}, self.config.report_status_interval);
         self.ctx
@@ -227,16 +229,18 @@ impl Client {
         log_info!(self.ctx, "Client resumed for {}", resume_dur);
     }
 
-    fn on_result_requests(&self, reqs: Vec<ResultRequest>, project_id: Id) {
+    fn on_result_requests(&self, reqs: Vec<ResultRequest>, server_id: Id) {
         for req in reqs {
-            self.ctx.spawn(self.process_result_request(req, project_id));
+            self.ctx.spawn(self.process_result_request(req, server_id));
         }
     }
 
-    async fn process_result_request(&self, req: ResultRequest, project_id: Id) {
+    async fn process_result_request(&self, req: ResultRequest, server_id: Id) {
         let ref_id = req.spec.id;
+        let project_info = self.projects.get(&server_id).unwrap();
+
         let mut result = ResultInfo {
-            project_id,
+            server_id,
             spec: req.spec,
             report_deadline: req.report_deadline,
             state: ResultState::Downloading,
@@ -260,7 +264,7 @@ impl Client {
                     workunit_id,
                     ref_id,
                 },
-                self.data_server_id,
+                project_info.data_server_id,
             );
 
             futures::join!(
@@ -473,11 +477,13 @@ impl Client {
 
         // upload results on data server
         self.change_result(result_id, Some(ResultState::Uploading), None);
+
+        let project_info = self.projects.get(&result.server_id).unwrap();
         self.ctx.emit_now(
             OutputFileFromClient {
                 output_file: result.spec.output_file.clone(),
             },
-            self.data_server_id,
+            project_info.data_server_id,
         );
         self.process_data_server_output_file_upload(result_id).await;
 
@@ -497,7 +503,7 @@ impl Client {
                 claimed_credit,
             },
             self.ctx.id(),
-            self.server_id,
+            result.server_id,
         );
         log_debug!(
             self.ctx,
@@ -700,7 +706,7 @@ impl Client {
             self.network.borrow_mut().send_event(
                 sim_result.work_fetch_req,
                 self.ctx.id(),
-                self.server_id,
+                *self.projects.keys().next().unwrap(),
             );
         }
 
@@ -739,11 +745,10 @@ impl EventHandler for Client {
     fn on(&mut self, event: Event) {
         cast!(match event.data {
             StartClient {
-                server_id,
-                data_server_id,
+                server_data_server_ids,
                 finish_time,
             } => {
-                self.on_start(server_id, data_server_id, finish_time);
+                self.on_start(server_data_server_ids, finish_time);
             }
             Suspend {} => {
                 if self.is_active {

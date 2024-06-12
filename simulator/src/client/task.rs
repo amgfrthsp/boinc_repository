@@ -20,7 +20,7 @@ pub enum ResultState {
 
 #[derive(Debug, Clone)]
 pub struct ResultInfo {
-    pub project_id: Id,
+    pub server_id: Id,
     pub spec: JobSpec,
     pub report_deadline: f64,
     pub state: ResultState,

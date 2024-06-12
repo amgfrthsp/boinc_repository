@@ -48,8 +48,7 @@ pub struct StartServer {
 
 #[derive(Clone, Serialize)]
 pub struct StartClient {
-    pub server_id: Id,
-    pub data_server_id: Id,
+    pub server_data_server_ids: Vec<(Id, Id)>,
     pub finish_time: f64,
 }
 
@@ -143,8 +142,14 @@ impl Simulator {
     pub fn run(&mut self) {
         println!("Simulation started");
 
-        for project in self.projects.iter() {
-            self.ctx.spawn(async {
+        let mut server_data_server_ids = Vec::new();
+
+        self.ctx.spawn(async {
+            for project in self.projects.iter() {
+                server_data_server_ids.push((
+                    project.server.borrow().ctx.id(),
+                    project.server.borrow().data_server.borrow().ctx.id(),
+                ));
                 self.ctx.emit_now(
                     GenerateJobs { cnt: 300000 },
                     project.server.borrow().ctx.id(),
@@ -160,19 +165,17 @@ impl Simulator {
                     },
                     project.server.borrow().ctx.id(),
                 );
-
-                for client in &self.clients {
-                    self.ctx.emit_now(
-                        StartClient {
-                            server_id: project.server.borrow().ctx.id(),
-                            data_server_id: project.server.borrow().data_server.borrow().ctx.id(),
-                            finish_time: self.ctx.time() + self.sim_config.sim_duration * 3600.,
-                        },
-                        client.borrow().ctx.id(),
-                    );
-                }
-            });
-        }
+            }
+            for client in &self.clients {
+                self.ctx.emit_now(
+                    StartClient {
+                        server_data_server_ids: server_data_server_ids.clone(),
+                        finish_time: self.ctx.time() + self.sim_config.sim_duration * 3600.,
+                    },
+                    client.borrow().ctx.id(),
+                );
+            }
+        });
 
         let t = Instant::now();
         self.simulation.step_until_no_events();
