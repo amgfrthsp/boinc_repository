@@ -6,6 +6,7 @@ use dslab_core::{log_info, Event, EventHandler, Simulation};
 use dslab_network::{models::SharedBandwidthNetworkModel, Network};
 use dslab_storage::disk::DiskBuilder;
 use serde::Serialize;
+use std::cell::{Ref, RefMut};
 use std::collections::VecDeque;
 use std::fs::File;
 use std::rc::Rc;
@@ -53,10 +54,10 @@ pub struct StartClient {
 }
 
 pub struct Simulator {
-    simulation: Simulation,
+    simulation: RefCell<Simulation>,
     network: Rc<RefCell<Network>>,
     projects: Vec<BoincProject>,
-    clients: Vec<Rc<RefCell<Client>>>,
+    clients: Vec<Rc<Client>>,
     ctx: SimulationContext,
     sim_config: SimulationConfig,
 }
@@ -78,7 +79,7 @@ impl Simulator {
         simulation.add_handler(network_name, network.clone());
 
         let mut simulator = Self {
-            simulation,
+            simulation: refcell!(simulation),
             network,
             projects: Vec::new(),
             clients: Vec::new(),
@@ -139,46 +140,21 @@ impl Simulator {
         simulator
     }
 
-    pub fn run(&mut self) {
+    pub fn get_simulation(&self) -> Ref<Simulation> {
+        self.simulation.borrow()
+    }
+
+    pub fn get_simulation_mut(&self) -> RefMut<Simulation> {
+        self.simulation.borrow_mut()
+    }
+
+    pub fn run(self: Rc<Self>) {
         println!("Simulation started");
 
-        let mut server_data_server_ids = Vec::new();
-
-        self.ctx.spawn(async {
-            for project in self.projects.iter() {
-                server_data_server_ids.push((
-                    project.server.borrow().ctx.id(),
-                    project.server.borrow().data_server.borrow().ctx.id(),
-                ));
-                self.ctx.emit_now(
-                    GenerateJobs { cnt: 300000 },
-                    project.server.borrow().ctx.id(),
-                );
-
-                self.ctx.recv_event::<JobsGenerationCompleted>().await;
-
-                log_info!(self.ctx, "Initial workunits added to {} server");
-
-                self.ctx.emit_now(
-                    StartServer {
-                        finish_time: self.ctx.time() + self.sim_config.sim_duration * 3600.,
-                    },
-                    project.server.borrow().ctx.id(),
-                );
-            }
-            for client in &self.clients {
-                self.ctx.emit_now(
-                    StartClient {
-                        server_data_server_ids: server_data_server_ids.clone(),
-                        finish_time: self.ctx.time() + self.sim_config.sim_duration * 3600.,
-                    },
-                    client.borrow().ctx.id(),
-                );
-            }
-        });
+        self.get_simulation().spawn(self.clone().pre_run());
 
         let t = Instant::now();
-        self.simulation.step_until_no_events();
+        self.simulation.borrow_mut().step_until_no_events();
         let duration = t.elapsed().as_secs_f64();
 
         println!("Simulation finished");
@@ -188,9 +164,9 @@ impl Simulator {
         println!("Elapsed time: {:.2}s", duration);
         println!(
             "Simulation speedup: {:.2}",
-            self.simulation.time() / duration
+            self.get_simulation().time() / duration
         );
-        let event_count = self.simulation.event_count();
+        let event_count = self.get_simulation().event_count();
         println!(
             "Processed {} events in {:.2?}s ({:.0} events/s)",
             event_count,
@@ -199,6 +175,36 @@ impl Simulator {
         );
 
         self.print_stats();
+    }
+
+    pub async fn pre_run(self: Rc<Self>) {
+        let mut server_data_server_ids = Vec::new();
+        for project in self.projects.iter() {
+            server_data_server_ids
+                .push((project.server.ctx.id(), project.server.data_server.ctx.id()));
+            self.ctx
+                .emit_now(GenerateJobs { cnt: 300000 }, project.server.ctx.id());
+
+            self.ctx.recv_event::<JobsGenerationCompleted>().await;
+
+            log_info!(self.ctx, "Initial workunits added to {} server");
+
+            self.ctx.emit_now(
+                StartServer {
+                    finish_time: self.ctx.time() + self.sim_config.sim_duration * 3600.,
+                },
+                project.server.ctx.id(),
+            );
+        }
+        for client in &self.clients {
+            self.ctx.emit_now(
+                StartClient {
+                    server_data_server_ids: server_data_server_ids.clone(),
+                    finish_time: self.ctx.time() + self.sim_config.sim_duration * 3600.,
+                },
+                client.ctx.id(),
+            );
+        }
     }
 
     pub fn add_project(&mut self, project_config: ProjectConfig) {
@@ -212,7 +218,7 @@ impl Simulator {
         // Job generator
         let job_generator_name = &format!("{}::job_generator", server_name);
         let job_generator = JobGenerator::new(
-            self.simulation.create_context(job_generator_name),
+            self.get_simulation_mut().create_context(job_generator_name),
             project_config.server.job_generator.clone(),
         );
 
@@ -221,7 +227,7 @@ impl Simulator {
         let validator_name = &format!("{}::validator", server_name);
         let validator = Validator::new(
             database.clone(),
-            self.simulation.create_context(validator_name),
+            self.get_simulation_mut().create_context(validator_name),
             project_config.server.validator.clone(),
             stats.clone(),
         );
@@ -230,14 +236,14 @@ impl Simulator {
         let transitioner_name = &format!("{}::transitioner", server_name);
         let transitioner = Transitioner::new(
             database.clone(),
-            self.simulation.create_context(transitioner_name),
+            self.get_simulation_mut().create_context(transitioner_name),
         );
 
         // Database purger
         let db_purger_name = &format!("{}::db_purger", server_name);
         let db_purger = DBPurger::new(
             database.clone(),
-            self.simulation.create_context(db_purger_name),
+            self.get_simulation_mut().create_context(db_purger_name),
             stats.clone(),
         );
 
@@ -248,7 +254,7 @@ impl Simulator {
         let feeder: Feeder = Feeder::new(
             shared_memory.clone(),
             database.clone(),
-            self.simulation.create_context(feeder_name),
+            self.get_simulation_mut().create_context(feeder_name),
             project_config.server.feeder.clone(),
         );
 
@@ -266,7 +272,7 @@ impl Simulator {
                     .est_runtime_error_distribution
                     .unwrap_or(SCHEDULER_EST_RUNTIME_ERROR),
             ),
-            self.simulation.create_context(scheduler_name),
+            self.get_simulation_mut().create_context(scheduler_name),
             stats.clone(),
         )));
 
@@ -279,24 +285,25 @@ impl Simulator {
             project_config.server.data_server.disk_read_bandwidth,
             project_config.server.data_server.disk_write_bandwidth
         )
-        .build(self.simulation.create_context(&disk_name))));
-        self.simulation.add_handler(disk_name, disk.clone());
+        .build(self.get_simulation_mut().create_context(&disk_name))));
+        self.get_simulation_mut()
+            .add_handler(disk_name, disk.clone());
 
-        let data_server: Rc<RefCell<DataServer>> = rc!(refcell!(DataServer::new(
+        let data_server = rc!(DataServer::new(
             self.network.clone(),
             disk,
-            self.simulation.create_context(data_server_name),
-        )));
+            self.get_simulation_mut().create_context(data_server_name),
+        ));
         let data_server_id = self
-            .simulation
-            .add_handler(data_server_name, data_server.clone());
+            .get_simulation_mut()
+            .add_static_handler(data_server_name, data_server.clone());
 
         // Assimilator
         let assimilator_name = &format!("{}::assimilator", server_name);
         let assimilator = Assimilator::new(
             database.clone(),
             data_server.clone(),
-            self.simulation.create_context(assimilator_name),
+            self.get_simulation_mut().create_context(assimilator_name),
         );
 
         // File deleter
@@ -304,10 +311,10 @@ impl Simulator {
         let file_deleter = FileDeleter::new(
             database.clone(),
             data_server.clone(),
-            self.simulation.create_context(file_deleter_name),
+            self.get_simulation_mut().create_context(file_deleter_name),
         );
 
-        let server = rc!(refcell!(ProjectServer::new(
+        let server = rc!(ProjectServer::new(
             database.clone(),
             job_generator,
             validator,
@@ -318,12 +325,14 @@ impl Simulator {
             db_purger,
             scheduler,
             data_server,
-            self.simulation.create_context(&server_name),
+            self.get_simulation_mut().create_context(&server_name),
             project_config.server.clone(),
             stats.clone()
-        )));
+        ));
 
-        let server_id = self.simulation.add_handler(&server_name, server.clone());
+        let server_id = self
+            .get_simulation_mut()
+            .add_static_handler(&server_name, server.clone());
 
         self.network.borrow_mut().add_node(
             &server_name,
@@ -356,9 +365,10 @@ impl Simulator {
             resources.speed,
             resources.cores,
             config.memory * 1000,
-            self.simulation.create_context(&compute_name),
+            self.get_simulation_mut().create_context(&compute_name),
         )));
-        self.simulation.add_handler(compute_name, compute.clone());
+        self.get_simulation_mut()
+            .add_handler(compute_name, compute.clone());
         // disk
         let disk_name = format!("{}::disk", node_name);
         let disk = rc!(refcell!(DiskBuilder::simple(
@@ -366,8 +376,9 @@ impl Simulator {
             config.disk_read_bandwidth,
             config.disk_write_bandwidth
         )
-        .build(self.simulation.create_context(&disk_name))));
-        self.simulation.add_handler(disk_name, disk.clone());
+        .build(self.get_simulation_mut().create_context(&disk_name))));
+        self.get_simulation_mut()
+            .add_handler(disk_name, disk.clone());
 
         let client_name = &format!("{}::client", node_name);
 
@@ -384,17 +395,17 @@ impl Simulator {
             file_storage.clone(),
             compute.clone(),
             utilities.clone(),
-            self.simulation.create_context(rr_simulator_name),
+            self.get_simulation_mut().create_context(rr_simulator_name),
         )));
 
-        let client = rc!(refcell!(Client::new(
+        let client = rc!(Client::new(
             compute,
             disk,
             self.network.clone(),
             utilities.clone(),
             rr_simulator.clone(),
             file_storage.clone(),
-            self.simulation.create_context(client_name),
+            self.get_simulation_mut().create_context(client_name),
             config.clone(),
             reliability,
             SimulationDistribution::new(
@@ -408,9 +419,11 @@ impl Simulator {
                     .unwrap_or(CLIENT_AVAILABILITY_ALL_RANDOM_HOSTS.unavailability),
             ),
             stats.clone(),
-        )));
+        ));
 
-        let client_id = self.simulation.add_handler(client_name, client.clone());
+        let client_id = self
+            .get_simulation_mut()
+            .add_static_handler(client_name, client.clone());
 
         self.network.borrow_mut().add_node(
             node_name,

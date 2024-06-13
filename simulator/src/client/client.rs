@@ -9,7 +9,7 @@ use dslab_compute::multicore::*;
 use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
 use dslab_core::event::Event;
-use dslab_core::handler::EventHandler;
+use dslab_core::handler::StaticEventHandler;
 use dslab_core::{cast, log_debug, log_info, EventId};
 use dslab_network::Network;
 use dslab_storage::disk::Disk;
@@ -85,19 +85,19 @@ pub struct Client {
     pub disk: Rc<RefCell<Disk>>,
     network: Rc<RefCell<Network>>,
     utilities: Rc<RefCell<Utilities>>,
-    projects: HashMap<Id, ProjectInfo>,
+    projects: RefCell<HashMap<Id, ProjectInfo>>,
     pub rr_sim: Rc<RefCell<RRSimulation>>,
     file_storage: Rc<FileStorage>,
     next_scheduling_time: RefCell<f64>,
     scheduling_event: RefCell<Option<EventId>>,
-    suspended: bool,
+    suspended: RefCell<bool>,
     pub ctx: SimulationContext,
     pub config: ClientGroupConfig,
     reliability: f64,
     av_distribution: SimulationDistribution,
     unav_distribution: SimulationDistribution,
-    is_active: bool,
-    finish_time: f64,
+    is_active: RefCell<bool>,
+    finish_time: RefCell<f64>,
     pub stats: Rc<RefCell<ClientStats>>,
 }
 
@@ -124,30 +124,42 @@ impl Client {
             disk,
             network,
             utilities,
-            projects: HashMap::new(),
+            projects: RefCell::new(HashMap::new()),
             rr_sim,
             file_storage,
             next_scheduling_time: RefCell::new(0.),
             scheduling_event: RefCell::new(None),
-            suspended: false,
+            suspended: RefCell::new(false),
             ctx,
             config,
             reliability,
             av_distribution,
             unav_distribution,
-            is_active: true,
-            finish_time: 0.,
+            is_active: RefCell::new(true),
+            finish_time: RefCell::new(0.),
             stats,
         }
     }
 
-    fn on_start(&mut self, server_data_server_ids: Vec<(Id, Id)>, finish_time: f64) {
+    fn is_active(&self) -> bool {
+        *self.is_active.borrow()
+    }
+
+    fn get_finish_time(&self) -> f64 {
+        *self.finish_time.borrow()
+    }
+
+    fn is_suspended(&self) -> bool {
+        *self.suspended.borrow()
+    }
+
+    fn on_start(&self, server_data_server_ids: Vec<(Id, Id)>, finish_time: f64) {
         log_info!(self.ctx, "started");
-        self.finish_time = finish_time;
+        *self.finish_time.borrow_mut() = finish_time;
         self.ctx.emit_self(Finish {}, finish_time);
 
         for (server_id, data_server_id) in server_data_server_ids {
-            self.projects.insert(
+            self.projects.borrow_mut().insert(
                 server_id,
                 ProjectInfo {
                     server_id,
@@ -172,12 +184,12 @@ impl Client {
         let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
         self.ctx.emit_self(Suspend {}, resume_dur);
 
-        self.stats.borrow_mut().time_available += if self.ctx.time() + resume_dur > self.finish_time
-        {
-            self.finish_time - self.ctx.time()
-        } else {
-            resume_dur
-        };
+        self.stats.borrow_mut().time_available +=
+            if self.ctx.time() + resume_dur > self.get_finish_time() {
+                self.get_finish_time() - self.ctx.time()
+            } else {
+                resume_dur
+            };
 
         log_info!(
             self.ctx,
@@ -186,8 +198,8 @@ impl Client {
         );
     }
 
-    fn on_suspend(&mut self) {
-        self.suspended = true;
+    fn on_suspend(&self) {
+        *self.suspended.borrow_mut() = true;
         let running_results = self.file_storage.running_results.borrow().clone();
         let mut fs_results = self.file_storage.results.borrow_mut();
 
@@ -200,8 +212,8 @@ impl Client {
         self.ctx.emit_self(Resume {}, suspension_dur);
 
         self.stats.borrow_mut().time_unavailable +=
-            if self.ctx.time() + suspension_dur > self.finish_time {
-                self.finish_time - self.ctx.time()
+            if self.ctx.time() + suspension_dur > self.get_finish_time() {
+                self.get_finish_time() - self.ctx.time()
             } else {
                 suspension_dur
             };
@@ -209,8 +221,8 @@ impl Client {
         log_info!(self.ctx, "Client suspended for {}s", suspension_dur);
     }
 
-    fn on_resume(&mut self) {
-        self.suspended = false;
+    fn on_resume(&self) {
+        *self.suspended.borrow_mut() = false;
 
         self.ctx.emit_self(AskForWork {}, 0.);
         self.ctx.emit_self(ScheduleResults {}, 0.);
@@ -219,25 +231,27 @@ impl Client {
 
         self.ctx.emit_self(Suspend {}, resume_dur);
 
-        self.stats.borrow_mut().time_available += if self.ctx.time() + resume_dur > self.finish_time
-        {
-            self.finish_time - self.ctx.time()
-        } else {
-            resume_dur
-        };
+        self.stats.borrow_mut().time_available +=
+            if self.ctx.time() + resume_dur > self.get_finish_time() {
+                self.get_finish_time() - self.ctx.time()
+            } else {
+                resume_dur
+            };
 
         log_info!(self.ctx, "Client resumed for {}", resume_dur);
     }
 
-    fn on_result_requests(&self, reqs: Vec<ResultRequest>, server_id: Id) {
+    fn on_result_requests(self: Rc<Self>, reqs: Vec<ResultRequest>, server_id: Id) {
         for req in reqs {
-            self.ctx.spawn(self.process_result_request(req, server_id));
+            self.ctx
+                .spawn(self.clone().process_result_request(req, server_id));
         }
     }
 
-    async fn process_result_request(&self, req: ResultRequest, server_id: Id) {
+    async fn process_result_request(self: Rc<Self>, req: ResultRequest, server_id: Id) {
         let ref_id = req.spec.id;
-        let project_info = self.projects.get(&server_id).unwrap();
+        let projects_ref = self.projects.borrow();
+        let project_info = projects_ref.get(&server_id).unwrap();
 
         let mut result = ResultInfo {
             server_id,
@@ -294,7 +308,7 @@ impl Client {
     }
 
     pub fn plan_scheduling(&self, delay: f64) {
-        if self.suspended {
+        if self.is_suspended() {
             return;
         }
         let planned = self.scheduling_event.borrow().is_some();
@@ -327,9 +341,9 @@ impl Client {
         sim_result
     }
 
-    pub fn schedule_results(&mut self) {
+    pub fn schedule_results(self: Rc<Self>) {
         let t = Instant::now();
-        if self.suspended {
+        if self.is_suspended() {
             return;
         }
         log_info!(self.ctx, "scheduling started");
@@ -411,7 +425,7 @@ impl Client {
             self.on_continue_result(result_id, comp_id);
         }
         for result_id in start_results {
-            self.on_run_result(result_id);
+            self.clone().on_run_result(result_id);
         }
 
         log_info!(
@@ -429,14 +443,14 @@ impl Client {
         self.stats.borrow_mut().scheduler_samples += 1;
     }
 
-    pub fn on_run_result(&self, result_id: ResultId) {
-        if self.suspended {
+    pub fn on_run_result(self: Rc<Self>, result_id: ResultId) {
+        if self.is_suspended() {
             return;
         }
-        self.ctx.spawn(self.run_result(result_id));
+        self.ctx.spawn(self.clone().run_result(result_id));
     }
 
-    pub async fn run_result(&self, result_id: ResultId) {
+    pub async fn run_result(self: Rc<Self>, result_id: ResultId) {
         let result = self
             .file_storage
             .results
@@ -478,7 +492,8 @@ impl Client {
         // upload results on data server
         self.change_result(result_id, Some(ResultState::Uploading), None);
 
-        let project_info = self.projects.get(&result.server_id).unwrap();
+        let projects_ref = self.projects.borrow();
+        let project_info = projects_ref.get(&result.server_id).unwrap();
         self.ctx.emit_now(
             OutputFileFromClient {
                 output_file: result.spec.output_file.clone(),
@@ -657,7 +672,7 @@ impl Client {
     }
 
     pub fn on_continue_result(&self, result_id: ResultId, comp_id: EventId) {
-        if self.suspended {
+        if self.is_suspended() {
             return;
         }
         self.compute.borrow_mut().continue_computation(comp_id);
@@ -697,16 +712,17 @@ impl Client {
     }
 
     fn on_work_fetch(&self) {
-        if self.suspended {
+        if self.is_suspended() {
             return;
         }
         let sim_result = self.perform_rr_sim(false);
 
+        let projects_ref = self.projects.borrow();
         if sim_result.work_fetch_req.estimated_delay < self.config.buffered_work_min {
             self.network.borrow_mut().send_event(
                 sim_result.work_fetch_req,
                 self.ctx.id(),
-                *self.projects.keys().next().unwrap(),
+                *projects_ref.keys().next().unwrap(),
             );
         }
 
@@ -714,11 +730,11 @@ impl Client {
             .emit_self(AskForWork {}, self.config.work_fetch_interval);
     }
 
-    fn report_status(&mut self) {
+    fn report_status(&self) {
         log_info!(
             self.ctx,
             "STATUS: {}",
-            if self.suspended {
+            if self.is_suspended() {
                 "SUSPENDED"
             } else {
                 "ACTIVE"
@@ -734,15 +750,15 @@ impl Client {
                 / self.compute.borrow().memory_total() as f64,
             self.disk.borrow().used_space() as f64 / self.disk.borrow().capacity() as f64
         );
-        if self.is_active {
+        if self.is_active() {
             self.ctx
                 .emit_self(ReportStatus {}, self.config.report_status_interval);
         }
     }
 }
 
-impl EventHandler for Client {
-    fn on(&mut self, event: Event) {
+impl StaticEventHandler for Client {
+    fn on(self: Rc<Self>, event: Event) {
         cast!(match event.data {
             StartClient {
                 server_data_server_ids,
@@ -751,39 +767,39 @@ impl EventHandler for Client {
                 self.on_start(server_data_server_ids, finish_time);
             }
             Suspend {} => {
-                if self.is_active {
+                if self.is_active() {
                     self.on_suspend();
                 }
             }
             Resume {} => {
-                if self.is_active {
+                if self.is_active() {
                     self.on_resume();
                 }
             }
             WorkFetchReply { requests } => {
-                if self.is_active {
+                if self.is_active() {
                     self.on_result_requests(requests, event.src);
                 }
             }
             CompPreempted { .. } => {}
             CompContinued { .. } => {}
             ScheduleResults {} => {
-                if self.is_active {
+                if self.is_active() {
                     self.schedule_results();
                 }
             }
             AskForWork {} => {
-                if self.is_active {
+                if self.is_active() {
                     self.on_work_fetch();
                 }
             }
             ReportStatus {} => {
-                if self.is_active {
+                if self.is_active() {
                     self.report_status();
                 }
             }
             Finish {} => {
-                self.is_active = false;
+                *self.is_active.borrow_mut() = false;
                 log_info!(
                     self.ctx,
                     "Simulation finished. No new events will be processed"

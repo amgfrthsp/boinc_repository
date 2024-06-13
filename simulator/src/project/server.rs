@@ -1,4 +1,3 @@
-use memory_stats::memory_stats;
 use serde::Serialize;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -7,7 +6,7 @@ use std::time::Instant;
 use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
 use dslab_core::event::Event;
-use dslab_core::handler::EventHandler;
+use dslab_core::handler::StaticEventHandler;
 use dslab_core::{cast, log_debug, log_info};
 
 use super::assimilator::Assimilator;
@@ -85,15 +84,12 @@ pub struct ProjectServer {
     // scheduler
     pub scheduler: Rc<RefCell<Scheduler>>,
     // data server
-    pub data_server: Rc<RefCell<DataServer>>,
+    pub data_server: Rc<DataServer>,
     //
     pub ctx: SimulationContext,
     config: ServerConfig,
     pub stats: Rc<RefCell<ServerStats>>,
-    is_active: bool,
-    pub rs_dur_sum: f64,
-    pub check_dur: f64,
-    pub memory: f64,
+    is_active: RefCell<bool>,
 }
 
 impl ProjectServer {
@@ -107,13 +103,13 @@ impl ProjectServer {
         file_deleter: FileDeleter,
         db_purger: DBPurger,
         scheduler: Rc<RefCell<Scheduler>>,
-        data_server: Rc<RefCell<DataServer>>,
+        data_server: Rc<DataServer>,
         ctx: SimulationContext,
         config: ServerConfig,
         stats: Rc<RefCell<ServerStats>>,
     ) -> Self {
         scheduler.borrow_mut().set_server_id(ctx.id());
-        data_server.borrow_mut().set_server_id(ctx.id());
+        data_server.set_server_id(ctx.id());
         Self {
             db: database,
             job_generator,
@@ -128,11 +124,12 @@ impl ProjectServer {
             ctx,
             config,
             stats,
-            is_active: true,
-            rs_dur_sum: 0.,
-            check_dur: 0.,
-            memory: f64::MIN,
+            is_active: RefCell::new(true),
         }
+    }
+
+    fn is_active(&self) -> bool {
+        *self.is_active.borrow()
     }
 
     pub fn on_started(&self, finish_time: f64) {
@@ -147,8 +144,7 @@ impl ProjectServer {
             .emit_self(PurgeDB {}, self.config.db_purger.interval);
         self.ctx
             .emit_self(DeleteFiles {}, self.config.file_deleter.interval);
-        self.ctx
-            .emit(Finish {}, self.data_server.borrow().id, finish_time);
+        self.ctx.emit(Finish {}, self.data_server.id, finish_time);
         for i in (0..100).step_by(1) {
             let progress = i as f64 / 100.;
             self.ctx
@@ -157,7 +153,7 @@ impl ProjectServer {
         self.ctx.emit_self(Finish {}, finish_time);
     }
 
-    fn on_client_register(&mut self, client_id: Id, speed: f64, cores: u32, memory: u64) {
+    fn on_client_register(&self, client_id: Id, speed: f64, cores: u32, memory: u64) {
         let client = ClientInfo {
             id: client_id,
             speed,
@@ -169,7 +165,7 @@ impl ProjectServer {
         self.db.clients.borrow_mut().insert(client.id, client);
     }
 
-    async fn on_job_spec(&self, specs: Vec<JobSpec>) {
+    async fn on_job_spec(self: Rc<Self>, specs: Vec<JobSpec>) {
         let mut wus = Vec::new();
         let mut input_files = Vec::new();
 
@@ -192,7 +188,7 @@ impl ProjectServer {
         }
 
         self.data_server
-            .borrow()
+            .clone()
             .download_input_files_from_server(input_files, wus[0].id);
 
         self.ctx
@@ -227,7 +223,7 @@ impl ProjectServer {
         }
     }
 
-    fn on_result_completed(&mut self, result_id: ResultId, is_correct: bool, claimed_credit: f64) {
+    fn on_result_completed(&self, result_id: ResultId, is_correct: bool, claimed_credit: f64) {
         if !self.db.result.borrow().contains_key(&result_id) {
             log_debug!(
                 self.ctx,
@@ -269,7 +265,7 @@ impl ProjectServer {
 
     // ******* daemons **********
 
-    fn envoke_feeder(&mut self, reschedule: bool) {
+    fn envoke_feeder(&self, reschedule: bool) {
         let t = Instant::now();
 
         self.feeder.scan_work_array();
@@ -282,15 +278,9 @@ impl ProjectServer {
             self.ctx
                 .emit_self(EnvokeFeeder {}, self.config.feeder.interval);
         }
-
-        if let Some(usage) = memory_stats() {
-            self.memory = self.memory.max(usage.physical_mem as f64);
-        } else {
-            println!("Couldn't get the current memory usage :(");
-        }
     }
 
-    fn schedule_results(&mut self, client_id: Id, req: WorkFetchRequest) {
+    fn schedule_results(self: Rc<Self>, client_id: Id, req: WorkFetchRequest) {
         if self.feeder.get_shared_memory_size() < UNSENT_RESULT_BUFFER_LOWER_BOUND
             && !self.db.feeder_result_ids.borrow().is_empty()
         {
@@ -313,11 +303,11 @@ impl ProjectServer {
                 "Shared memory size: {}. Generated new workunits",
                 self.feeder.get_shared_memory_size()
             );
-            self.ctx.spawn(self.generate_jobs());
+            self.ctx.spawn(self.clone().generate_jobs());
         }
     }
 
-    fn envoke_transitioner(&mut self) {
+    fn envoke_transitioner(&self) {
         let t = Instant::now();
 
         self.transitioner.transit(self.ctx.time());
@@ -330,7 +320,7 @@ impl ProjectServer {
             .emit_self(EnvokeTransitioner {}, self.config.transitioner.interval);
     }
 
-    fn validate_results(&mut self) {
+    fn validate_results(&self) {
         let t = Instant::now();
 
         self.validator.validate();
@@ -343,7 +333,7 @@ impl ProjectServer {
             .emit_self(ValidateResults {}, self.config.validator.interval);
     }
 
-    async fn assimilate_results(&self) {
+    async fn assimilate_results(self: Rc<Self>) {
         let t = Instant::now();
 
         self.assimilator.assimilate().await;
@@ -356,7 +346,7 @@ impl ProjectServer {
             .emit_self(AssimilateResults {}, self.config.assimilator.interval);
     }
 
-    fn delete_files(&mut self) {
+    fn delete_files(&self) {
         let t = Instant::now();
 
         self.file_deleter.delete_files();
@@ -369,7 +359,7 @@ impl ProjectServer {
             .emit_self(DeleteFiles {}, self.config.file_deleter.interval);
     }
 
-    fn purge_db(&mut self) {
+    fn purge_db(&self) {
         let t = Instant::now();
 
         self.db_purger.purge_database();
@@ -382,23 +372,24 @@ impl ProjectServer {
             .emit_self(PurgeDB {}, self.config.db_purger.interval);
     }
 
-    pub async fn generate_jobs(&self) {
+    pub async fn generate_jobs(self: Rc<Self>) {
         let new_jobs = self.job_generator.generate_jobs(5000);
         self.on_job_spec(new_jobs).await;
     }
 
-    pub async fn generate_jobs_init(&self, cnt: usize, simulation_id: Id) {
+    pub async fn generate_jobs_init(self: Rc<Self>, cnt: usize, simulation_id: Id) {
         let new_jobs: Vec<JobSpec> = self.job_generator.generate_jobs(cnt);
-        self.on_job_spec(new_jobs).await;
+        self.clone().on_job_spec(new_jobs).await;
         self.ctx.emit_now(JobsGenerationCompleted {}, simulation_id);
     }
 }
 
-impl EventHandler for ProjectServer {
-    fn on(&mut self, event: Event) {
+impl StaticEventHandler for ProjectServer {
+    fn on(self: Rc<Self>, event: Event) {
         cast!(match event.data {
             GenerateJobs { cnt } => {
-                self.ctx.spawn(self.generate_jobs_init(cnt, event.src));
+                self.ctx
+                    .spawn(self.clone().generate_jobs_init(cnt, event.src));
             }
             StartServer { finish_time } => {
                 self.on_started(finish_time);
@@ -415,7 +406,7 @@ impl EventHandler for ProjectServer {
                 is_correct,
                 claimed_credit,
             } => {
-                if self.is_active {
+                if self.is_active() {
                     self.on_result_completed(result_id, is_correct, claimed_credit);
                 }
             }
@@ -424,7 +415,7 @@ impl EventHandler for ProjectServer {
                 req_instances,
                 estimated_delay,
             } => {
-                if self.is_active {
+                if self.is_active() {
                     self.schedule_results(
                         event.src,
                         WorkFetchRequest {
@@ -436,37 +427,37 @@ impl EventHandler for ProjectServer {
                 }
             }
             ValidateResults {} => {
-                if self.is_active {
+                if self.is_active() {
                     self.validate_results();
                 }
             }
             AssimilateResults {} => {
-                if self.is_active {
-                    self.ctx.spawn(self.assimilate_results());
+                if self.is_active() {
+                    self.ctx.spawn(self.clone().assimilate_results());
                 }
             }
             EnvokeTransitioner {} => {
-                if self.is_active {
+                if self.is_active() {
                     self.envoke_transitioner();
                 }
             }
             EnvokeFeeder {} => {
-                if self.is_active {
+                if self.is_active() {
                     self.envoke_feeder(true);
                 }
             }
             PurgeDB {} => {
-                if self.is_active {
+                if self.is_active() {
                     self.purge_db();
                 }
             }
             DeleteFiles {} => {
-                if self.is_active {
+                if self.is_active() {
                     self.delete_files();
                 }
             }
             Finish {} => {
-                self.is_active = false;
+                *self.is_active.borrow_mut() = false;
                 log_info!(
                     self.ctx,
                     "Simulation finished. No new events will be processed"

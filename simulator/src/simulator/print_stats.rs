@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::rc::Rc;
 
 use dslab_storage::storage::Storage;
 
@@ -12,10 +12,9 @@ use crate::{
 };
 
 pub fn print_project_stats(project: &BoincProject, sim_duration: f64) {
-    let server = project.server.borrow();
-    let stats = server.stats.borrow();
-    let workunits = server.db.workunit.borrow();
-    let results = server.db.result.borrow();
+    let stats = project.server.stats.borrow();
+    let workunits = project.server.db.workunit.borrow();
+    let results = project.server.db.result.borrow();
 
     println!("******** Server Stats **********");
     println!(
@@ -198,7 +197,7 @@ pub fn print_project_stats(project: &BoincProject, sim_duration: f64) {
     println!("");
 }
 
-pub fn print_clients_stats(clients: Vec<Rc<RefCell<Client>>>, sim_duration: f64) {
+pub fn print_clients_stats(clients: Vec<Rc<Client>>, sim_duration: f64) {
     let mut total_stats = ClientStats::new();
 
     let mut cores_sum = 0;
@@ -208,8 +207,7 @@ pub fn print_clients_stats(clients: Vec<Rc<RefCell<Client>>>, sim_duration: f64)
 
     let n_clients = clients.len();
 
-    for client_ref in clients {
-        let client = client_ref.borrow();
+    for client in clients {
         total_stats += client.stats.borrow().clone();
 
         cores_sum += client.compute.borrow().cores_total();

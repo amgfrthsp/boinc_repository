@@ -48,7 +48,7 @@ impl Validator {
         }
     }
 
-    pub fn validate(&mut self) {
+    pub fn validate(&self) {
         let workunits_to_validate =
             BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
                 wu.need_validate

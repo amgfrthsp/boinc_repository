@@ -36,7 +36,7 @@ impl Feeder {
         self.shared_memory.borrow().len()
     }
 
-    pub fn scan_work_array(&mut self) {
+    pub fn scan_work_array(&self) {
         log_info!(
             self.ctx,
             "feeder started. shared memory size is {}",

@@ -29,7 +29,7 @@ impl Transitioner {
         }
     }
 
-    pub fn transit(&mut self, current_time: f64) {
+    pub fn transit(&self, current_time: f64) {
         let workunits_to_transit = self.db.get_wus_for_transitioner(self.ctx.time());
         log_info!(self.ctx, "transitioning started");
 

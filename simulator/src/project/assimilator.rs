@@ -1,7 +1,6 @@
 use dslab_core::context::SimulationContext;
 use dslab_core::log_info;
 use dslab_storage::events::DataReadCompleted;
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::project::job::AssimilateState;
@@ -15,16 +14,12 @@ use super::database::BoincDatabase;
 
 pub struct Assimilator {
     db: Rc<BoincDatabase>,
-    data_server: Rc<RefCell<DataServer>>,
+    data_server: Rc<DataServer>,
     ctx: SimulationContext,
 }
 
 impl Assimilator {
-    pub fn new(
-        db: Rc<BoincDatabase>,
-        data_server: Rc<RefCell<DataServer>>,
-        ctx: SimulationContext,
-    ) -> Self {
+    pub fn new(db: Rc<BoincDatabase>, data_server: Rc<DataServer>, ctx: SimulationContext) -> Self {
         Self {
             db,
             data_server,
@@ -46,7 +41,6 @@ impl Assimilator {
 
             let read_id = self
                 .data_server
-                .borrow()
                 .read_from_disk(workunit.spec.output_file.size, self.ctx.id());
 
             drop(db_workunit_mut);
