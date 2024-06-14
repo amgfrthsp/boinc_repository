@@ -98,7 +98,7 @@ pub struct Client {
     pub disk: Rc<RefCell<Disk>>,
     network: Rc<RefCell<Network>>,
     utilities: Rc<RefCell<Utilities>>,
-    projects: RefCell<HashMap<Id, ProjectInfo>>,
+    projects: RefCell<HashMap<Id, ProjectInfo>>, // server_id -> project
     pub rr_sim: Rc<RefCell<RRSimulation>>,
     file_storage: Rc<FileStorage>,
     next_scheduling_time: RefCell<f64>,

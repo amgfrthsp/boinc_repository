@@ -5,7 +5,6 @@ use dslab_core::{log_info, Event, EventHandler, Simulation};
 use dslab_network::{models::SharedBandwidthNetworkModel, Network};
 use dslab_storage::disk::DiskBuilder;
 use serde::Serialize;
-use std::borrow::Borrow;
 use std::cell::{Ref, RefMut};
 use std::collections::{HashMap, VecDeque};
 use std::fs::File;
@@ -396,11 +395,10 @@ impl Simulator {
             self.get_simulation_mut().create_context(rr_simulator_name),
         )));
 
-        let all_projects = self.projects.borrow();
         let mut client_projects = HashMap::new();
 
         for supported_project in config.supported_projects.iter() {
-            let project = all_projects.get(&supported_project.name).unwrap();
+            let project = self.projects.get(&supported_project.name).unwrap();
             let server_id = project.server.ctx.id();
             let data_server_id = project.server.data_server.ctx.id();
             client_projects.insert(
