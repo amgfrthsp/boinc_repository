@@ -405,11 +405,7 @@ impl Simulator {
             let data_server_id = project.server.data_server.ctx.id();
             client_projects.insert(
                 server_id,
-                ProjectInfo {
-                    server_id,
-                    data_server_id,
-                    resource_share: supported_project.resource_share,
-                },
+                ProjectInfo::new(server_id, data_server_id, supported_project.resource_share),
             );
         }
 

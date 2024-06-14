@@ -69,6 +69,18 @@ pub struct ProjectInfo {
     pub server_id: Id,
     pub data_server_id: Id,
     pub resource_share: f64,
+    pub rec: f64,
+}
+
+impl ProjectInfo {
+    pub fn new(server_id: Id, data_server_id: Id, resource_share: f64) -> Self {
+        Self {
+            server_id,
+            data_server_id,
+            resource_share,
+            rec: 0.,
+        }
+    }
 }
 
 #[derive(Clone, Serialize)]
