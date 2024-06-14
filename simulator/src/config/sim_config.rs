@@ -22,6 +22,14 @@ pub struct ClientCpuPower {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+pub struct ClientSupportedProject {
+    // project name as it is in project->name
+    pub name: String,
+    // project resource share
+    pub resource_share: f64,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct ClientGroupConfig {
     // trace file with CPU power of hosts
     pub trace: Option<String>,
@@ -29,6 +37,10 @@ pub struct ClientGroupConfig {
     pub count: Option<u32>,
     // if trace is None, CPU power of hosts
     pub cpu: Option<ClientCpuPower>,
+    // projects supported by each client (name, resource_share)
+    pub supported_projects: Vec<ClientSupportedProject>,
+    // scheduling period = time slice duration (h)
+    pub scheduling_period: f64,
     // work fetch interval (s)
     pub work_fetch_interval: f64,
     // min queued jobs runtime (s)
@@ -60,6 +72,7 @@ pub struct ClientGroupConfig {
 
 impl ClientGroupConfig {
     pub fn from_h_to_sec(&mut self) {
+        self.scheduling_period *= HOUR;
         self.work_fetch_interval *= HOUR;
         self.buffered_work_min *= HOUR;
         self.buffered_work_max *= HOUR;

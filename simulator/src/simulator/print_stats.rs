@@ -16,7 +16,7 @@ pub fn print_project_stats(project: &BoincProject, sim_duration: f64) {
     let workunits = project.server.db.workunit.borrow();
     let results = project.server.db.result.borrow();
 
-    println!("******** Server Stats **********");
+    println!("******** {} Server Stats **********", project.name);
     println!(
         "Average Speed: {:.2} GFLOPS",
         stats.gflops_total / (sim_duration * 3600.)

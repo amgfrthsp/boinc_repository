@@ -68,6 +68,7 @@ pub struct ClientRegister {
 pub struct ProjectInfo {
     pub server_id: Id,
     pub data_server_id: Id,
+    pub resource_share: f64,
 }
 
 #[derive(Clone, Serialize)]
@@ -106,6 +107,7 @@ impl Client {
         compute: Rc<RefCell<Compute>>,
         disk: Rc<RefCell<Disk>>,
         network: Rc<RefCell<Network>>,
+        projects: HashMap<Id, ProjectInfo>,
         utilities: Rc<RefCell<Utilities>>,
         rr_sim: Rc<RefCell<RRSimulation>>,
         file_storage: Rc<FileStorage>,
@@ -124,7 +126,7 @@ impl Client {
             disk,
             network,
             utilities,
-            projects: RefCell::new(HashMap::new()),
+            projects: RefCell::new(projects),
             rr_sim,
             file_storage,
             next_scheduling_time: RefCell::new(0.),
@@ -153,26 +155,20 @@ impl Client {
         *self.suspended.borrow()
     }
 
-    fn on_start(&self, server_data_server_ids: Vec<(Id, Id)>, finish_time: f64) {
+    fn on_start(&self, finish_time: f64) {
         log_info!(self.ctx, "started");
         *self.finish_time.borrow_mut() = finish_time;
         self.ctx.emit_self(Finish {}, finish_time);
 
-        for (server_id, data_server_id) in server_data_server_ids {
-            self.projects.borrow_mut().insert(
-                server_id,
-                ProjectInfo {
-                    server_id,
-                    data_server_id,
-                },
-            );
+        let projects_ref = self.projects.borrow();
+        for (server_id, _) in projects_ref.iter() {
             self.ctx.emit(
                 ClientRegister {
                     speed: self.compute.borrow().speed(),
                     cores: self.compute.borrow().cores_total(),
                     memory: self.compute.borrow().memory_total(),
                 },
-                server_id,
+                *server_id,
                 0.,
             );
         }
@@ -760,11 +756,8 @@ impl Client {
 impl StaticEventHandler for Client {
     fn on(self: Rc<Self>, event: Event) {
         cast!(match event.data {
-            StartClient {
-                server_data_server_ids,
-                finish_time,
-            } => {
-                self.on_start(server_data_server_ids, finish_time);
+            StartClient { finish_time } => {
+                self.on_start(finish_time);
             }
             Suspend {} => {
                 if self.is_active() {

@@ -1,18 +1,19 @@
 use csv::ReaderBuilder;
 use dslab_compute::multicore::Compute;
-use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
 use dslab_core::{log_info, Event, EventHandler, Simulation};
 use dslab_network::{models::SharedBandwidthNetworkModel, Network};
 use dslab_storage::disk::DiskBuilder;
 use serde::Serialize;
+use std::borrow::Borrow;
 use std::cell::{Ref, RefMut};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::rc::Rc;
 use std::{cell::RefCell, time::Instant};
 use sugars::{rc, refcell};
 
+use crate::client::client::ProjectInfo;
 use crate::client::rr_simulation::RRSimulation;
 use crate::client::stats::ClientStats;
 use crate::client::storage::FileStorage;
@@ -49,14 +50,13 @@ pub struct StartServer {
 
 #[derive(Clone, Serialize)]
 pub struct StartClient {
-    pub server_data_server_ids: Vec<(Id, Id)>,
     pub finish_time: f64,
 }
 
 pub struct Simulator {
     simulation: RefCell<Simulation>,
     network: Rc<RefCell<Network>>,
-    projects: Vec<BoincProject>,
+    projects: HashMap<String, BoincProject>, // name -> project
     clients: Vec<Rc<Client>>,
     ctx: SimulationContext,
     sim_config: SimulationConfig,
@@ -81,7 +81,7 @@ impl Simulator {
         let mut simulator = Self {
             simulation: refcell!(simulation),
             network,
-            projects: Vec::new(),
+            projects: HashMap::new(),
             clients: Vec::new(),
             ctx,
             sim_config,
@@ -178,10 +178,7 @@ impl Simulator {
     }
 
     pub async fn pre_run(self: Rc<Self>) {
-        let mut server_data_server_ids = Vec::new();
-        for project in self.projects.iter() {
-            server_data_server_ids
-                .push((project.server.ctx.id(), project.server.data_server.ctx.id()));
+        for (_, project) in self.projects.iter() {
             self.ctx
                 .emit_now(GenerateJobs { cnt: 300000 }, project.server.ctx.id());
 
@@ -199,7 +196,6 @@ impl Simulator {
         for client in &self.clients {
             self.ctx.emit_now(
                 StartClient {
-                    server_data_server_ids: server_data_server_ids.clone(),
                     finish_time: self.ctx.time() + self.sim_config.sim_duration * 3600.,
                 },
                 client.ctx.id(),
@@ -348,8 +344,10 @@ impl Simulator {
             .borrow_mut()
             .set_location(server_id, &server_name);
 
-        self.projects
-            .push(BoincProject::new(project_config.name, server));
+        self.projects.insert(
+            project_config.name.clone(),
+            BoincProject::new(project_config.name, server),
+        );
     }
 
     pub fn add_host(&mut self, config: ClientGroupConfig, reliability: f64) {
@@ -398,10 +396,28 @@ impl Simulator {
             self.get_simulation_mut().create_context(rr_simulator_name),
         )));
 
+        let all_projects = self.projects.borrow();
+        let mut client_projects = HashMap::new();
+
+        for supported_project in config.supported_projects.iter() {
+            let project = all_projects.get(&supported_project.name).unwrap();
+            let server_id = project.server.ctx.id();
+            let data_server_id = project.server.data_server.ctx.id();
+            client_projects.insert(
+                server_id,
+                ProjectInfo {
+                    server_id,
+                    data_server_id,
+                    resource_share: supported_project.resource_share,
+                },
+            );
+        }
+
         let client = rc!(Client::new(
             compute,
             disk,
             self.network.clone(),
+            client_projects,
             utilities.clone(),
             rr_simulator.clone(),
             file_storage.clone(),
@@ -440,7 +456,7 @@ impl Simulator {
     }
 
     pub fn print_stats(&self) {
-        for project in self.projects.iter() {
+        for (_, project) in self.projects.iter() {
             print_project_stats(project, self.sim_config.sim_duration);
         }
         print_clients_stats(self.clients.clone(), self.sim_config.sim_duration);
