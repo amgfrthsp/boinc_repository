@@ -7,10 +7,10 @@ edition = "2021"
 
 [dependencies]
 boinc-simulator = {path = "../../simulator" }
-dslab-core = { path = "../../../dslab/crates/dslab-core", features = ["async_mode"] }
-dslab-compute = { path = "../../../dslab/crates/dslab-compute" }
-dslab-storage = { path = "../../../dslab/crates/dslab-storage" }
-dslab-network = { path = "../../../dslab/crates/dslab-network" }
+dslab-core = { git = "https://github.com/amgfrthsp/dslab.git", branch="main", features = ["async_mode"]}
+dslab-compute = {git = "https://github.com/amgfrthsp/dslab.git", branch="main"}
+dslab-storage = {git = "https://github.com/amgfrthsp/dslab.git", branch="main"}
+dslab-network = {git = "https://github.com/amgfrthsp/dslab.git", branch="main"}
 
 clap = { version = "3.1.12", features = ["cargo", "derive"] }
 log = "0.4.14"

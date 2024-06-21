@@ -6,10 +6,10 @@ edition = "2021"
 
 
 [dependencies]
-dslab-core = { git = "https://github.com/amgfrthsp/dslab.git", branch = "compute-preemption", features = ["async_mode"] }
-dslab-compute = {git = "https://github.com/amgfrthsp/dslab.git", branch="compute-preemption" }
-dslab-storage = {git = "https://github.com/amgfrthsp/dslab.git", branch = "compute-preemption"}
-dslab-network = {git = "https://github.com/amgfrthsp/dslab.git", branch = "compute-preemption" }
+dslab-core = { git = "https://github.com/amgfrthsp/dslab.git", branch="main", features = ["async_mode"]}
+dslab-compute = {git = "https://github.com/amgfrthsp/dslab.git", branch="main"}
+dslab-storage = {git = "https://github.com/amgfrthsp/dslab.git", branch="main"}
+dslab-network = {git = "https://github.com/amgfrthsp/dslab.git", branch="main"}
 
 clap = { version = "3.1.12", features = ["cargo", "derive"] }
 log = "0.4.14"

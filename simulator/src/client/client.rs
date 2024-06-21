@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Instant;
 
+use dslab_compute::multicore::{CompFinished, CompPreempted, CompResumed, CompStarted, Compute};
 use serde::Serialize;
 
-use dslab_compute::multicore::*;
 use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
 use dslab_core::event::Event;
@@ -188,6 +188,7 @@ impl Client {
             .emit_self(ReportStatus {}, self.config.report_status_interval);
         self.ctx
             .emit_self(AskForWork {}, self.ctx.gen_range(5. ..10.));
+        self.plan_scheduling(self.config.scheduling_period);
 
         let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
         self.ctx.emit_self(Suspend {}, resume_dur);
@@ -233,7 +234,7 @@ impl Client {
         *self.suspended.borrow_mut() = false;
 
         self.ctx.emit_self(AskForWork {}, 0.);
-        self.ctx.emit_self(ScheduleResults {}, 0.);
+        self.plan_scheduling(0.);
 
         let resume_dur = self.ctx.sample_from_distribution(&self.av_distribution) * 3600.;
 
@@ -356,6 +357,8 @@ impl Client {
         }
         log_info!(self.ctx, "scheduling started");
 
+        self.plan_scheduling(self.config.scheduling_period);
+
         let sim_result = self.perform_rr_sim(true);
 
         let results_to_schedule = sim_result.results_to_schedule;
@@ -430,7 +433,7 @@ impl Client {
         drop(fs_results);
 
         for (result_id, comp_id) in cont_results {
-            self.on_continue_result(result_id, comp_id);
+            self.on_resume_result(result_id, comp_id);
         }
         for result_id in start_results {
             self.clone().on_run_result(result_id);
@@ -679,16 +682,16 @@ impl Client {
             .remove(&result_id);
     }
 
-    pub fn on_continue_result(&self, result_id: ResultId, comp_id: EventId) {
+    pub fn on_resume_result(&self, result_id: ResultId, comp_id: EventId) {
         if self.is_suspended() {
             return;
         }
-        self.compute.borrow_mut().continue_computation(comp_id);
+        self.compute.borrow_mut().resume_computation(comp_id);
         self.file_storage
             .running_results
             .borrow_mut()
             .insert(result_id);
-        log_debug!(self.ctx, "continue result: {}", result_id);
+        log_debug!(self.ctx, "resume result: {}", result_id);
         self.change_result(result_id, Some(ResultState::Running), None);
     }
 
@@ -787,7 +790,7 @@ impl StaticEventHandler for Client {
                 }
             }
             CompPreempted { .. } => {}
-            CompContinued { .. } => {}
+            CompResumed { .. } => {}
             ScheduleResults {} => {
                 if self.is_active() {
                     self.schedule_results();

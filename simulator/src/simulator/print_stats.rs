@@ -26,19 +26,17 @@ pub fn print_project_stats(project: &BoincProject, sim_duration: f64) {
         "Average credit/day: {:.3}",
         stats.total_credit_granted / (sim_duration / 24.)
     );
-    // println!("Assimilator sum dur: {:.2} s", stats.assimilator_sum_dur);
-    // println!("Validator sum dur: {:.2} s", stats.validator_sum_dur);
-    // println!("Transitioner sum dur: {:.2} s", stats.transitioner_sum_dur);
-    // println!("Feeder sum dur: {:.2} s", stats.feeder_sum_dur);
-    // println!("Scheduler sum dur: {:.2} s", stats.scheduler_sum_dur);
-    // println!("File deleter sum dur: {:.2} s", stats.file_deleter_sum_dur);
-    // println!("DB purger sum dur: {:.2} s", stats.db_purger_sum_dur);
-    // println!(
-    //     "Empty buffer: {}. shmem size {} lower bound {}",
-    //     server.scheduler.borrow().dur_samples,
-    //     self.sim_config.server.feeder.shared_memory_size,
-    //     UNSENT_RESULT_BUFFER_LOWER_BOUND
-    // );
+    println!("Assimilator sum dur: {:.2} s", stats.assimilator_sum_dur);
+    println!("Validator sum dur: {:.2} s", stats.validator_sum_dur);
+    println!("Transitioner sum dur: {:.2} s", stats.transitioner_sum_dur);
+    println!("Feeder sum dur: {:.2} s", stats.feeder_sum_dur);
+    println!("Scheduler sum dur: {:.2} s", stats.scheduler_sum_dur);
+    println!("File deleter sum dur: {:.2} s", stats.file_deleter_sum_dur);
+    println!("DB purger sum dur: {:.2} s", stats.db_purger_sum_dur);
+    println!(
+        "Empty buffer: {}. shmem size {}",
+        stats.scheduler_shmem_empty, project.server.config.feeder.shared_memory_size,
+    );
     println!("");
 
     let mut n_wus_inprogress = 0;

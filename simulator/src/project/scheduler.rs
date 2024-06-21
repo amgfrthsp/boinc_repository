@@ -21,7 +21,6 @@ pub struct Scheduler {
     shared_memory: Rc<RefCell<VecDeque<ResultId>>>,
     est_runtime_error_dist: SimulationDistribution,
     pub ctx: SimulationContext,
-    #[allow(dead_code)]
     stats: Rc<RefCell<ServerStats>>,
 }
 
@@ -70,6 +69,7 @@ impl Scheduler {
 
         if shmem.is_empty() {
             log_info!(self.ctx, "Scheduling finished. Shared memory is empty.");
+            self.stats.borrow_mut().scheduler_shmem_empty += 1;
             return;
         }
 
@@ -132,6 +132,12 @@ impl Scheduler {
             } else {
                 shmem.push_back(result_id);
             }
+        }
+
+        if shmem.is_empty() {
+            log_info!(self.ctx, "Scheduling finished. Shared memory is empty.");
+            self.stats.borrow_mut().scheduler_shmem_empty += 1;
+            return;
         }
 
         if !assigned_results.is_empty() {

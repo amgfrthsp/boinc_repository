@@ -28,8 +28,6 @@ use crate::project::data_server::InputFileDownloadCompleted;
 use crate::project::database::ClientInfo;
 use crate::simulator::simulator::StartServer;
 
-pub const UNSENT_RESULT_BUFFER_LOWER_BOUND: usize = 1000;
-
 #[derive(Clone, Serialize)]
 pub struct ServerRegister {}
 
@@ -87,7 +85,7 @@ pub struct ProjectServer {
     pub data_server: Rc<DataServer>,
     //
     pub ctx: SimulationContext,
-    config: ServerConfig,
+    pub config: ServerConfig,
     pub stats: Rc<RefCell<ServerStats>>,
     is_active: RefCell<bool>,
 }
@@ -281,7 +279,9 @@ impl ProjectServer {
     }
 
     fn schedule_results(self: Rc<Self>, client_id: Id, req: WorkFetchRequest) {
-        if self.feeder.get_shared_memory_size() < UNSENT_RESULT_BUFFER_LOWER_BOUND
+        let shmem_const = 0.3;
+        if self.feeder.get_shared_memory_size()
+            < (self.feeder.get_shared_memory_size() as f64 * shmem_const) as usize
             && !self.db.feeder_result_ids.borrow().is_empty()
         {
             self.envoke_feeder(false);
@@ -296,7 +296,7 @@ impl ProjectServer {
         self.stats.borrow_mut().scheduler_samples += 1;
 
         if self.db.feeder_result_ids.borrow().len() + self.feeder.get_shared_memory_size()
-            < UNSENT_RESULT_BUFFER_LOWER_BOUND
+            < (self.feeder.get_shared_memory_size() as f64 * shmem_const) as usize
         {
             log_debug!(
                 self.ctx,
