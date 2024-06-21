@@ -10,7 +10,7 @@ use std::rc::Rc;
 use crate::client::storage::FileStorage;
 use crate::client::task::ResultState;
 use crate::common::FloatWrapper;
-use crate::server::job::ResultId;
+use crate::project::job::ResultId;
 
 use super::client::WorkFetchRequest;
 use super::task::ResultInfo;
@@ -184,11 +184,16 @@ impl RRSimulation {
         }
 
         (1. - fraction_done)
-            * self.compute.borrow().est_compute_time(
-                result.spec.gflops,
-                result.spec.cores,
-                result.spec.cores_dependency,
-            )
+            * self
+                .compute
+                .borrow()
+                .min_compute_time(
+                    result.spec.gflops,
+                    result.spec.cores,
+                    result.spec.cores,
+                    result.spec.cores_dependency,
+                )
+                .unwrap()
     }
 
     pub fn result_cmp(&self, result1: &ResultInfo, result2: &ResultInfo) -> Ordering {

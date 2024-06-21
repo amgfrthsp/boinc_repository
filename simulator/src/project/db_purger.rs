@@ -26,7 +26,7 @@ impl DBPurger {
         Self { db, ctx, stats }
     }
 
-    pub fn purge_database(&mut self) {
+    pub fn purge_database(&self) {
         log_info!(self.ctx, "database purging started");
 
         let mut workunits_to_delete = self.db.workunits_to_delete.borrow_mut();

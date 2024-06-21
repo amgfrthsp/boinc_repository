@@ -29,6 +29,7 @@ pub struct ServerStats {
     pub file_deleter_samples: u32,
     pub scheduler_sum_dur: f64,
     pub scheduler_samples: u32,
+    pub scheduler_shmem_empty: u32,
     pub transitioner_sum_dur: f64,
     pub transitioner_samples: u32,
     pub validator_sum_dur: f64,

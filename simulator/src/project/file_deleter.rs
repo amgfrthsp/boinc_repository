@@ -1,9 +1,8 @@
 use dslab_core::context::SimulationContext;
 use dslab_core::log_info;
-use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::server::job::FileDeleteState;
+use crate::project::job::FileDeleteState;
 
 use super::data_server::DataServer;
 use super::database::BoincDatabase;
@@ -14,16 +13,12 @@ use super::database::BoincDatabase;
 
 pub struct FileDeleter {
     db: Rc<BoincDatabase>,
-    data_server: Rc<RefCell<DataServer>>,
+    data_server: Rc<DataServer>,
     ctx: SimulationContext,
 }
 
 impl FileDeleter {
-    pub fn new(
-        db: Rc<BoincDatabase>,
-        data_server: Rc<RefCell<DataServer>>,
-        ctx: SimulationContext,
-    ) -> Self {
+    pub fn new(db: Rc<BoincDatabase>, data_server: Rc<DataServer>, ctx: SimulationContext) -> Self {
         Self {
             db,
             data_server,
@@ -31,7 +26,7 @@ impl FileDeleter {
         }
     }
 
-    pub fn delete_files(&mut self) {
+    pub fn delete_files(&self) {
         self.delete_input_files();
         self.delete_output_files();
     }
@@ -49,7 +44,7 @@ impl FileDeleter {
         for wu_id in workunits_to_process {
             let workunit = db_workunit_mut.get_mut(&wu_id).unwrap();
 
-            let retval = self.data_server.borrow().delete_input_files(wu_id);
+            let retval = self.data_server.delete_input_files(wu_id);
             if retval == 0 {
                 workunit.file_delete_state = FileDeleteState::Done;
                 self.db
@@ -75,7 +70,7 @@ impl FileDeleter {
         for result_id in results_to_process {
             let result = db_result_mut.get_mut(&result_id).unwrap();
 
-            let retval = self.data_server.borrow().delete_output_files(result_id);
+            let retval = self.data_server.delete_output_files(result_id);
             if retval == 0 {
                 result.file_delete_state = FileDeleteState::Done;
             }

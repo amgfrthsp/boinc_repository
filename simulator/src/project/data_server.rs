@@ -1,5 +1,5 @@
 use dslab_core::context::SimulationContext;
-use dslab_core::{cast, log_error, Event, EventHandler, EventId};
+use dslab_core::{cast, log_error, Event, EventId, StaticEventHandler};
 use dslab_core::{component::Id, log_debug};
 use dslab_network::{DataTransferCompleted, Network};
 use dslab_storage::disk::Disk;
@@ -44,17 +44,21 @@ pub struct InputFileUploadCompleted {
 
 pub struct DataServer {
     pub id: Id,
-    server_id: Id,
-    client_networks: FxHashMap<Id, Rc<RefCell<Network>>>,
+    server_id: RefCell<Id>,
+    network: Rc<RefCell<Network>>,
     disk: Rc<RefCell<Disk>>,
     input_files: RefCell<FxHashMap<WorkunitId, InputFileMetadata>>, // workunit_id -> input files
     output_files: RefCell<FxHashMap<ResultId, OutputFileMetadata>>, // result_id -> output files
-    is_active: bool,
+    is_active: RefCell<bool>,
     pub ctx: SimulationContext,
 }
 
 impl DataServer {
-    pub fn new(disk: Rc<RefCell<Disk>>, ctx: SimulationContext) -> Self {
+    pub fn new(
+        network: Rc<RefCell<Network>>,
+        disk: Rc<RefCell<Disk>>,
+        ctx: SimulationContext,
+    ) -> Self {
         ctx.register_key_getter_for::<DataTransferCompleted>(|e| e.dt.id as u64);
         ctx.register_key_getter_for::<DataWriteCompleted>(|e| e.request_id);
         ctx.register_key_getter_for::<DataWriteFailed>(|e| e.request_id);
@@ -66,41 +70,41 @@ impl DataServer {
 
         Self {
             id: ctx.id(),
-            server_id: 0,
-            client_networks: FxHashMap::default(),
+            server_id: RefCell::new(0),
+            network,
             disk,
             input_files: RefCell::new(FxHashMap::default()),
             output_files: RefCell::new(FxHashMap::default()),
-            is_active: true,
+            is_active: RefCell::new(true),
             ctx,
         }
     }
 
-    pub fn add_client_network(
-        &mut self,
-        client_id: Id,
-        net: Rc<RefCell<Network>>,
-        node_name: &str,
-    ) {
-        net.borrow_mut().set_location(self.ctx.id(), node_name);
-        self.client_networks.insert(client_id, net);
+    fn is_active(&self) -> bool {
+        *self.is_active.borrow()
     }
 
-    pub fn set_server_id(&mut self, server_id: Id) {
-        self.server_id = server_id;
+    fn get_server_id(&self) -> Id {
+        *self.server_id.borrow()
+    }
+
+    pub fn set_server_id(&self, server_id: Id) {
+        *self.server_id.borrow_mut() = server_id;
     }
 
     pub fn download_input_files_from_server(
-        &self,
+        self: Rc<Self>,
         input_files: Vec<InputFileMetadata>,
         ref_id: u64,
     ) {
-        self.ctx
-            .spawn(self.process_download_input_files_from_server(input_files, ref_id));
+        self.ctx.spawn(
+            self.clone()
+                .process_download_input_files_from_server(input_files, ref_id),
+        );
     }
 
     pub async fn process_download_input_files_from_server(
-        &self,
+        self: Rc<Self>,
         input_files: Vec<InputFileMetadata>,
         ref_id: u64,
     ) {
@@ -113,32 +117,38 @@ impl DataServer {
             InputFileDownloadCompleted {
                 workunit_id: ref_id,
             },
-            self.server_id,
+            self.get_server_id(),
         );
     }
 
-    pub fn on_input_files_inquiry(&self, workunit_id: WorkunitId, ref_id: EventId, client_id: Id) {
+    pub fn on_input_files_inquiry(
+        self: Rc<Self>,
+        workunit_id: WorkunitId,
+        ref_id: EventId,
+        client_id: Id,
+    ) {
         let input_files_ref = self.input_files.borrow();
-        let input_file = input_files_ref.get(&workunit_id).unwrap();
-        self.upload_input_file_on_client(input_file.size as f64, client_id, ref_id);
+        let input_file_size = input_files_ref.get(&workunit_id).unwrap().size;
+        drop(input_files_ref);
+        self.upload_input_file_on_client(input_file_size as f64, client_id, ref_id);
     }
 
-    pub fn upload_input_file_on_client(&self, size: f64, to: Id, ref_id: EventId) {
+    pub fn upload_input_file_on_client(self: Rc<Self>, size: f64, to: Id, ref_id: EventId) {
         self.ctx
-            .spawn(self.process_upload_input_file(size, to, ref_id));
+            .spawn(self.clone().process_upload_input_file(size, to, ref_id));
     }
 
-    async fn process_upload_input_file(&self, size: f64, to: Id, ref_id: EventId) {
+    async fn process_upload_input_file(self: Rc<Self>, size: f64, to: Id, ref_id: EventId) {
         futures::join!(self.process_network_upload(size, to),);
         self.ctx.emit_now(InputFileUploadCompleted { ref_id }, to);
     }
 
-    pub fn download_output_file_from_client(&self, file: DataServerFile, from: Id) {
+    pub fn download_output_file_from_client(self: Rc<Self>, file: DataServerFile, from: Id) {
         self.ctx
-            .spawn(self.process_download_output_file(file, from));
+            .spawn(self.clone().process_download_output_file(file, from));
     }
 
-    async fn process_download_output_file(&self, file: DataServerFile, from: Id) {
+    async fn process_download_output_file(self: Rc<Self>, file: DataServerFile, from: Id) {
         match file {
             DataServerFile::Input(..) => {}
             DataServerFile::Output(output_file) => {
@@ -159,26 +169,26 @@ impl DataServer {
     }
 
     async fn process_network_download(&self, size: f64, from: Id) {
-        let net = self.client_networks.get(&from).unwrap();
-        let net_id = net.borrow().id();
-        let transfer_id = net
-            .borrow_mut()
-            .transfer_data(from, self.server_id, size, self.ctx.id());
+        let transfer_id = self.network.borrow_mut().transfer_data(
+            from,
+            self.get_server_id(),
+            size,
+            self.ctx.id(),
+        );
 
         self.ctx
-            .recv_event_by_key_from::<DataTransferCompleted>(net_id, transfer_id as u64)
+            .recv_event_by_key::<DataTransferCompleted>(transfer_id as u64)
             .await;
     }
 
     async fn process_network_upload(&self, size: f64, to: Id) {
-        let net = self.client_networks.get(&to).unwrap();
-        let net_id = net.borrow().id();
-        let transfer_id = net
-            .borrow_mut()
-            .transfer_data(self.server_id, to, size, self.ctx.id());
+        let transfer_id =
+            self.network
+                .borrow_mut()
+                .transfer_data(self.get_server_id(), to, size, self.ctx.id());
 
         self.ctx
-            .recv_event_by_key_from::<DataTransferCompleted>(net_id, transfer_id as u64)
+            .recv_event_by_key::<DataTransferCompleted>(transfer_id as u64)
             .await;
     }
 
@@ -228,19 +238,19 @@ impl DataServer {
     }
 }
 
-impl EventHandler for DataServer {
-    fn on(&mut self, event: Event) {
+impl StaticEventHandler for DataServer {
+    fn on(self: Rc<Self>, event: Event) {
         cast!(match event.data {
             InputFilesInquiry {
                 workunit_id,
                 ref_id,
             } => {
-                if self.is_active {
+                if self.is_active() {
                     self.on_input_files_inquiry(workunit_id, ref_id, event.src);
                 }
             }
             OutputFileFromClient { output_file } => {
-                if self.is_active {
+                if self.is_active() {
                     self.download_output_file_from_client(
                         DataServerFile::Output(output_file),
                         event.src,
@@ -248,7 +258,7 @@ impl EventHandler for DataServer {
                 }
             }
             Finish {} => {
-                self.is_active = false;
+                *self.is_active.borrow_mut() = false;
             }
         })
     }

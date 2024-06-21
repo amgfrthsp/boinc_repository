@@ -2,13 +2,12 @@ use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
 use dslab_core::{log_debug, log_info, Event, EventHandler};
 use dslab_network::Network;
-use rustc_hash::FxHashMap;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
 use crate::client::client::{WorkFetchReply, WorkFetchRequest};
-use crate::server::job::{ResultRequest, ResultState};
+use crate::project::job::{ResultRequest, ResultState};
 use crate::simulator::dist_params::SimulationDistribution;
 
 use super::database::BoincDatabase;
@@ -17,17 +16,17 @@ use super::stats::ServerStats;
 
 pub struct Scheduler {
     server_id: Id,
-    client_networks: FxHashMap<Id, Rc<RefCell<Network>>>,
+    network: Rc<RefCell<Network>>,
     db: Rc<BoincDatabase>,
     shared_memory: Rc<RefCell<VecDeque<ResultId>>>,
     est_runtime_error_dist: SimulationDistribution,
     pub ctx: SimulationContext,
-    #[allow(dead_code)]
     stats: Rc<RefCell<ServerStats>>,
 }
 
 impl Scheduler {
     pub fn new(
+        network: Rc<RefCell<Network>>,
         db: Rc<BoincDatabase>,
         shared_memory: Rc<RefCell<VecDeque<ResultId>>>,
         error_dist: SimulationDistribution,
@@ -36,23 +35,13 @@ impl Scheduler {
     ) -> Self {
         Self {
             server_id: 0,
-            client_networks: FxHashMap::default(),
+            network,
             db,
             shared_memory,
             est_runtime_error_dist: error_dist,
             ctx,
             stats,
         }
-    }
-
-    pub fn add_client_network(
-        &mut self,
-        client_id: Id,
-        net: Rc<RefCell<Network>>,
-        node_name: &str,
-    ) {
-        net.borrow_mut().set_location(self.ctx.id(), node_name);
-        self.client_networks.insert(client_id, net);
     }
 
     pub fn set_server_id(&mut self, server_id: Id) {
@@ -69,7 +58,6 @@ impl Scheduler {
 
         let clients_ref = self.db.clients.borrow();
         let client_info = clients_ref.get(&client_id).unwrap();
-        let net = self.client_networks.get(&client_id).unwrap();
 
         let mut assigned_results = Vec::new();
         let mut assigned_results_cnt = 0;
@@ -81,6 +69,7 @@ impl Scheduler {
 
         if shmem.is_empty() {
             log_info!(self.ctx, "Scheduling finished. Shared memory is empty.");
+            self.stats.borrow_mut().scheduler_shmem_empty += 1;
             return;
         }
 
@@ -145,8 +134,14 @@ impl Scheduler {
             }
         }
 
+        if shmem.is_empty() {
+            log_info!(self.ctx, "Scheduling finished. Shared memory is empty.");
+            self.stats.borrow_mut().scheduler_shmem_empty += 1;
+            return;
+        }
+
         if !assigned_results.is_empty() {
-            net.borrow_mut().send_event(
+            self.network.borrow_mut().send_event(
                 WorkFetchReply {
                     requests: assigned_results,
                 },

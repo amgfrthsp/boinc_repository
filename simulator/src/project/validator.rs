@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::config::sim_config::ValidatorConfig;
-use crate::server::job::{
+use crate::project::job::{
     AssimilateState, FileDeleteState, ResultOutcome, ResultState, ValidateState,
 };
 
@@ -48,7 +48,7 @@ impl Validator {
         }
     }
 
-    pub fn validate(&mut self) {
+    pub fn validate(&self) {
         let workunits_to_validate =
             BoincDatabase::get_map_keys_by_predicate(&self.db.workunit.borrow(), |wu| {
                 wu.need_validate

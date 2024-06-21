@@ -1,6 +1,6 @@
-use crate::server::job::{InputFileMetadata, OutputFileMetadata};
+use crate::project::job::{InputFileMetadata, OutputFileMetadata};
 
-use crate::server::job::{ResultId, WorkunitId};
+use crate::project::job::{ResultId, WorkunitId};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::cell::RefCell;
 use sugars::refcell;

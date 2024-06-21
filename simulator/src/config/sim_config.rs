@@ -9,7 +9,7 @@ use crate::{common::HOUR, simulator::dist_params::DistributionConfig};
 struct RawSimulationConfig {
     pub seed: Option<u64>,
     pub sim_duration: Option<f64>,
-    pub server: Option<ServerConfig>,
+    pub projects: Option<Vec<ProjectConfig>>,
     pub clients: Option<Vec<ClientGroupConfig>>,
 }
 
@@ -22,6 +22,14 @@ pub struct ClientCpuPower {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+pub struct ClientSupportedProject {
+    // project name as it is in project->name
+    pub name: String,
+    // project resource share
+    pub resource_share: f64,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct ClientGroupConfig {
     // trace file with CPU power of hosts
     pub trace: Option<String>,
@@ -29,6 +37,10 @@ pub struct ClientGroupConfig {
     pub count: Option<u32>,
     // if trace is None, CPU power of hosts
     pub cpu: Option<ClientCpuPower>,
+    // projects supported by each client (name, resource_share)
+    pub supported_projects: Vec<ClientSupportedProject>,
+    // scheduling period = time slice duration (h)
+    pub scheduling_period: f64,
     // work fetch interval (s)
     pub work_fetch_interval: f64,
     // min queued jobs runtime (s)
@@ -60,11 +72,19 @@ pub struct ClientGroupConfig {
 
 impl ClientGroupConfig {
     pub fn from_h_to_sec(&mut self) {
+        self.scheduling_period *= HOUR;
         self.work_fetch_interval *= HOUR;
         self.buffered_work_min *= HOUR;
         self.buffered_work_max *= HOUR;
         self.report_status_interval *= HOUR;
     }
+}
+
+/// Holds configuration of a project
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
+pub struct ProjectConfig {
+    pub name: String,
+    pub server: ServerConfig,
 }
 
 /// Holds configuration of the main server
@@ -97,38 +117,29 @@ impl ServerConfig {
         self.transitioner.interval *= HOUR;
 
         self.report_status_interval *= HOUR;
-        self.job_generator.delay_min *= HOUR;
-        self.job_generator.delay_max *= HOUR;
+        self.job_generator.delay *= HOUR;
     }
 }
 
 /// Holds configuration of a job generator
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct JobGeneratorConfig {
-    // wu size in [gflops_min; gflops_max] (GFLOPs)
-    pub gflops_min: f64,
-    pub gflops_max: f64,
-    // wu memory size in memory_min; memory_max] (MB)
-    pub memory_min: u64,
-    pub memory_max: u64,
-    // wu cores amount in [cores_min; cores_max]
-    pub cores_min: u32,
-    pub cores_max: u32,
-    // wu delay time in [delay_min; delay_max] (s)
-    pub delay_min: f64,
-    pub delay_max: f64,
-    // wu min_quorum value in [min_quorum_min; min_quorum_max]
-    pub min_quorum_min: u64,
-    pub min_quorum_max: u64,
+    // wu size in GFLOPs
+    pub gflops: f64,
+    // wu memory size in MB
+    pub memory: u64,
+    // wu cores amount
+    pub cores: u32,
+    // wu delay time in h
+    pub delay: f64,
+    // wu min_quorum value
+    pub min_quorum: u64,
     // initial number of results, target_nresults >= min_quorum
-    pub target_nresults_min: u64,
-    pub target_nresults_max: u64,
-    // wu input size in [input_size_min; input_size_max] (MB)
-    pub input_size_min: u64,
-    pub input_size_max: u64,
-    // wu output size in [output_size_min; output_size_max] (MB)
-    pub output_size_min: u64,
-    pub output_size_max: u64,
+    pub target_nresults: u64,
+    // wu input size in MB
+    pub input_size: u64,
+    // wu output size in MB
+    pub output_size: u64,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
@@ -192,7 +203,7 @@ pub struct SimulationConfig {
     // Simulation duration in hours
     pub sim_duration: f64,
     pub clients: Vec<ClientGroupConfig>,
-    pub server: ServerConfig,
+    pub projects: Vec<ProjectConfig>,
 }
 
 impl SimulationConfig {
@@ -209,12 +220,16 @@ impl SimulationConfig {
             seed: raw.seed.unwrap_or(124),
             sim_duration: raw.sim_duration.unwrap_or(24.),
             clients: raw.clients.unwrap_or_default(),
-            server: raw.server.unwrap_or_default(),
+            projects: raw.projects.unwrap_or_default(),
         };
+
         for client_group in config.clients.iter_mut() {
             client_group.from_h_to_sec();
         }
-        config.server.from_h_to_sec();
+        for project in config.projects.iter_mut() {
+            project.server.from_h_to_sec();
+        }
+
         config
     }
 }

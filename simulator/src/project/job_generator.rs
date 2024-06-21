@@ -26,39 +26,22 @@ impl JobGenerator {
         let mut generated_jobs = Vec::new();
         for i in 0..cnt {
             let job_id = (*self.jobs_generated.borrow() + i as u64) as JobSpecId;
-            let min_quorum = self
-                .ctx
-                .gen_range(self.config.min_quorum_min..=self.config.min_quorum_max);
             let job = JobSpec {
                 id: job_id,
-                gflops: self
-                    .ctx
-                    .gen_range(self.config.gflops_min..=self.config.gflops_max),
-                memory: self
-                    .ctx
-                    .gen_range(self.config.memory_min..=self.config.memory_max),
-                cores: self
-                    .ctx
-                    .gen_range(self.config.cores_min..=self.config.cores_max),
+                gflops: self.config.gflops,
+                memory: self.config.memory,
+                cores: self.config.cores,
                 cores_dependency: CoresDependency::Linear,
-                delay_bound: self
-                    .ctx
-                    .gen_range(self.config.delay_min..=self.config.delay_max),
-                min_quorum,
-                target_nresults: self
-                    .ctx
-                    .gen_range(self.config.target_nresults_min..=self.config.target_nresults_max),
+                delay_bound: self.config.delay,
+                min_quorum: self.config.min_quorum,
+                target_nresults: self.config.target_nresults,
                 input_file: InputFileMetadata {
                     workunit_id: job_id,
-                    size: self
-                        .ctx
-                        .gen_range(self.config.input_size_min..=self.config.input_size_max),
+                    size: self.config.input_size,
                 },
                 output_file: OutputFileMetadata {
                     result_id: 0, // set in scheduler
-                    size: self
-                        .ctx
-                        .gen_range(self.config.output_size_min..=self.config.output_size_max),
+                    size: self.config.output_size,
                 },
             };
             generated_jobs.push(job);

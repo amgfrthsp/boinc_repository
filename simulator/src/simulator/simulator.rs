@@ -1,38 +1,39 @@
 use csv::ReaderBuilder;
 use dslab_compute::multicore::Compute;
-use dslab_core::component::Id;
 use dslab_core::context::SimulationContext;
 use dslab_core::{log_info, Event, EventHandler, Simulation};
 use dslab_network::{models::SharedBandwidthNetworkModel, Network};
 use dslab_storage::disk::DiskBuilder;
-use dslab_storage::storage::Storage;
 use serde::Serialize;
-use std::collections::VecDeque;
+use std::cell::{Ref, RefMut};
+use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::rc::Rc;
 use std::{cell::RefCell, time::Instant};
 use sugars::{rc, refcell};
 
+use crate::client::client::ProjectInfo;
 use crate::client::rr_simulation::RRSimulation;
 use crate::client::stats::ClientStats;
 use crate::client::storage::FileStorage;
 use crate::client::utils::Utilities;
-use crate::common::HOUR;
 use crate::config::sim_config::{
-    ClientCpuPower, ClientGroupConfig, ServerConfig, SimulationConfig,
+    ClientCpuPower, ClientGroupConfig, ProjectConfig, SimulationConfig,
 };
-use crate::server::db_purger::DBPurger;
-use crate::server::feeder::Feeder;
-use crate::server::file_deleter::FileDeleter;
-use crate::server::job::{AssimilateState, ResultId, ResultOutcome, ResultState, ValidateState};
-use crate::server::server::{GenerateJobs, JobsGenerationCompleted};
-use crate::server::stats::ServerStats;
+use crate::project::db_purger::DBPurger;
+use crate::project::feeder::Feeder;
+use crate::project::file_deleter::FileDeleter;
+use crate::project::job::ResultId;
+use crate::project::project::BoincProject;
+use crate::project::server::{GenerateJobs, JobsGenerationCompleted};
+use crate::project::stats::ServerStats;
+use crate::simulator::print_stats::{print_clients_stats, print_project_stats};
 use crate::{
     client::client::Client,
-    server::{
+    project::{
         assimilator::Assimilator, data_server::DataServer, database::BoincDatabase,
-        job_generator::JobGenerator, scheduler::Scheduler as ServerScheduler, server::Server,
-        transitioner::Transitioner, validator::Validator,
+        job_generator::JobGenerator, scheduler::Scheduler as ServerScheduler,
+        server::ProjectServer, transitioner::Transitioner, validator::Validator,
     },
 };
 
@@ -48,15 +49,14 @@ pub struct StartServer {
 
 #[derive(Clone, Serialize)]
 pub struct StartClient {
-    pub server_id: Id,
-    pub data_server_id: Id,
     pub finish_time: f64,
 }
 
 pub struct Simulator {
-    simulation: Simulation,
-    server: Option<Rc<RefCell<Server>>>,
-    clients: Vec<Rc<RefCell<Client>>>,
+    simulation: RefCell<Simulation>,
+    network: Rc<RefCell<Network>>,
+    projects: HashMap<String, BoincProject>, // name -> project
+    clients: Vec<Rc<Client>>,
     ctx: SimulationContext,
     sim_config: SimulationConfig,
 }
@@ -69,15 +69,27 @@ impl Simulator {
         let ctx = simulation.create_context("ctx");
         simulation.add_handler("ctx", rc!(refcell!(EmptyEventHandler {})));
 
+        let network_name = "network";
+        let network = rc!(refcell!(Network::new(
+            Box::new(SharedBandwidthNetworkModel::new(70., 40. / 1000.)),
+            simulation.create_context(network_name),
+        )));
+
+        simulation.add_handler(network_name, network.clone());
+
         let mut simulator = Self {
-            simulation,
-            server: None,
+            simulation: refcell!(simulation),
+            network,
+            projects: HashMap::new(),
             clients: Vec::new(),
             ctx,
             sim_config,
         };
 
-        simulator.add_server(simulator.sim_config.server.clone());
+        for project_config in simulator.sim_config.projects.clone() {
+            simulator.add_project(project_config);
+        }
+
         // Add hosts from config
         for host_group_config in simulator.sim_config.clients.clone() {
             if host_group_config.trace.is_none() && host_group_config.cpu.is_none()
@@ -124,86 +136,36 @@ impl Simulator {
             }
         }
 
-        let server = simulator.server.clone().unwrap();
-        let server_node_name = "server";
-
-        for client_ref in &simulator.clients {
-            let client = client_ref.borrow_mut();
-            let client_network = client.get_network();
-
-            client_network.borrow_mut().add_node(
-                server_node_name,
-                Box::new(SharedBandwidthNetworkModel::new(
-                    simulator.sim_config.server.local_bandwidth,
-                    simulator.sim_config.server.local_latency / 1000.,
-                )),
-            );
-
-            server.borrow().add_client_network(
-                client.ctx.id(),
-                client_network.clone(),
-                server_node_name,
-            );
-        }
-
         simulator
     }
 
-    pub fn run(&mut self) {
-        if self.server.is_none() {
-            println!("Server is not added");
-            return;
-        }
+    pub fn get_simulation(&self) -> Ref<Simulation> {
+        self.simulation.borrow()
+    }
+
+    pub fn get_simulation_mut(&self) -> RefMut<Simulation> {
+        self.simulation.borrow_mut()
+    }
+
+    pub fn run(self: Rc<Self>) {
         println!("Simulation started");
 
-        let server = self.server.clone().unwrap();
-
-        self.ctx.spawn(async {
-            self.ctx
-                .emit_now(GenerateJobs { cnt: 300000 }, server.borrow().ctx.id());
-
-            self.ctx.recv_event::<JobsGenerationCompleted>().await;
-
-            log_info!(self.ctx, "Initial workunits added to server");
-
-            self.ctx.emit_now(
-                StartServer {
-                    finish_time: self.ctx.time() + self.sim_config.sim_duration * 3600.,
-                },
-                server.borrow().ctx.id(),
-            );
-
-            for client in &self.clients {
-                self.ctx.emit_now(
-                    StartClient {
-                        server_id: server.borrow().ctx.id(),
-                        data_server_id: server.borrow().data_server.borrow().ctx.id(),
-                        finish_time: self.ctx.time() + self.sim_config.sim_duration * 3600.,
-                    },
-                    client.borrow().ctx.id(),
-                );
-            }
-        });
-
-        let server = self.server.clone().unwrap();
+        self.get_simulation().spawn(self.clone().pre_run());
 
         let t = Instant::now();
-        self.simulation.step_until_no_events();
+        self.simulation.borrow_mut().step_until_no_events();
         let duration = t.elapsed().as_secs_f64();
 
         println!("Simulation finished");
         println!("");
+        println!("******** Simulation Stats **********");
+        println!("Time period simulated: {} h", self.sim_config.sim_duration);
         println!("Elapsed time: {:.2}s", duration);
         println!(
-            "Memory usage: {:.2} GB",
-            server.borrow().memory / 1_000_000_000.
-        );
-        println!("Total number of clients: {}", self.clients.len());
-        println!(
             "Simulation speedup: {:.2}",
-            self.simulation.time() / duration
+            self.get_simulation().time() / duration
         );
-        let event_count = self.simulation.event_count();
+        let event_count = self.get_simulation().event_count();
         println!(
             "Processed {} events in {:.2?}s ({:.0} events/s)",
             event_count,
@@ -214,8 +176,34 @@ impl Simulator {
         self.print_stats();
     }
 
-    pub fn add_server(&mut self, config: ServerConfig) {
-        let server_name = "server";
+    pub async fn pre_run(self: Rc<Self>) {
+        for (_, project) in self.projects.iter() {
+            self.ctx
+                .emit_now(GenerateJobs { cnt: 300000 }, project.server.ctx.id());
+
+            self.ctx.recv_event::<JobsGenerationCompleted>().await;
+
+            log_info!(self.ctx, "Initial workunits added to {} server");
+
+            self.ctx.emit_now(
+                StartServer {
+                    finish_time: self.ctx.time() + self.sim_config.sim_duration * 3600.,
+                },
+                project.server.ctx.id(),
+            );
+        }
+        for client in &self.clients {
+            self.ctx.emit_now(
+                StartClient {
+                    finish_time: self.ctx.time() + self.sim_config.sim_duration * 3600.,
+                },
+                client.ctx.id(),
+            );
+        }
+    }
+
+    pub fn add_project(&mut self, project_config: ProjectConfig) {
+        let server_name = format!("{}::server", project_config.name);
 
         let stats = rc!(refcell!(ServerStats::default()));
 
@@ -225,8 +213,8 @@ impl Simulator {
         // Job generator
         let job_generator_name = &format!("{}::job_generator", server_name);
         let job_generator = JobGenerator::new(
-            self.simulation.create_context(job_generator_name),
-            config.job_generator.clone(),
+            self.get_simulation_mut().create_context(job_generator_name),
+            project_config.server.job_generator.clone(),
         );
 
         // Adding daemon components
@@ -234,8 +222,8 @@ impl Simulator {
         let validator_name = &format!("{}::validator", server_name);
         let validator = Validator::new(
             database.clone(),
-            self.simulation.create_context(validator_name),
-            config.validator.clone(),
+            self.get_simulation_mut().create_context(validator_name),
+            project_config.server.validator.clone(),
             stats.clone(),
         );
 
@@ -243,14 +231,14 @@ impl Simulator {
         let transitioner_name = &format!("{}::transitioner", server_name);
         let transitioner = Transitioner::new(
             database.clone(),
-            self.simulation.create_context(transitioner_name),
+            self.get_simulation_mut().create_context(transitioner_name),
         );
 
         // Database purger
         let db_purger_name = &format!("{}::db_purger", server_name);
         let db_purger = DBPurger::new(
             database.clone(),
-            self.simulation.create_context(db_purger_name),
+            self.get_simulation_mut().create_context(db_purger_name),
             stats.clone(),
         );
 
@@ -261,23 +249,25 @@ impl Simulator {
         let feeder: Feeder = Feeder::new(
             shared_memory.clone(),
             database.clone(),
-            self.simulation.create_context(feeder_name),
-            config.feeder.clone(),
+            self.get_simulation_mut().create_context(feeder_name),
+            project_config.server.feeder.clone(),
         );
 
         // Scheduler
         let scheduler_name = &format!("{}::scheduler", server_name);
         let scheduler = rc!(refcell!(ServerScheduler::new(
+            self.network.clone(),
             database.clone(),
             shared_memory.clone(),
             SimulationDistribution::new(
-                config
+                project_config
+                    .server
                     .scheduler
                     .clone()
                     .est_runtime_error_distribution
                     .unwrap_or(SCHEDULER_EST_RUNTIME_ERROR),
             ),
-            self.simulation.create_context(scheduler_name),
+            self.get_simulation_mut().create_context(scheduler_name),
             stats.clone(),
         )));
 
@@ -286,26 +276,29 @@ impl Simulator {
         // file storage
         let disk_name = format!("{}::disk", data_server_name);
         let disk = rc!(refcell!(DiskBuilder::simple(
-            config.data_server.disk_capacity * 1000,
-            config.data_server.disk_read_bandwidth,
-            config.data_server.disk_write_bandwidth
+            project_config.server.data_server.disk_capacity * 1000,
+            project_config.server.data_server.disk_read_bandwidth,
+            project_config.server.data_server.disk_write_bandwidth
         )
-        .build(self.simulation.create_context(&disk_name))));
-        self.simulation.add_handler(disk_name, disk.clone());
+        .build(self.get_simulation_mut().create_context(&disk_name))));
+        self.get_simulation_mut()
+            .add_handler(disk_name, disk.clone());
 
-        let data_server: Rc<RefCell<DataServer>> = rc!(refcell!(DataServer::new(
+        let data_server = rc!(DataServer::new(
+            self.network.clone(),
             disk,
-            self.simulation.create_context(data_server_name),
-        )));
-        self.simulation
-            .add_handler(data_server_name, data_server.clone());
+            self.get_simulation_mut().create_context(data_server_name),
+        ));
+        let data_server_id = self
+            .get_simulation_mut()
+            .add_static_handler(data_server_name, data_server.clone());
 
         // Assimilator
         let assimilator_name = &format!("{}::assimilator", server_name);
         let assimilator = Assimilator::new(
             database.clone(),
             data_server.clone(),
-            self.simulation.create_context(assimilator_name),
+            self.get_simulation_mut().create_context(assimilator_name),
         );
 
         // File deleter
@@ -313,10 +306,10 @@ impl Simulator {
         let file_deleter = FileDeleter::new(
             database.clone(),
             data_server.clone(),
-            self.simulation.create_context(file_deleter_name),
+            self.get_simulation_mut().create_context(file_deleter_name),
         );
 
-        let server = rc!(refcell!(Server::new(
+        let server = rc!(ProjectServer::new(
             database.clone(),
             job_generator,
             validator,
@@ -327,37 +320,38 @@ impl Simulator {
             db_purger,
             scheduler,
             data_server,
-            self.simulation.create_context(server_name),
-            config,
+            self.get_simulation_mut().create_context(&server_name),
+            project_config.server.clone(),
             stats.clone()
-        )));
+        ));
 
-        self.simulation.add_handler(server_name, server.clone());
-        self.server = Some(server.clone());
+        let server_id = self
+            .get_simulation_mut()
+            .add_static_handler(&server_name, server.clone());
+
+        self.network.borrow_mut().add_node(
+            &server_name,
+            Box::new(SharedBandwidthNetworkModel::new(
+                project_config.server.local_bandwidth,
+                project_config.server.local_latency / 1000.,
+            )),
+        );
+        self.network
+            .borrow_mut()
+            .set_location(data_server_id, &server_name);
+        self.network
+            .borrow_mut()
+            .set_location(server_id, &server_name);
+
+        self.projects.insert(
+            project_config.name.clone(),
+            BoincProject::new(project_config.name, server),
+        );
     }
 
     pub fn add_host(&mut self, config: ClientGroupConfig, reliability: f64) {
         let n = self.clients.len();
         let node_name = &format!("client{}", n);
-
-        let network_name = &format!("{}::network", node_name);
-        let network = rc!(refcell!(Network::new(
-            Box::new(SharedBandwidthNetworkModel::new(
-                config.network_bandwidth,
-                config.network_latency / 1000.
-            )),
-            self.simulation.create_context(network_name),
-        )));
-
-        self.simulation.add_handler(network_name, network.clone());
-
-        network.borrow_mut().add_node(
-            node_name,
-            Box::new(SharedBandwidthNetworkModel::new(
-                config.local_bandwidth,
-                config.local_latency / 1000.,
-            )),
-        );
 
         //stats
         let stats = rc!(refcell!(ClientStats::new()));
@@ -368,9 +362,10 @@ impl Simulator {
             resources.speed,
             resources.cores,
             config.memory * 1000,
-            self.simulation.create_context(&compute_name),
+            self.get_simulation_mut().create_context(&compute_name),
         )));
-        self.simulation.add_handler(compute_name, compute.clone());
+        self.get_simulation_mut()
+            .add_handler(compute_name, compute.clone());
         // disk
         let disk_name = format!("{}::disk", node_name);
         let disk = rc!(refcell!(DiskBuilder::simple(
@@ -378,8 +373,9 @@ impl Simulator {
             config.disk_read_bandwidth,
             config.disk_write_bandwidth
         )
-        .build(self.simulation.create_context(&disk_name))));
-        self.simulation.add_handler(disk_name, disk.clone());
+        .build(self.get_simulation_mut().create_context(&disk_name))));
+        self.get_simulation_mut()
+            .add_handler(disk_name, disk.clone());
 
         let client_name = &format!("{}::client", node_name);
 
@@ -396,18 +392,30 @@ impl Simulator {
             file_storage.clone(),
             compute.clone(),
             utilities.clone(),
-            self.simulation.create_context(rr_simulator_name),
+            self.get_simulation_mut().create_context(rr_simulator_name),
         )));
 
-        let client = rc!(refcell!(Client::new(
+        let mut client_projects = HashMap::new();
+
+        for supported_project in config.supported_projects.iter() {
+            let project = self.projects.get(&supported_project.name).unwrap();
+            let server_id = project.server.ctx.id();
+            let data_server_id = project.server.data_server.ctx.id();
+            client_projects.insert(
+                server_id,
+                ProjectInfo::new(server_id, data_server_id, supported_project.resource_share),
+            );
+        }
+
+        let client = rc!(Client::new(
             compute,
             disk,
-            network.clone(),
-            node_name.to_string(),
+            self.network.clone(),
+            client_projects,
             utilities.clone(),
             rr_simulator.clone(),
             file_storage.clone(),
-            self.simulation.create_context(client_name),
+            self.get_simulation_mut().create_context(client_name),
             config.clone(),
             reliability,
             SimulationDistribution::new(
@@ -421,273 +429,31 @@ impl Simulator {
                     .unwrap_or(CLIENT_AVAILABILITY_ALL_RANDOM_HOSTS.unavailability),
             ),
             stats.clone(),
-        )));
+        ));
 
-        let client_id = self.simulation.add_handler(client_name, client.clone());
-        network.borrow_mut().set_location(client_id, node_name);
+        let client_id = self
+            .get_simulation_mut()
+            .add_static_handler(client_name, client.clone());
+
+        self.network.borrow_mut().add_node(
+            node_name,
+            Box::new(SharedBandwidthNetworkModel::new(
+                config.local_bandwidth,
+                config.local_latency / 1000.,
+            )),
+        );
+        self.network
+            .borrow_mut()
+            .set_location(client_id, &node_name);
 
         self.clients.push(client.clone());
     }
 
     pub fn print_stats(&self) {
-        println!("");
-        println!("******** Simulation Stats **********");
-        println!("Time period simulated: {} h", self.sim_config.sim_duration);
-        println!("");
-
-        self.print_server_stats();
-        self.print_client_stats();
-    }
-
-    pub fn print_server_stats(&self) {
-        let server_clone = self.server.clone().unwrap();
-        let server = server_clone.borrow();
-        let stats = server.stats.borrow();
-        let workunits = server.db.workunit.borrow();
-        let results = server.db.result.borrow();
-
-        println!("******** Server Stats **********");
-        println!(
-            "Average Speed: {:.2} GFLOPS",
-            stats.gflops_total / (self.sim_config.sim_duration * 3600.)
-        );
-        println!("Total credit granted: {:.3}", stats.total_credit_granted);
-        println!(
-            "Average credit/day: {:.3}",
-            stats.total_credit_granted / (self.sim_config.sim_duration / 24.)
-        );
-        // println!("Assimilator sum dur: {:.2} s", stats.assimilator_sum_dur);
-        // println!("Validator sum dur: {:.2} s", stats.validator_sum_dur);
-        // println!("Transitioner sum dur: {:.2} s", stats.transitioner_sum_dur);
-        // println!("Feeder sum dur: {:.2} s", stats.feeder_sum_dur);
-        // println!("Scheduler sum dur: {:.2} s", stats.scheduler_sum_dur);
-        // println!("File deleter sum dur: {:.2} s", stats.file_deleter_sum_dur);
-        // println!("DB purger sum dur: {:.2} s", stats.db_purger_sum_dur);
-        // println!(
-        //     "Empty buffer: {}. shmem size {} lower bound {}",
-        //     server.scheduler.borrow().dur_samples,
-        //     self.sim_config.server.feeder.shared_memory_size,
-        //     UNSENT_RESULT_BUFFER_LOWER_BOUND
-        // );
-        println!("");
-
-        let mut n_wus_inprogress = 0;
-        let mut n_wus_stage_canonical = 0;
-        let mut n_wus_stage_assimilation = 0;
-        let mut n_wus_stage_deletion = 0;
-
-        for wu_item in workunits.iter() {
-            let wu = wu_item.1;
-            let mut at_least_one_result_sent = false;
-            for result_id in &wu.result_ids {
-                let res_opt = results.get(result_id);
-                if res_opt.is_none() {
-                    at_least_one_result_sent = true;
-                } else {
-                    let res = res_opt.unwrap();
-                    if res.server_state != ResultState::Unsent {
-                        at_least_one_result_sent = true;
-                    }
-                }
-            }
-            if !at_least_one_result_sent {
-                continue;
-            }
-            n_wus_inprogress += 1;
-
-            if wu.canonical_resultid.is_none() {
-                n_wus_stage_canonical += 1;
-                continue;
-            }
-            if wu.assimilate_state != AssimilateState::Done {
-                n_wus_stage_assimilation += 1;
-                continue;
-            }
-            n_wus_stage_deletion += 1;
+        for (_, project) in self.projects.iter() {
+            print_project_stats(project, self.sim_config.sim_duration);
         }
-        let n_wus_total = n_wus_inprogress + stats.n_workunits_fully_processed;
-
-        println!("******** Workunit Stats **********");
-        println!("Workunits in db: {}", workunits.len());
-        println!("Workunits total: {}", n_wus_total);
-        println!(
-            "- Workunits waiting for canonical result: {:.2}%",
-            n_wus_stage_canonical as f64 / n_wus_total as f64 * 100.
-        );
-        println!(
-            "- Workunits waiting for assimilation: {:.2}%",
-            n_wus_stage_assimilation as f64 / n_wus_total as f64 * 100.
-        );
-        println!(
-            "- Workunits waiting for deletion: {} = {:.2}%",
-            n_wus_stage_deletion,
-            n_wus_stage_deletion as f64 / n_wus_total as f64 * 100.
-        );
-        println!(
-            "- Workunits fully processed: {} = {:.2}%",
-            stats.n_workunits_fully_processed,
-            stats.n_workunits_fully_processed as f64 / n_wus_total as f64 * 100.
-        );
-        println!("");
-
-        println!("******** Results Stats **********");
-
-        let mut n_res_in_progress = 0;
-        let mut n_res_over = stats.n_res_deleted;
-        let mut n_res_success = stats.n_res_success;
-        let mut n_res_init = stats.n_res_init;
-        let mut n_res_valid = stats.n_res_valid;
-        let mut n_res_invalid = stats.n_res_invalid;
-        let mut n_res_noreply = stats.n_res_noreply;
-        let mut n_res_didntneed = stats.n_res_didntneed;
-        let mut n_res_validateerror = stats.n_res_validateerror;
-
-        for item in results.iter() {
-            let result = item.1;
-            if result.server_state == ResultState::InProgress {
-                n_res_in_progress += 1;
-                continue;
-            }
-            if result.server_state == ResultState::Over {
-                match result.outcome {
-                    ResultOutcome::Undefined => {
-                        continue;
-                    }
-                    ResultOutcome::Success => {
-                        n_res_success += 1;
-                        match result.validate_state {
-                            ValidateState::Valid => {
-                                n_res_valid += 1;
-                            }
-                            ValidateState::Invalid => {
-                                n_res_invalid += 1;
-                            }
-                            ValidateState::Init => {
-                                n_res_init += 1;
-                            }
-                        }
-                    }
-                    ResultOutcome::NoReply => {
-                        n_res_noreply += 1;
-                    }
-                    ResultOutcome::DidntNeed => {
-                        n_res_didntneed += 1;
-                    }
-                    ResultOutcome::ValidateError => {
-                        n_res_validateerror += 1;
-                    }
-                }
-                n_res_over += 1;
-            }
-        }
-        println!("- Results in progress: {}", n_res_in_progress);
-        println!("- Results over: {}", n_res_over);
-        println!(
-            "-- Success: {:.2}%",
-            n_res_success as f64 / n_res_over as f64 * 100.
-        );
-        println!(
-            "--- Validate State = Init: {:.2}%",
-            n_res_init as f64 / n_res_success as f64 * 100.
-        );
-        println!(
-            "--- Validate State = Valid: {:.2}%, {:.2}%",
-            n_res_valid as f64 / n_res_success as f64 * 100.,
-            n_res_valid as f64 / (n_res_valid + n_res_invalid) as f64 * 100.
-        );
-        println!(
-            "--- Validate State = Invalid: {:.2}%, {:.2}%",
-            n_res_invalid as f64 / n_res_success as f64 * 100.,
-            n_res_invalid as f64 / (n_res_valid + n_res_invalid) as f64 * 100.
-        );
-        println!(
-            "-- Missed Deadline: {:.2}%",
-            n_res_noreply as f64 / n_res_over as f64 * 100.
-        );
-        println!(
-            "-- Sent to client, but server didn't need it: {:.2}%",
-            n_res_didntneed as f64 / n_res_over as f64 * 100.
-        );
-        println!(
-            "-- Validate Error: {:.2}%",
-            n_res_validateerror as f64 / n_res_over as f64 * 100.
-        );
-        println!(
-            "Average result processing time: {:.2} h",
-            stats.results_processing_time / stats.n_results_completed as f64 / HOUR
-        );
-        println!(
-            "Min result processing time: {:.2} h",
-            stats.min_result_processing_time / HOUR
-        );
-        println!(
-            "Max result processing time: {:.2} h",
-            stats.max_result_processing_time / HOUR
-        );
-        println!("");
-    }
-
-    pub fn print_client_stats(&self) {
-        let mut total_stats = ClientStats::new();
-
-        let mut cores_sum = 0;
-        let mut speed_sum = 0.;
-        let mut memory_sum = 0;
-        let mut disk_sum = 0;
-
-        for client_ref in &self.clients {
-            let client = client_ref.borrow();
-            total_stats += client.stats.borrow().clone();
-
-            cores_sum += client.compute.borrow().cores_total();
-            memory_sum += client.compute.borrow().memory_total();
-            speed_sum += client.compute.borrow().speed();
-            disk_sum += client.disk.borrow().capacity();
-        }
-
-        let n_clients = self.clients.len();
-
-        println!("******** Clients Stats **********");
-        println!("Total number of clients: {}", self.clients.len());
-        println!("RR sim sum dur: {:.2} s", total_stats.rrsim_sum_dur);
-        println!(
-            "RR sim average dur: {:.2} s",
-            total_stats.rrsim_sum_dur / self.clients.len() as f64
-        );
-        println!("Sched sum dur: {:.2} s", total_stats.scheduler_sum_dur);
-        println!(
-            "- Average cores: {:.2}",
-            cores_sum as f64 / n_clients as f64
-        );
-        println!(
-            "- Average core speed: {:.2} GFLOPS/core",
-            speed_sum as f64 / n_clients as f64
-        );
-        println!(
-            "- Average memory: {:.2} GB",
-            memory_sum as f64 / n_clients as f64 / 1000.
-        );
-        println!(
-            "- Average disk capacity: {:.2} GB",
-            disk_sum as f64 / n_clients as f64 / 1000.
-        );
-        println!(
-            "- Average host availability: {:.2}%",
-            (total_stats.time_available as f64 / (self.sim_config.sim_duration * 3600.))
-                / n_clients as f64
-                * 100.
-        );
-        println!(
-            "- Average host unavailability: {:.2}%",
-            (total_stats.time_unavailable as f64 / (self.sim_config.sim_duration * 3600.))
-                / n_clients as f64
-                * 100.
-        );
-        println!(
-            "- Average results processed by one client: {:.2}",
-            total_stats.n_results_processed as f64 / n_clients as f64
-        );
-        println!("");
+        print_clients_stats(self.clients.clone(), self.sim_config.sim_duration);
     }
 }
 

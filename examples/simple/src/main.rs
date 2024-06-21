@@ -1,6 +1,6 @@
 use boinc_simulator::{config::sim_config::SimulationConfig, simulator::simulator::Simulator};
 use env_logger::Builder;
-use std::io::Write;
+use std::{io::Write, rc::Rc};
 
 fn init_logger() {
     Builder::from_default_env()
@@ -9,7 +9,7 @@ fn init_logger() {
 }
 
 fn simulation(sim_config: SimulationConfig) {
-    let mut simulator = Simulator::new(sim_config.clone());
+    let simulator = Rc::new(Simulator::new(sim_config.clone()));
     // run until completion
     simulator.run();
 }
